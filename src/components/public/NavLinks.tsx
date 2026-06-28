@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/", label: "Início" },
   { href: "/temas", label: "Temas" },
   { href: "/agentes", label: "Agentes" },
+  { href: "/partidos", label: "Partidos" },
 ];
 
 export function NavLinks() {

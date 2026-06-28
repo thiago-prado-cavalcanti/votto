@@ -1,0 +1,72 @@
+/**
+ * Card summarizing a party in lists: logo/acronym, name, agent count, aggregate
+ * left↔right positioning band and (optionally) the citizen's alignment meter.
+ */
+import Link from "next/link";
+import { Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
+import { PositionBadge } from "@/components/public/PositionBadge";
+import type { PublicParty } from "@/lib/dto";
+
+export function PartyCard({
+  party,
+  profileLabel,
+  profileKey,
+  profileBasis,
+  alignment = null,
+}: {
+  party: PublicParty;
+  profileLabel: string;
+  profileKey?: string;
+  profileBasis: number;
+  /** 0–100 alignment with the logged-in citizen, or null when N/A. */
+  alignment?: number | null;
+}) {
+  const acronym = party.acronym ?? party.name.slice(0, 3).toUpperCase();
+
+  return (
+    <Card className="flex h-full flex-col">
+      <CardBody className="flex flex-1 flex-col gap-3">
+        <div className="flex items-center gap-3">
+          {party.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={party.logoUrl}
+              alt={acronym}
+              className="h-12 w-12 rounded-xl object-contain"
+            />
+          ) : (
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-100 text-xs font-bold text-navy-700">
+              {acronym}
+            </div>
+          )}
+          <div className="min-w-0">
+            <Link href={`/partidos/${party.kid}`} className="group">
+              <h3 className="truncate text-base font-semibold text-navy-900 group-hover:text-navy-600">
+                {party.name}
+              </h3>
+            </Link>
+            <p className="text-xs text-[var(--color-muted)]">
+              {acronym} · {party.agentCount}{" "}
+              {party.agentCount === 1 ? "agente" : "agentes"}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <PositionBadge
+            profileLabel={profileLabel}
+            profileKey={profileKey}
+            basis={profileBasis}
+          />
+          {party.status === "BLOCKED" ? <Badge tone="gray">Bloqueado</Badge> : null}
+        </div>
+
+        {alignment !== null ? (
+          <div className="mt-auto pt-2">
+            <AlignmentMeter value={alignment} />
+          </div>
+        ) : null}
+      </CardBody>
+    </Card>
+  );
+}
