@@ -53,8 +53,8 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
   if (!current) return null;
   const avatarClass =
     current.avatarShape === "square"
-      ? "rounded-lg border border-navy-200 bg-navy-50 object-contain p-0.5"
-      : "rounded-full border border-navy-200 bg-navy-50 object-cover";
+      ? "rounded-lg border-2 border-navy-200 bg-navy-50 object-contain p-0.5"
+      : "rounded-full border-2 border-navy-200 bg-navy-50 object-cover";
 
   return (
     <Card>

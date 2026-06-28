@@ -34,7 +34,7 @@ export function PartyCard({
           <ImageWithFallback
             src={party.logoUrl}
             alt={acronym}
-            className="h-12 w-12 rounded-xl border border-navy-200 bg-navy-50 object-contain p-1"
+            className="h-12 w-12 rounded-xl border-2 border-navy-200 bg-navy-50 object-contain p-1"
             fallback={
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-900 text-xs font-extrabold text-white">
                 {acronym}

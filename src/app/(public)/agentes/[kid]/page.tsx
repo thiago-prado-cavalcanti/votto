@@ -77,7 +77,7 @@ export default async function AgentDetailPage({
               <ImageWithFallback
                 src={dto.imageUrl}
                 alt={fullName}
-                className="h-24 w-24 rounded-2xl border border-navy-200 bg-navy-50 object-cover"
+                className="h-24 w-24 rounded-2xl border-2 border-navy-200 bg-navy-50 object-cover"
                 fallback={
                   <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-navy-100 text-2xl font-semibold text-navy-700">
                     {initials}
