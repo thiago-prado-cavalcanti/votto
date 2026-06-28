@@ -50,16 +50,16 @@ export default async function PublicLayout({
 
       <main className="flex-1">{children}</main>
 
-      <footer className="mt-16 border-t border-line bg-surface">
-        <Container className="flex flex-col items-start justify-between gap-4 py-8 sm:flex-row sm:items-center">
+      <footer className="mt-20 bg-navy-900 text-navy-100">
+        <Container className="flex flex-col items-start justify-between gap-6 py-12 sm:flex-row sm:items-center">
           <div>
-            <Wordmark />
-            <p className="mt-2 max-w-md text-sm text-[var(--color-muted)]">
+            <Wordmark tone="dark" />
+            <p className="mt-3 max-w-md text-sm text-navy-300">
               Sua voz no centro da democracia. Vote nos temas que importam e descubra
               quão alinhados estão os seus representantes.
             </p>
           </div>
-          <p className="text-xs text-[var(--color-muted)]">
+          <p className="text-xs text-navy-400">
             Votto — democracia direta e medição de alinhamento político.
           </p>
         </Container>

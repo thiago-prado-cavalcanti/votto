@@ -20,24 +20,26 @@ export function Container({
 
 // ─── Button ──────────────────────────────────────────────────────────────────
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "outline";
+type ButtonVariant = "primary" | "secondary" | "dark" | "ghost" | "danger" | "outline";
 type ButtonSize = "sm" | "md" | "lg";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold tracking-tight transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50";
 
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-navy-700 text-white hover:bg-navy-800",
+  primary:
+    "bg-accent-500 text-navy-900 shadow-[0_8px_20px_-8px_rgba(255,154,46,0.7)] hover:bg-accent-600",
   secondary: "bg-colonial-600 text-white hover:bg-colonial-700",
-  outline: "border border-line bg-white text-navy-800 hover:bg-navy-50",
-  ghost: "text-navy-700 hover:bg-navy-50",
+  dark: "bg-navy-900 text-white hover:bg-navy-800",
+  outline: "border-2 border-navy-200 bg-white text-navy-900 hover:border-navy-900 hover:bg-navy-50",
+  ghost: "text-navy-800 hover:bg-navy-100",
   danger: "bg-[var(--color-negative)] text-white hover:opacity-90",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-sm",
+  sm: "h-9 px-3.5 text-sm",
   md: "h-11 px-5 text-sm",
-  lg: "h-12 px-6 text-base",
+  lg: "h-13 px-7 text-base",
 };
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -109,15 +111,16 @@ export function CardBody({
 
 // ─── Badge ───────────────────────────────────────────────────────────────────
 
-type BadgeTone = "navy" | "colonial" | "positive" | "negative" | "neutral" | "gray";
+type BadgeTone = "navy" | "colonial" | "accent" | "positive" | "negative" | "neutral" | "gray";
 
 const badgeTones: Record<BadgeTone, string> = {
-  navy: "bg-navy-50 text-navy-700",
+  navy: "bg-navy-100 text-navy-800",
   colonial: "bg-colonial-50 text-colonial-700",
-  positive: "bg-[#e7f4ec] text-[var(--color-positive)]",
-  negative: "bg-[#fbeaeb] text-[var(--color-negative)]",
-  neutral: "bg-[#f6f0db] text-[var(--color-neutral)]",
-  gray: "bg-[#eef1f5] text-[var(--color-muted)]",
+  accent: "bg-accent-100 text-accent-800",
+  positive: "bg-[#e3f3ed] text-[var(--color-positive)]",
+  negative: "bg-[#fbe9e5] text-[var(--color-negative)]",
+  neutral: "bg-[#fbeed5] text-[var(--color-neutral)]",
+  gray: "bg-[#eaeeec] text-[var(--color-muted)]",
 };
 
 export function Badge({
@@ -132,7 +135,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
         badgeTones[tone],
         className,
       )}
@@ -156,8 +159,12 @@ export function Stat({
   return (
     <Card>
       <CardBody>
-        <div className="text-sm text-[var(--color-muted)]">{label}</div>
-        <div className="mt-1 text-3xl font-semibold tracking-tight text-navy-900">{value}</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+          {label}
+        </div>
+        <div className="mt-1.5 font-display text-4xl font-extrabold tracking-tight text-navy-900">
+          {value}
+        </div>
         {hint ? <div className="mt-1 text-xs text-[var(--color-muted)]">{hint}</div> : null}
       </CardBody>
     </Card>

@@ -1,49 +1,69 @@
 @import "tailwindcss";
 
 /*
- * Votto design tokens (CLAUDE.md §9): sober, Brazil-associated colors —
- * navy blue + colonial green — modern sans-serif, fintech-grade polish.
+ * Votto design tokens — bold, high-presence scheme.
+ * Palette: vivid orange (accent), deep teal (brand), near-black ink (surfaces),
+ * light gray (canvas). Color-blocked, confident typography.
+ *
+ * Note: the `navy-*` scale is repurposed as a cool near-black INK ramp and the
+ * `colonial-*` scale as the TEAL ramp, so existing utility classes adopt the new
+ * look without a sweeping rename. `accent-*` is the orange brand ramp.
  */
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-  /* Brand: navy (primary) */
-  --color-navy-50: #eef3f9;
-  --color-navy-100: #d6e2f0;
-  --color-navy-200: #adc5e1;
-  --color-navy-300: #7ea3cf;
-  --color-navy-400: #4c79b4;
-  --color-navy-500: #2d5a96;
-  --color-navy-600: #1f4474;
-  --color-navy-700: #163356;
-  --color-navy-800: #0f2540;
-  --color-navy-900: #0a1a2e;
-  --color-navy-950: #061120;
+  /* INK — cool near-black neutral (repurposed `navy-*`) */
+  --color-navy-50: #f3f5f7;
+  --color-navy-100: #e6eaee;
+  --color-navy-200: #d0d7dd;
+  --color-navy-300: #aeb8c2;
+  --color-navy-400: #8593a0;
+  --color-navy-500: #5d6e7c;
+  --color-navy-600: #475561;
+  --color-navy-700: #323d47;
+  --color-navy-800: #262e36;
+  --color-navy-900: #1b2026;
+  --color-navy-950: #0f1317;
 
-  /* Brand: colonial green (secondary/accent) */
-  --color-colonial-50: #eef6f1;
-  --color-colonial-100: #d4e9dd;
-  --color-colonial-200: #a8d3bb;
-  --color-colonial-300: #74b594;
-  --color-colonial-400: #459170;
-  --color-colonial-500: #2f7355;
-  --color-colonial-600: #235a43;
-  --color-colonial-700: #1b4636;
-  --color-colonial-800: #15372a;
-  --color-colonial-900: #0f2920;
+  /* TEAL — deep brand green (repurposed `colonial-*`) */
+  --color-colonial-50: #e9f3f1;
+  --color-colonial-100: #c9e3df;
+  --color-colonial-200: #99c7bf;
+  --color-colonial-300: #5fa79c;
+  --color-colonial-400: #2f8377;
+  --color-colonial-500: #1f655c;
+  --color-colonial-600: #1a4d48;
+  --color-colonial-700: #133e39;
+  --color-colonial-800: #0f302d;
+  --color-colonial-900: #0a2320;
+
+  /* ACCENT — vivid orange (brand) */
+  --color-accent-50: #fff4e6;
+  --color-accent-100: #ffe5c2;
+  --color-accent-200: #ffd199;
+  --color-accent-300: #ffba66;
+  --color-accent-400: #ffa845;
+  --color-accent-500: #ff9a2e;
+  --color-accent-600: #f2861a;
+  --color-accent-700: #cc6f12;
+  --color-accent-800: #9e560f;
+  --color-accent-900: #7a430c;
 
   /* Semantic surfaces */
-  --color-ink: #0b1622;
-  --color-muted: #5b6b7b;
-  --color-line: #e3e8ee;
+  --color-ink: #1b2026;
+  --color-muted: #5f6e6c;
+  --color-line: #e3e6e3;
   --color-surface: #ffffff;
-  --color-canvas: #f6f8fb;
+  --color-canvas: #f0f0ee;
 
-  --color-positive: #1b7a4b;
-  --color-negative: #b4232a;
-  --color-neutral: #8a6d1f;
+  --color-positive: #16876a;
+  --color-negative: #d8472c;
+  --color-neutral: #e08a1e;
 
-  --radius-card: 16px;
+  --radius-card: 20px;
+
+  --shadow-bold: 0 1px 2px rgba(27, 32, 38, 0.06), 0 18px 40px -16px rgba(27, 32, 38, 0.28);
 }
 
 :root {
@@ -60,9 +80,24 @@ body {
   color: var(--color-ink);
 }
 
+/* Bold, high-presence display typography for headings. */
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
+  font-weight: 800;
+}
+
 /* Subtle focus ring consistent across interactive elements. */
 :where(a, button, input, select, textarea):focus-visible {
-  outline: 2px solid var(--color-navy-500);
+  outline: 2px solid var(--color-accent-500);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: 8px;
+}
+
+::selection {
+  background: var(--color-accent-200);
+  color: var(--color-navy-900);
 }
