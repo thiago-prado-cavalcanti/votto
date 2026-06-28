@@ -2,13 +2,17 @@
  * Public home page: pitch for Votto, headline platform statistics and a
  * "Temas quentes" section with quick voting.
  */
+import Link from "next/link";
 import { Container, Card, CardBody, ButtonLink, Badge } from "@/components/ui";
 import { StatStrip } from "@/components/public/StatStrip";
 import { ThemeCard } from "@/components/public/ThemeCard";
+import { RankingList, type RankingRow } from "@/components/public/RankingList";
+import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { db } from "@/lib/db";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import type { VoteValue } from "@/generated/prisma";
+import { citizenAgentAlignments, citizenPartyAlignments } from "@/lib/indexes/alignment";
+import type { Prisma, VoteValue } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +48,56 @@ export default async function HomePage() {
     });
     currentVotes = new Map(votes.map((v) => [v.theme.kid, v.value]));
   }
+
+  // ─── Alignment ranking (top deputies / senators / parties / president) ──────
+  type AgentWithParty = Prisma.PublicAgentGetPayload<{ include: { party: true } }>;
+  const [deputies, senators, president, allParties] = await Promise.all([
+    db.publicAgent.findMany({ where: { status: "ACTIVE", type: "FEDERAL_DEPUTY" }, include: { party: true } }),
+    db.publicAgent.findMany({ where: { status: "ACTIVE", type: "SENATOR" }, include: { party: true } }),
+    db.publicAgent.findFirst({ where: { status: "ACTIVE", type: "PRESIDENT" }, include: { party: true } }),
+    db.party.findMany({ where: { status: "ACTIVE" } }),
+  ]);
+
+  let agentAlign: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
+  let partyAlign: Map<string, { alignment: number | null; agents: number }> | null = null;
+  if (session) {
+    const user = await db.user.findUnique({
+      where: { kid: session.userKid },
+      select: { id: true, voteVersion: true },
+    });
+    if (user) {
+      [agentAlign, partyAlign] = await Promise.all([
+        citizenAgentAlignments(user.id, user.voteVersion),
+        citizenPartyAlignments(user.id, user.voteVersion),
+      ]);
+    }
+  }
+
+  const toAgentRow = (a: AgentWithParty): RankingRow => ({
+    kid: a.kid,
+    name: `${a.firstName} ${a.lastName}`.trim(),
+    subtitle: [a.party?.acronym ?? a.party?.name, a.state].filter(Boolean).join(" · ") || "—",
+    imageUrl: a.imageUrl,
+    alignment: agentAlign?.get(a.kid)?.alignment ?? null,
+    href: `/agentes/${a.kid}`,
+  });
+  const byAlignment = (a: RankingRow, b: RankingRow) =>
+    (b.alignment ?? -1) - (a.alignment ?? -1) || a.name.localeCompare(b.name);
+
+  const topDeputies = deputies.map(toAgentRow).sort(byAlignment).slice(0, 10);
+  const topSenators = senators.map(toAgentRow).sort(byAlignment).slice(0, 10);
+  const topParties: RankingRow[] = allParties
+    .map((p) => ({
+      kid: p.kid,
+      name: p.name,
+      subtitle: p.acronym ?? "",
+      imageUrl: p.logoUrl,
+      alignment: partyAlign?.get(p.kid)?.alignment ?? null,
+      href: `/partidos/${p.kid}`,
+    }))
+    .sort(byAlignment)
+    .slice(0, 5);
+  const presidentRow = president ? toAgentRow(president) : null;
 
   return (
     <>
@@ -91,6 +145,89 @@ export default async function HomePage() {
             { label: "Votos de cidadãos", value: voteCount.toLocaleString("pt-BR") },
           ]}
         />
+
+        {/* Alignment ranking */}
+        <section className="mt-16">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-navy-900">
+                Ranking de alinhamento
+              </h2>
+              <p className="mt-1 text-sm text-[var(--color-muted)]">
+                {isAuthenticated
+                  ? "Quem mais vota como você — do maior para o menor alinhamento."
+                  : "Entre para ver, em ordem, quem mais vota como você."}
+              </p>
+            </div>
+            {!isAuthenticated ? (
+              <ButtonLink href="/login" size="sm">
+                Entrar para ver meu ranking
+              </ButtonLink>
+            ) : null}
+          </div>
+
+          {/* President highlight */}
+          {presidentRow ? (
+            <Card className="mt-6 overflow-hidden">
+              <CardBody className="flex items-center gap-4 bg-navy-900 text-white sm:gap-5">
+                <ImageWithFallback
+                  src={presidentRow.imageUrl}
+                  alt={presidentRow.name}
+                  className="h-16 w-16 rounded-2xl object-cover"
+                  fallback={
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-lg font-extrabold text-white">
+                      {presidentRow.name.split(" ").slice(0, 2).map((p) => p[0]).join("")}
+                    </div>
+                  }
+                />
+                <div className="min-w-0 flex-1">
+                  <Badge tone="accent">Presidente</Badge>
+                  <Link href={presidentRow.href} className="mt-1.5 block">
+                    <p className="truncate font-display text-xl font-extrabold">{presidentRow.name}</p>
+                  </Link>
+                  <p className="truncate text-sm text-navy-300">{presidentRow.subtitle}</p>
+                </div>
+                <div className="text-right">
+                  {isAuthenticated && presidentRow.alignment !== null ? (
+                    <>
+                      <div className="font-display text-3xl font-extrabold text-accent-500">
+                        {presidentRow.alignment}%
+                      </div>
+                      <div className="text-xs text-navy-300">alinhamento</div>
+                    </>
+                  ) : (
+                    <span className="text-sm font-medium text-navy-300">Entre para ver</span>
+                  )}
+                </div>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+            <RankingList
+              title="Top 10 deputados federais"
+              rows={topDeputies}
+              hrefAll="/agentes?type=FEDERAL_DEPUTY"
+              loggedIn={isAuthenticated}
+            />
+            <RankingList
+              title="Top 10 senadores"
+              rows={topSenators}
+              hrefAll="/agentes?type=SENATOR"
+              loggedIn={isAuthenticated}
+            />
+          </div>
+
+          <div className="mt-5">
+            <RankingList
+              title="Top 5 partidos"
+              rows={topParties}
+              hrefAll="/partidos"
+              loggedIn={isAuthenticated}
+              avatarShape="square"
+            />
+          </div>
+        </section>
 
         {/* How it works */}
         <section className="mt-16 grid gap-4 sm:grid-cols-3">

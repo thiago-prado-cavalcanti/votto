@@ -10,6 +10,7 @@ import { PositionBadge } from "@/components/public/PositionBadge";
 import { PositioningChart } from "@/components/public/PositioningChart";
 import { SpectrumBar } from "@/components/public/SpectrumBar";
 import { AgentCard } from "@/components/public/AgentCard";
+import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { db } from "@/lib/db";
 import { toPublicParty, toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -71,18 +72,16 @@ export default async function PartyDetailPage({
         <div className="lg:col-span-2">
           <Card>
             <CardBody className="flex flex-col gap-5 sm:flex-row sm:items-start">
-              {dto.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={dto.logoUrl}
-                  alt={acronym}
-                  className="h-20 w-20 rounded-2xl object-contain"
-                />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-navy-100 text-lg font-bold text-navy-700">
-                  {acronym}
-                </div>
-              )}
+              <ImageWithFallback
+                src={dto.logoUrl}
+                alt={acronym}
+                className="h-20 w-20 rounded-2xl bg-white object-contain p-1.5"
+                fallback={
+                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-navy-900 text-lg font-extrabold text-white">
+                    {acronym}
+                  </div>
+                }
+              />
               <div className="flex-1">
                 <h1 className="text-2xl font-bold tracking-tight text-navy-900">{dto.name}</h1>
                 <p className="mt-1 text-sm text-[var(--color-muted)]">

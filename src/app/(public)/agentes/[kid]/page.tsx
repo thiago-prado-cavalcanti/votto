@@ -9,6 +9,7 @@ import { Container, Card, CardBody, Badge, AlignmentMeter } from "@/components/u
 import { PositionBadge } from "@/components/public/PositionBadge";
 import { PositioningChart } from "@/components/public/PositioningChart";
 import { SpectrumBar } from "@/components/public/SpectrumBar";
+import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -72,18 +73,16 @@ export default async function AgentDetailPage({
         <div className="lg:col-span-2">
           <Card>
             <CardBody className="flex flex-col gap-5 sm:flex-row sm:items-start">
-              {dto.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={dto.imageUrl}
-                  alt={fullName}
-                  className="h-24 w-24 rounded-2xl object-cover"
-                />
-              ) : (
-                <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-navy-100 text-2xl font-semibold text-navy-700">
-                  {initials}
-                </div>
-              )}
+              <ImageWithFallback
+                src={dto.imageUrl}
+                alt={fullName}
+                className="h-24 w-24 rounded-2xl object-cover"
+                fallback={
+                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-navy-100 text-2xl font-semibold text-navy-700">
+                    {initials}
+                  </div>
+                }
+              />
               <div className="flex-1">
                 <h1 className="text-2xl font-bold tracking-tight text-navy-900">{fullName}</h1>
                 <p className="mt-1 text-sm text-[var(--color-muted)]">

@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
 import { PositionBadge } from "@/components/public/PositionBadge";
+import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { agentTypeLabel } from "@/lib/labels";
 import type { PublicAgentDTO } from "@/lib/dto";
 
@@ -30,18 +31,16 @@ export function AgentCard({
     <Card className="flex h-full flex-col">
       <CardBody className="flex flex-1 flex-col gap-3">
         <div className="flex items-center gap-3">
-          {agent.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={agent.imageUrl}
-              alt={fullName}
-              className="h-14 w-14 rounded-full object-cover"
-            />
-          ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-navy-100 text-sm font-semibold text-navy-700">
-              {initials}
-            </div>
-          )}
+          <ImageWithFallback
+            src={agent.imageUrl}
+            alt={fullName}
+            className="h-14 w-14 rounded-full object-cover"
+            fallback={
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-navy-100 text-sm font-semibold text-navy-700">
+                {initials}
+              </div>
+            }
+          />
           <div className="min-w-0">
             <Link href={`/agentes/${agent.kid}`} className="group">
               <h3 className="truncate text-base font-semibold text-navy-900 group-hover:text-navy-600">
