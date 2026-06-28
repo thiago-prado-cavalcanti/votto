@@ -7,7 +7,6 @@ import { Card, CardBody, Badge } from "@/components/ui";
 import { TemperatureBar } from "@/components/public/TemperatureBar";
 import { VoteButtons } from "@/components/public/VoteButtons";
 import { scopeLabel } from "@/lib/labels";
-import { themeTemperature } from "@/lib/domain/theme";
 import type { PublicTheme } from "@/lib/dto";
 import type { VoteValue } from "@/generated/prisma";
 
@@ -20,7 +19,6 @@ export function ThemeCard({
   isAuthenticated: boolean;
   currentVote?: VoteValue | null;
 }) {
-  const temperature = themeTemperature(theme);
   const location = [theme.municipality, theme.state].filter(Boolean).join(" · ");
   return (
     <Card className="flex h-full flex-col">
@@ -41,7 +39,6 @@ export function ThemeCard({
         ) : null}
         <div className="mt-auto pt-2">
           <TemperatureBar
-            temperature={temperature}
             yesCount={theme.yesCount}
             noCount={theme.noCount}
             absCount={theme.absCount}

@@ -132,11 +132,7 @@ export default async function AgentDetailPage({
                       </Link>
                       <Badge
                         tone={
-                          v.value === "YES"
-                            ? "positive"
-                            : v.value === "NO"
-                              ? "negative"
-                              : "neutral"
+                          v.value === "YES" ? "positive" : v.value === "NO" ? "negative" : "gray"
                         }
                       >
                         {voteValueLabel[v.value]}

@@ -57,9 +57,16 @@
   --color-surface: #ffffff;
   --color-canvas: #f0f0ee;
 
-  --color-positive: #16876a;
-  --color-negative: #d8472c;
+  /* Refined so "Sim" (emerald) and "Não" (crimson) don't vibrate as pure
+     red/green complementaries; they differ in hue, lightness and saturation. */
+  --color-positive: #0e9d6a;
+  --color-negative: #ce3a4b;
   --color-neutral: #e08a1e;
+
+  /* Vote colors — abstention is always neutral slate (never amber/green/red). */
+  --color-vote-yes: #0e9d6a;
+  --color-vote-no: #ce3a4b;
+  --color-vote-abstention: #64748b;
 
   --radius-card: 20px;
 

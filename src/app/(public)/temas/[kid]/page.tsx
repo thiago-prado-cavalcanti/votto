@@ -11,7 +11,6 @@ import { db } from "@/lib/db";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { scopeLabel } from "@/lib/labels";
-import { themeTemperature } from "@/lib/domain/theme";
 import type { VoteValue } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +31,6 @@ export default async function ThemeDetailPage({
   if (!theme || theme.status !== "ACTIVE") notFound();
 
   const dto = toPublicTheme(theme);
-  const temperature = themeTemperature(dto);
   const location = [dto.municipality, dto.state].filter(Boolean).join(" · ");
 
   let currentVote: VoteValue | null = null;
@@ -99,16 +97,11 @@ export default async function ThemeDetailPage({
               <h2 className="text-lg font-semibold text-navy-900">Resultado atual</h2>
               <div className="mt-3">
                 <TemperatureBar
-                  temperature={temperature}
                   yesCount={dto.yesCount}
                   noCount={dto.noCount}
                   absCount={dto.absCount}
                 />
               </div>
-              <p className="mt-3 text-xs text-[var(--color-muted)]">
-                {dto.totalVotes.toLocaleString("pt-BR")}{" "}
-                {dto.totalVotes === 1 ? "voto registrado" : "votos registrados"}.
-              </p>
             </CardBody>
           </Card>
 

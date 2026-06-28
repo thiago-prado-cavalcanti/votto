@@ -66,8 +66,12 @@ export function VoteButtons({
       <div className="flex flex-wrap gap-2">
         {OPTIONS.map((opt) => {
           const active = choice === opt.value;
-          const tone =
-            opt.value === "YES" ? "positive" : opt.value === "NO" ? "negative" : "neutral";
+          const activeBg =
+            opt.value === "YES"
+              ? "var(--color-vote-yes)"
+              : opt.value === "NO"
+                ? "var(--color-vote-no)"
+                : "var(--color-vote-abstention)";
           return (
             <Button
               key={opt.value}
@@ -76,11 +80,8 @@ export function VoteButtons({
               variant={active ? "primary" : "outline"}
               disabled={pending}
               onClick={() => handleVote(opt.value)}
-              className={cn(
-                active && tone === "positive" && "bg-[var(--color-positive)] hover:opacity-90",
-                active && tone === "negative" && "bg-[var(--color-negative)] hover:opacity-90",
-                active && tone === "neutral" && "bg-[var(--color-neutral)] hover:opacity-90",
-              )}
+              className={cn(active && "text-white hover:opacity-90")}
+              style={active ? { background: activeBg } : undefined}
               aria-pressed={active}
             >
               {opt.label}
