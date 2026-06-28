@@ -7,8 +7,8 @@
  * never duplicates rows.
  *
  * Contents:
- *   - ~6 synthetic Parties
- *   - ~30 PublicAgents across types/parties/states
+ *   - REAL parties (from Câmara Dados Abertos, with offline fallback)
+ *   - REAL sitting federal deputies as PublicAgents (name, party, state, photo)
  *   - ~12 Themes (each with economic/social dimensions) and 1–3 Articles each
  *   - deterministic AGENT votes on most themes, with Theme tallies kept in sync
  *   - 2 sample citizen Users (valid test CPFs) with a handful of votes
@@ -61,7 +61,14 @@ function pickVote(agentIdx: number, themeIdx: number): VoteValue | null {
   return VoteValue.NO; // ~41%
 }
 
-// ─── Synthetic source data ───────────────────────────────────────────────────
+// ─── Real roster from Câmara dos Deputados (with offline fallback) ───────────
+// Public agents are REAL sitting federal deputies (name, party, state, photo)
+// pulled from the Câmara Dados Abertos API at seed time. Parties are derived from
+// the deputies' real parties. If the network is unavailable, we fall back to a
+// verified baked-in snapshot so the seed still works offline.
+
+const CAMARA_API = "https://dadosabertos.camara.leg.br/api/v2";
+const ROSTER_SIZE = 40;
 
 interface SeedParty {
   ref: string;
@@ -69,15 +76,6 @@ interface SeedParty {
   acronym: string;
   description: string;
 }
-
-const PARTIES: SeedParty[] = [
-  { ref: "seed:party:uni", name: "Partido União Cidadã", acronym: "UNI", description: "Coalizão de centro (sintético)." },
-  { ref: "seed:party:fpd", name: "Frente Popular Democrática", acronym: "FPD", description: "Pauta social e coletiva (sintético)." },
-  { ref: "seed:party:mol", name: "Movimento Liberdade Econômica", acronym: "MOL", description: "Pauta de mercado (sintético)." },
-  { ref: "seed:party:ren", name: "Renovação Nacional", acronym: "REN", description: "Pauta institucional (sintético)." },
-  { ref: "seed:party:ver", name: "Verdes pelo Futuro", acronym: "VER", description: "Pauta ambiental (sintético)." },
-  { ref: "seed:party:soc", name: "Solidariedade Comunitária", acronym: "SOC", description: "Pauta comunitária (sintético)." },
-];
 
 interface SeedAgent {
   ref: string;
@@ -87,43 +85,140 @@ interface SeedAgent {
   state: string;
   municipality?: string;
   partyRef: string;
+  imageUrl?: string;
+  email?: string;
 }
 
-const STATES = ["SP", "RJ", "MG", "BA", "RS", "PR", "PE", "CE", "SC", "GO"];
+interface RawDeputy {
+  id: number;
+  nome: string;
+  siglaPartido: string;
+  siglaUf: string;
+  urlFoto?: string;
+  email?: string | null;
+}
+
+interface CamaraList<T> {
+  dados?: T[];
+}
+
+/** Full party names for the parties present in the offline fallback snapshot. */
+const PARTY_NAMES: Record<string, string> = {
+  MDB: "Movimento Democrático Brasileiro",
+  PL: "Partido Liberal",
+  PSDB: "Partido da Social Democracia Brasileira",
+  NOVO: "Partido Novo",
+  PP: "Progressistas",
+  PT: "Partido dos Trabalhadores",
+  PDT: "Partido Democrático Trabalhista",
+};
+
+/** Verified snapshot of real federal deputies (used only when the API is offline). */
+const FALLBACK_DEPUTIES: RawDeputy[] = [
+  { id: 204379, nome: "Acácio Favacho", siglaPartido: "MDB", siglaUf: "AP", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/204379.jpg" },
+  { id: 220714, nome: "Adail Filho", siglaPartido: "MDB", siglaUf: "AM", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/220714.jpg" },
+  { id: 221328, nome: "Adilson Barroso", siglaPartido: "PL", siglaUf: "SP", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/221328.jpg" },
+  { id: 204560, nome: "Adolfo Viana", siglaPartido: "PSDB", siglaUf: "BA", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/204560.jpg" },
+  { id: 204528, nome: "Adriana Ventura", siglaPartido: "NOVO", siglaUf: "SP", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/204528.jpg" },
+  { id: 121948, nome: "Adriano do Baldy", siglaPartido: "PP", siglaUf: "GO", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/121948.jpg" },
+  { id: 74646, nome: "Aécio Neves", siglaPartido: "PSDB", siglaUf: "MG", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/74646.jpg" },
+  { id: 160508, nome: "Afonso Florence", siglaPartido: "PT", siglaUf: "BA", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/160508.jpg" },
+  { id: 136811, nome: "Afonso Hamm", siglaPartido: "PP", siglaUf: "RS", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/136811.jpg" },
+  { id: 178835, nome: "Afonso Motta", siglaPartido: "PDT", siglaUf: "RS", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/178835.jpg" },
+  { id: 160527, nome: "Aguinaldo Ribeiro", siglaPartido: "PP", siglaUf: "PB", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/160527.jpg" },
+  { id: 204495, nome: "Airton Faleiro", siglaPartido: "PT", siglaUf: "PA", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/204495.jpg" },
+  { id: 204549, nome: "AJ Albuquerque", siglaPartido: "PP", siglaUf: "CE", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/204549.jpg" },
+  { id: 73579, nome: "Alberto Fraga", siglaPartido: "PL", siglaUf: "DF", urlFoto: "https://www.camara.leg.br/internet/deputado/bandep/73579.jpg" },
+];
+
+/** Build a stable party ref from a party acronym. */
+function partyRef(sigla: string): string {
+  return `seed:party:${sigla.toLowerCase()}`;
+}
+
+/** Split a deputy's display name into first/last name parts. */
+function splitName(nome: string): { firstName: string; lastName: string } {
+  const parts = nome.trim().split(/\s+/);
+  const firstName = parts[0] ?? nome;
+  const lastName = parts.slice(1).join(" ") || firstName;
+  return { firstName, lastName };
+}
+
+/** Convert a list of real deputies into seed parties + agents. */
+function rosterFromDeputies(
+  deputies: RawDeputy[],
+  partyFullName: (sigla: string) => string,
+): { parties: SeedParty[]; agents: SeedAgent[] } {
+  const siglas = [...new Set(deputies.map((d) => d.siglaPartido).filter(Boolean))];
+  const parties: SeedParty[] = siglas.map((sigla) => ({
+    ref: partyRef(sigla),
+    name: partyFullName(sigla),
+    acronym: sigla,
+    description: `${partyFullName(sigla)} (${sigla}).`,
+  }));
+  const agents: SeedAgent[] = deputies.map((d) => {
+    const { firstName, lastName } = splitName(d.nome);
+    return {
+      ref: `seed:agent:dep:${d.id}`,
+      firstName,
+      lastName,
+      type: AgentType.FEDERAL_DEPUTY,
+      state: d.siglaUf,
+      partyRef: partyRef(d.siglaPartido),
+      imageUrl: d.urlFoto,
+      email: d.email ?? undefined,
+    };
+  });
+  return { parties, agents };
+}
+
+/** Fetch JSON from the Câmara API with a 20s timeout. */
+async function fetchCamara<T>(path: string): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = await fetch(`${CAMARA_API}${path}`, {
+      headers: { Accept: "application/json" },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
- * Build ~30 deterministic agents distributed across types, parties and states.
- * Names are clearly synthetic ("Agente Demo NN").
+ * Build the public-agent roster. Primary path: live REAL deputies + parties from
+ * the Câmara API (deterministic: ordered by name, first ROSTER_SIZE). Fallback:
+ * the verified offline snapshot. The `live` flag indicates which path was used.
  */
-function buildAgents(): SeedAgent[] {
-  const agents: SeedAgent[] = [];
-  // Distribution of types across the roster.
-  const plan: Array<{ type: AgentType; count: number }> = [
-    { type: AgentType.FEDERAL_DEPUTY, count: 10 },
-    { type: AgentType.STATE_DEPUTY, count: 8 },
-    { type: AgentType.SENATOR, count: 6 },
-    { type: AgentType.COUNCILLOR, count: 4 },
-    { type: AgentType.GOVERNOR, count: 2 },
-  ];
-  let idx = 0;
-  for (const { type, count } of plan) {
-    for (let i = 0; i < count; i++) {
-      const party = PARTIES[idx % PARTIES.length];
-      const state = STATES[idx % STATES.length];
-      const isMunicipal = type === AgentType.COUNCILLOR;
-      agents.push({
-        ref: `seed:agent:${idx}`,
-        firstName: "Agente",
-        lastName: `Demo ${String(idx + 1).padStart(2, "0")}`,
-        type,
-        state,
-        municipality: isMunicipal ? `Cidade ${state}` : undefined,
-        partyRef: party.ref,
-      });
-      idx++;
-    }
+async function buildRoster(): Promise<{ parties: SeedParty[]; agents: SeedAgent[]; live: boolean }> {
+  try {
+    const partiesJson = await fetchCamara<CamaraList<{ sigla: string; nome: string }>>(
+      `/partidos?itens=100&ordem=ASC&ordenarPor=sigla`,
+    );
+    const nameBySigla = new Map<string, string>();
+    for (const p of partiesJson.dados ?? []) nameBySigla.set(p.sigla, p.nome);
+
+    const depJson = await fetchCamara<CamaraList<RawDeputy>>(
+      `/deputados?ordem=ASC&ordenarPor=nome&itens=${ROSTER_SIZE}`,
+    );
+    const deputies = (depJson.dados ?? []).slice(0, ROSTER_SIZE);
+    if (deputies.length === 0) throw new Error("nenhum deputado retornado");
+
+    const roster = rosterFromDeputies(
+      deputies,
+      (s) => nameBySigla.get(s) ?? PARTY_NAMES[s] ?? s,
+    );
+    return { ...roster, live: true };
+  } catch (err) {
+    console.warn(
+      `  ⚠ Câmara API indisponível (${(err as Error).message}); usando snapshot offline.`,
+    );
+    const roster = rosterFromDeputies(FALLBACK_DEPUTIES, (s) => PARTY_NAMES[s] ?? s);
+    return { ...roster, live: false };
   }
-  return agents;
 }
 
 interface SeedTheme {
@@ -295,6 +390,8 @@ async function seedAgent(a: SeedAgent, partyId: string): Promise<string> {
       type: a.type,
       state: a.state,
       municipality: a.municipality,
+      imageUrl: a.imageUrl,
+      email: a.email,
       partyId,
       source: SRC,
       externalRef: a.ref,
@@ -305,6 +402,8 @@ async function seedAgent(a: SeedAgent, partyId: string): Promise<string> {
       type: a.type,
       state: a.state,
       municipality: a.municipality,
+      imageUrl: a.imageUrl,
+      email: a.email,
       partyId,
     },
     select: { id: true },
@@ -436,16 +535,21 @@ const ADMIN = {
 
 /** Run the full idempotent seed and print a concise summary. */
 async function main(): Promise<void> {
-  console.log("▶ Semeando dados sintéticos (idempotente)…");
+  console.log("▶ Semeando dados (idempotente)…");
 
-  // 1) Parties
+  // 0) Real roster of federal deputies + parties (live Câmara API, offline fallback).
+  const roster = await buildRoster();
+  console.log(
+    `  • Fonte do roster: ${roster.live ? "deputados reais (Câmara API)" : "snapshot offline verificado"}`,
+  );
+
+  // 1) Parties (real)
   const partyIdByRef = new Map<string, string>();
-  for (const p of PARTIES) partyIdByRef.set(p.ref, await seedParty(p));
+  for (const p of roster.parties) partyIdByRef.set(p.ref, await seedParty(p));
 
-  // 2) Agents
-  const agents = buildAgents();
+  // 2) Agents (real federal deputies, with photos)
   const agentIds: string[] = [];
-  for (const a of agents) {
+  for (const a of roster.agents) {
     const partyId = partyIdByRef.get(a.partyRef);
     if (!partyId) continue;
     agentIds.push(await seedAgent(a, partyId));
@@ -539,8 +643,8 @@ async function main(): Promise<void> {
 
   // Summary.
   console.log("✓ Seed concluído:");
-  console.log(`   • Partidos:   ${PARTIES.length}`);
-  console.log(`   • Agentes:    ${agentIds.length}`);
+  console.log(`   • Partidos:   ${partyIdByRef.size} (reais)`);
+  console.log(`   • Agentes:    ${agentIds.length} (deputados federais reais, com foto)`);
   console.log(`   • Temas:      ${themeIds.length}`);
   console.log(`   • Votos agentes: ${agentVoteCount}`);
   console.log(`   • Cidadãos:   ${CITIZENS.length} (votos: ${userVoteCount})`);
