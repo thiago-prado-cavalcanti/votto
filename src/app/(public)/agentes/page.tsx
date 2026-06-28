@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { getAgentPosition } from "@/lib/domain/positions";
-import { citizenAgentAlignments } from "@/lib/indexes/alignment";
+import { citizenAgentAlignments, agentElectorateAlignments } from "@/lib/indexes/alignment";
 import { agentTypeLabel, BR_STATES } from "@/lib/labels";
 import type { AgentType, Prisma } from "@/generated/prisma";
 
@@ -46,6 +46,9 @@ export default async function AgentsPage({
   // Positioning per agent (uses internal id; never exposed).
   const positions = await Promise.all(agents.map((a) => getAgentPosition(a.id)));
 
+  // Electorate engagement (always available, login-independent).
+  const engagement = await agentElectorateAlignments();
+
   // Alignment for logged-in citizens.
   let alignments: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
   if (session) {
@@ -64,6 +67,7 @@ export default async function AgentsPage({
     profileKey: string;
     profileBasis: number;
     alignment: number | null;
+    engagement: number | null;
   };
 
   let rows: Row[] = agents.map((a, i) => ({
@@ -72,10 +76,13 @@ export default async function AgentsPage({
     profileKey: positions[i].profileKey,
     profileBasis: positions[i].basis,
     alignment: alignments?.get(a.kid)?.alignment ?? null,
+    engagement: engagement.get(a.kid)?.alignment ?? null,
   }));
 
   if (sort === "alignment" && alignments) {
     rows = [...rows].sort((a, b) => (b.alignment ?? -1) - (a.alignment ?? -1));
+  } else if (sort === "engagement") {
+    rows = [...rows].sort((a, b) => (b.engagement ?? -1) - (a.engagement ?? -1));
   }
 
   return (
@@ -124,7 +131,8 @@ export default async function AgentsPage({
             <Field label="Ordenar por">
               <Select name="sort" defaultValue={sort ?? ""}>
                 <option value="">Nome</option>
-                {session ? <option value="alignment">Alinhamento</option> : null}
+                <option value="engagement">Engajamento com eleitores</option>
+                {session ? <option value="alignment">Seu alinhamento</option> : null}
               </Select>
             </Field>
             <div className="flex items-end">
@@ -154,6 +162,7 @@ export default async function AgentsPage({
               profileKey={row.profileKey}
               profileBasis={row.profileBasis}
               alignment={session ? row.alignment : null}
+              engagement={row.engagement}
             />
           ))}
         </div>

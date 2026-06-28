@@ -15,6 +15,7 @@ export function AgentCard({
   profileKey,
   profileBasis,
   alignment = null,
+  engagement = null,
 }: {
   agent: PublicAgentDTO;
   profileLabel: string;
@@ -22,6 +23,8 @@ export function AgentCard({
   profileBasis: number;
   /** 0–100 alignment with the logged-in citizen, or null when N/A. */
   alignment?: number | null;
+  /** 0–100 engagement with the whole electorate (always available). */
+  engagement?: number | null;
 }) {
   const fullName = `${agent.firstName} ${agent.lastName}`.trim();
   const location = [agent.municipality, agent.state].filter(Boolean).join(" · ");
@@ -63,11 +66,12 @@ export function AgentCard({
           <PositionBadge profileLabel={profileLabel} profileKey={profileKey} basis={profileBasis} />
         </div>
 
-        {alignment !== null ? (
-          <div className="mt-auto pt-2">
-            <AlignmentMeter value={alignment} />
-          </div>
-        ) : null}
+        <div className="mt-auto space-y-2 pt-2">
+          {engagement !== null ? (
+            <AlignmentMeter value={engagement} label="Engajamento com eleitores" />
+          ) : null}
+          {alignment !== null ? <AlignmentMeter value={alignment} label="Seu alinhamento" /> : null}
+        </div>
       </CardBody>
     </Card>
   );

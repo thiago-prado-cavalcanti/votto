@@ -3,8 +3,7 @@
  *
  * Pairs the geometric V/check mark (see {@link Logo}) with a heavy, tightly
  * tracked "Votto" wordmark rendered as inline SVG so it stays crisp at any
- * size and renders correctly even before the Sora webfont loads. An orange
- * accent dot ties the wordmark back to the brand mark.
+ * size and renders correctly even before the Sora webfont loads.
  *
  * The `tone` prop adapts the wordmark for a light header (`"light"`) or a
  * dark ink/teal footer (`"dark"`).
@@ -44,7 +43,7 @@ export function Wordmark({
         className="h-8 w-8 shrink-0 transition-transform duration-200 ease-out group-hover:-translate-y-0.5"
       />
       <svg
-        viewBox="0 0 152 34"
+        viewBox="0 0 138 34"
         height="26"
         role="img"
         aria-hidden="true"
@@ -62,13 +61,6 @@ export function Wordmark({
         >
           Votto
         </text>
-        <circle
-          cx="146"
-          cy="9"
-          r="3.4"
-          fill="var(--color-accent-500)"
-          className="transition-colors duration-200 group-hover:fill-[var(--color-accent-600)]"
-        />
       </svg>
     </Link>
   );

@@ -15,7 +15,11 @@ import { db } from "@/lib/db";
 import { toPublicParty, toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { getPartyPosition, getAgentPosition } from "@/lib/domain/positions";
-import { citizenAgentAlignments, citizenPartyAlignments } from "@/lib/indexes/alignment";
+import {
+  citizenAgentAlignments,
+  citizenPartyAlignments,
+  partyElectorateAlignments,
+} from "@/lib/indexes/alignment";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +35,7 @@ export default async function PartyDetailPage({
   if (!party || party.status !== "ACTIVE") notFound();
 
   const position = await getPartyPosition(party.id);
+  const engagement = (await partyElectorateAlignments()).get(party.kid)?.alignment ?? null;
 
   const agents = await db.publicAgent.findMany({
     where: { partyId: party.id, status: "ACTIVE" },
@@ -130,6 +135,24 @@ export default async function PartyDetailPage({
 
         {/* Sidebar: alignment + positioning */}
         <div className="flex flex-col gap-6">
+          <Card>
+            <CardBody>
+              <h2 className="text-lg font-semibold text-navy-900">Engajamento com eleitores</h2>
+              {engagement !== null ? (
+                <div className="mt-3">
+                  <AlignmentMeter value={engagement} label="Concordância com o eleitorado" />
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    O quanto os agentes do partido acompanham o conjunto dos cidadãos.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-[var(--color-muted)]">
+                  Ainda não há votos de cidadãos em comum para calcular.
+                </p>
+              )}
+            </CardBody>
+          </Card>
+
           {session ? (
             <Card>
               <CardBody>

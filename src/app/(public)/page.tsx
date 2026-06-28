@@ -11,7 +11,12 @@ import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { db } from "@/lib/db";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import { citizenAgentAlignments, citizenPartyAlignments } from "@/lib/indexes/alignment";
+import {
+  citizenAgentAlignments,
+  citizenPartyAlignments,
+  agentElectorateAlignments,
+  partyElectorateAlignments,
+} from "@/lib/indexes/alignment";
 import type { Prisma, VoteValue } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +63,11 @@ export default async function HomePage() {
     db.party.findMany({ where: { status: "ACTIVE" } }),
   ]);
 
+  // Electorate engagement (always available) + personal alignment (when logged in).
+  const [agentEngage, partyEngage] = await Promise.all([
+    agentElectorateAlignments(),
+    partyElectorateAlignments(),
+  ]);
   let agentAlign: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
   let partyAlign: Map<string, { alignment: number | null; agents: number }> | null = null;
   if (session) {
@@ -73,12 +83,15 @@ export default async function HomePage() {
     }
   }
 
+  // Ranking score: personal alignment when logged in, else electorate engagement.
   const toAgentRow = (a: AgentWithParty): RankingRow => ({
     kid: a.kid,
     name: `${a.firstName} ${a.lastName}`.trim(),
     subtitle: [a.party?.acronym ?? a.party?.name, a.state].filter(Boolean).join(" · ") || "—",
     imageUrl: a.imageUrl,
-    alignment: agentAlign?.get(a.kid)?.alignment ?? null,
+    alignment: isAuthenticated
+      ? agentAlign?.get(a.kid)?.alignment ?? null
+      : agentEngage.get(a.kid)?.alignment ?? null,
     href: `/agentes/${a.kid}`,
   });
   const byAlignment = (a: RankingRow, b: RankingRow) =>
@@ -92,7 +105,9 @@ export default async function HomePage() {
       name: p.name,
       subtitle: p.acronym ?? "",
       imageUrl: p.logoUrl,
-      alignment: partyAlign?.get(p.kid)?.alignment ?? null,
+      alignment: isAuthenticated
+        ? partyAlign?.get(p.kid)?.alignment ?? null
+        : partyEngage.get(p.kid)?.alignment ?? null,
       href: `/partidos/${p.kid}`,
     }))
     .sort(byAlignment)
@@ -122,12 +137,7 @@ export default async function HomePage() {
               <ButtonLink href="/temas" size="lg">
                 Votar nos temas
               </ButtonLink>
-              <ButtonLink
-                href="/agentes"
-                size="lg"
-                variant="outline"
-                className="border-white/25 bg-transparent text-white hover:border-white hover:bg-white/10"
-              >
+              <ButtonLink href="/agentes" size="lg" variant="inverse">
                 Ver agentes
               </ButtonLink>
             </div>
@@ -156,12 +166,12 @@ export default async function HomePage() {
               <p className="mt-1 text-sm text-[var(--color-muted)]">
                 {isAuthenticated
                   ? "Quem mais vota como você — do maior para o menor alinhamento."
-                  : "Entre para ver, em ordem, quem mais vota como você."}
+                  : "Engajamento dos representantes com o eleitorado. Entre para ver seu alinhamento pessoal."}
               </p>
             </div>
             {!isAuthenticated ? (
               <ButtonLink href="/login" size="sm">
-                Entrar para ver meu ranking
+                Entrar para ver meu alinhamento
               </ButtonLink>
             ) : null}
           </div>
@@ -188,15 +198,17 @@ export default async function HomePage() {
                   <p className="truncate text-sm text-navy-300">{presidentRow.subtitle}</p>
                 </div>
                 <div className="text-right">
-                  {isAuthenticated && presidentRow.alignment !== null ? (
+                  {presidentRow.alignment !== null ? (
                     <>
                       <div className="font-display text-3xl font-extrabold text-accent-500">
                         {presidentRow.alignment}%
                       </div>
-                      <div className="text-xs text-navy-300">alinhamento</div>
+                      <div className="text-xs text-navy-300">
+                        {isAuthenticated ? "seu alinhamento" : "engajamento"}
+                      </div>
                     </>
                   ) : (
-                    <span className="text-sm font-medium text-navy-300">Entre para ver</span>
+                    <span className="text-sm font-medium text-navy-300">—</span>
                   )}
                 </div>
               </CardBody>
@@ -208,13 +220,11 @@ export default async function HomePage() {
               title="Top 10 deputados federais"
               rows={topDeputies}
               hrefAll="/agentes?type=FEDERAL_DEPUTY"
-              loggedIn={isAuthenticated}
             />
             <RankingList
               title="Top 10 senadores"
               rows={topSenators}
               hrefAll="/agentes?type=SENATOR"
-              loggedIn={isAuthenticated}
             />
           </div>
 
@@ -223,7 +233,6 @@ export default async function HomePage() {
               title="Top 5 partidos"
               rows={topParties}
               hrefAll="/partidos"
-              loggedIn={isAuthenticated}
               avatarShape="square"
             />
           </div>

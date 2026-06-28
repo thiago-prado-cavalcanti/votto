@@ -56,13 +56,11 @@ export function RankingList({
   title,
   rows,
   hrefAll,
-  loggedIn,
   avatarShape = "round",
 }: {
   title: string;
   rows: RankingRow[];
   hrefAll?: string;
-  loggedIn: boolean;
   avatarShape?: "round" | "square";
 }) {
   const rounded = avatarShape === "round" ? "rounded-full" : "rounded-lg bg-white object-contain p-0.5";
@@ -101,7 +99,7 @@ export function RankingList({
                     <p className="truncate text-sm font-semibold text-navy-900">{row.name}</p>
                     <p className="truncate text-xs text-[var(--color-muted)]">{row.subtitle}</p>
                   </div>
-                  {loggedIn && row.alignment !== null ? (
+                  {row.alignment !== null ? (
                     <span
                       className="font-display text-base font-extrabold tabular-nums"
                       style={{ color: alignmentColor(row.alignment) }}

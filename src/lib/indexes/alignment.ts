@@ -131,3 +131,102 @@ export async function citizenPartyAlignments(
   }
   return out;
 }
+
+// ─── Electorate engagement (agent/party vs. the whole electorate) ─────────────
+// A login-independent companion to the personal alignment: how aligned an agent
+// (or party) is with the AGGREGATE of all citizens who voted. This is the core
+// "engajamento com eleitores" index shown everywhere, even when logged out.
+
+export interface ElectorateAlignment {
+  /** 0–100; null when there is no overlap with citizen votes. */
+  alignment: number | null;
+  /** number of themes that contributed. */
+  basis: number;
+}
+
+/** Mean citizen stance per theme (−1..1), across all citizen votes. */
+async function citizenThemeStances(): Promise<Map<string, number>> {
+  const votes = await db.vote.findMany({
+    where: { voterType: "USER" },
+    select: { themeId: true, value: true },
+  });
+  const acc = new Map<string, { sum: number; n: number }>();
+  for (const v of votes) {
+    const cur = acc.get(v.themeId) ?? { sum: 0, n: 0 };
+    cur.sum += toScore(v.value);
+    cur.n += 1;
+    acc.set(v.themeId, cur);
+  }
+  const out = new Map<string, number>();
+  for (const [themeId, { sum, n }] of acc) out.set(themeId, sum / n);
+  return out;
+}
+
+/**
+ * Electorate engagement for every active agent: how closely the agent's votes
+ * track the aggregate citizen stance per theme. Cached briefly (the electorate
+ * shifts slowly relative to a request).
+ */
+export async function agentElectorateAlignments(): Promise<Map<string, ElectorateAlignment>> {
+  const cacheKey = "electorate:agents:v1";
+  const cached = await cacheGet<[string, ElectorateAlignment][]>(cacheKey);
+  if (cached) return new Map(cached);
+
+  const stances = await citizenThemeStances();
+  const result = new Map<string, ElectorateAlignment>();
+  if (stances.size === 0) return result;
+
+  const themeIds = [...stances.keys()];
+  const agentVotes = await db.vote.findMany({
+    where: { voterType: "AGENT", themeId: { in: themeIds }, agent: { status: "ACTIVE" } },
+    select: { value: true, themeId: true, agent: { select: { kid: true } } },
+  });
+
+  const acc = new Map<string, { sum: number; n: number }>();
+  for (const av of agentVotes) {
+    const kid = av.agent?.kid;
+    if (!kid) continue;
+    const stance = stances.get(av.themeId);
+    if (stance === undefined) continue;
+    const agreement = 1 - Math.abs(toScore(av.value) - stance) / 2;
+    const cur = acc.get(kid) ?? { sum: 0, n: 0 };
+    cur.sum += agreement;
+    cur.n += 1;
+    acc.set(kid, cur);
+  }
+
+  for (const [kid, { sum, n }] of acc) {
+    result.set(kid, { alignment: n > 0 ? Math.round((sum / n) * 100) : null, basis: n });
+  }
+  await cacheSet(cacheKey, [...result.entries()], 120);
+  return result;
+}
+
+/** Electorate engagement per party = average of its active agents' engagement. */
+export async function partyElectorateAlignments(): Promise<
+  Map<string, { alignment: number | null; agents: number }>
+> {
+  const agentMap = await agentElectorateAlignments();
+  const agents = await db.publicAgent.findMany({
+    where: { status: "ACTIVE", party: { isNot: null } },
+    select: { kid: true, party: { select: { kid: true } } },
+  });
+
+  const acc = new Map<string, { sum: number; n: number }>();
+  for (const a of agents) {
+    const pk = a.party?.kid;
+    if (!pk) continue;
+    const al = agentMap.get(a.kid);
+    if (!al || al.alignment === null) continue;
+    const cur = acc.get(pk) ?? { sum: 0, n: 0 };
+    cur.sum += al.alignment;
+    cur.n += 1;
+    acc.set(pk, cur);
+  }
+
+  const out = new Map<string, { alignment: number | null; agents: number }>();
+  for (const [pk, { sum, n }] of acc) {
+    out.set(pk, { alignment: n > 0 ? Math.round(sum / n) : null, agents: n });
+  }
+  return out;
+}

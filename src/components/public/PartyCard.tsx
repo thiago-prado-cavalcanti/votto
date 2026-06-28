@@ -14,6 +14,7 @@ export function PartyCard({
   profileKey,
   profileBasis,
   alignment = null,
+  engagement = null,
 }: {
   party: PublicParty;
   profileLabel: string;
@@ -21,6 +22,8 @@ export function PartyCard({
   profileBasis: number;
   /** 0–100 alignment with the logged-in citizen, or null when N/A. */
   alignment?: number | null;
+  /** 0–100 engagement with the whole electorate (always available). */
+  engagement?: number | null;
 }) {
   const acronym = party.acronym ?? party.name.slice(0, 3).toUpperCase();
 
@@ -60,11 +63,12 @@ export function PartyCard({
           {party.status === "BLOCKED" ? <Badge tone="gray">Bloqueado</Badge> : null}
         </div>
 
-        {alignment !== null ? (
-          <div className="mt-auto pt-2">
-            <AlignmentMeter value={alignment} />
-          </div>
-        ) : null}
+        <div className="mt-auto space-y-2 pt-2">
+          {engagement !== null ? (
+            <AlignmentMeter value={engagement} label="Engajamento com eleitores" />
+          ) : null}
+          {alignment !== null ? <AlignmentMeter value={alignment} label="Seu alinhamento" /> : null}
+        </div>
       </CardBody>
     </Card>
   );

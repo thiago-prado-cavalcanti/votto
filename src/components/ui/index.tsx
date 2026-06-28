@@ -20,7 +20,14 @@ export function Container({
 
 // ─── Button ──────────────────────────────────────────────────────────────────
 
-type ButtonVariant = "primary" | "secondary" | "dark" | "ghost" | "danger" | "outline";
+type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "dark"
+  | "ghost"
+  | "danger"
+  | "outline"
+  | "inverse";
 type ButtonSize = "sm" | "md" | "lg";
 
 const buttonBase =
@@ -34,6 +41,8 @@ const buttonVariants: Record<ButtonVariant, string> = {
   outline: "border-2 border-navy-200 bg-white text-navy-900 hover:border-navy-900 hover:bg-navy-50",
   ghost: "text-navy-800 hover:bg-navy-100",
   danger: "bg-[var(--color-negative)] text-white hover:opacity-90",
+  // For dark backgrounds (e.g. the hero): transparent with a light border.
+  inverse: "border-2 border-white/30 text-white hover:border-white hover:bg-white/10",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
@@ -210,19 +219,19 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 
 // ─── Index meters ────────────────────────────────────────────────────────────
 
-/** Horizontal 0–100 meter used for the alignment index. */
-export function AlignmentMeter({ value }: { value: number }) {
+/** Horizontal 0–100 meter used for the alignment / engagement indexes. */
+export function AlignmentMeter({ value, label = "Alinhamento" }: { value: number; label?: string }) {
   const pct = Math.max(0, Math.min(100, Math.round(value)));
   const tone = pct >= 66 ? "var(--color-positive)" : pct >= 33 ? "var(--color-neutral)" : "var(--color-negative)";
   return (
     <div className="w-full">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-[var(--color-muted)]">Alinhamento</span>
-        <span className="font-semibold" style={{ color: tone }}>
+        <span className="text-[var(--color-muted)]">{label}</span>
+        <span className="font-bold tabular-nums" style={{ color: tone }}>
           {pct}%
         </span>
       </div>
-      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#eef1f5]">
+      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#e7eae8]">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone }} />
       </div>
     </div>
