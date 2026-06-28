@@ -80,7 +80,7 @@ export default async function PartyDetailPage({
               <ImageWithFallback
                 src={dto.logoUrl}
                 alt={acronym}
-                className="h-20 w-20 rounded-2xl border-2 border-navy-200 bg-navy-50 object-contain p-1.5"
+                className="h-20 w-20 rounded-2xl border-2 border-navy-100 bg-navy-50 object-contain p-1.5"
                 fallback={
                   <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-navy-900 text-lg font-extrabold text-white">
                     {acronym}
