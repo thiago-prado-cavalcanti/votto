@@ -29,11 +29,11 @@ export function DataTable<T>({
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-line bg-navy-50/40 text-left">
+            <tr className="border-b-2 border-line bg-navy-50/60 text-left">
               {columns.map((col, i) => (
                 <th
                   key={i}
-                  className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)] ${col.className ?? ""}`}
+                  className={`px-4 py-3.5 text-[11px] font-bold uppercase tracking-widest text-navy-600 ${col.className ?? ""}`}
                 >
                   {col.header}
                 </th>

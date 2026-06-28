@@ -2,7 +2,8 @@
 
 /**
  * Admin sidebar navigation, highlighting the active section based on the current
- * pathname.
+ * pathname. Dark "control room" treatment with an orange accent for the active
+ * item.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -27,13 +28,21 @@ export function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors",
+              "group relative flex items-center rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors",
               active
-                ? "bg-navy-700 text-white"
-                : "text-navy-100 hover:bg-navy-700/40 hover:text-white",
+                ? "bg-white/10 text-white"
+                : "text-navy-200 hover:bg-white/5 hover:text-white",
             )}
           >
+            <span
+              className={cn(
+                "absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-accent-500 transition-opacity",
+                active ? "opacity-100" : "opacity-0",
+              )}
+              aria-hidden
+            />
             {item.label}
           </Link>
         );

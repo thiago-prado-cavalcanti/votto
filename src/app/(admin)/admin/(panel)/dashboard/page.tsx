@@ -51,8 +51,18 @@ export default async function DashboardPage() {
         <Stat label="Votos" value={votes.toLocaleString("pt-BR")} />
       </div>
 
-      <div className="mt-6">
-        <h2 className="mb-3 text-lg font-semibold text-navy-900">Temas recentes</h2>
+      <div className="mt-8">
+        <div className="mb-3 flex items-end justify-between">
+          <h2 className="font-display text-xl font-bold tracking-tight text-navy-900">
+            Temas recentes
+          </h2>
+          <Link
+            href="/admin/temas"
+            className="text-sm font-semibold text-accent-700 hover:text-accent-600"
+          >
+            Ver todos →
+          </Link>
+        </div>
         <Card>
           <CardBody className="p-0">
             {recentThemes.length === 0 ? (
