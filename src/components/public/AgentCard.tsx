@@ -11,11 +11,13 @@ import type { PublicAgentDTO } from "@/lib/dto";
 export function AgentCard({
   agent,
   profileLabel,
+  profileKey,
   profileBasis,
   alignment = null,
 }: {
   agent: PublicAgentDTO;
   profileLabel: string;
+  profileKey?: string;
   profileBasis: number;
   /** 0–100 alignment with the logged-in citizen, or null when N/A. */
   alignment?: number | null;
@@ -59,7 +61,7 @@ export function AgentCard({
           ) : (
             <Badge tone="gray">Sem partido</Badge>
           )}
-          <PositionBadge profileLabel={profileLabel} basis={profileBasis} />
+          <PositionBadge profileLabel={profileLabel} profileKey={profileKey} basis={profileBasis} />
         </div>
 
         {alignment !== null ? (

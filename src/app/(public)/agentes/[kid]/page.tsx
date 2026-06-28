@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Container, Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
 import { PositionBadge } from "@/components/public/PositionBadge";
 import { PositioningChart } from "@/components/public/PositioningChart";
+import { SpectrumBar } from "@/components/public/SpectrumBar";
 import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -95,7 +96,11 @@ export default async function AgentDetailPage({
                   ) : (
                     <Badge tone="gray">Sem partido</Badge>
                   )}
-                  <PositionBadge profileLabel={position.profileLabel} basis={position.basis} />
+                  <PositionBadge
+                    profileLabel={position.profileLabel}
+                    profileKey={position.profileKey}
+                    basis={position.basis}
+                  />
                 </div>
                 {dto.description ? (
                   <p className="mt-4 text-sm leading-relaxed text-ink">{dto.description}</p>
@@ -172,9 +177,15 @@ export default async function AgentDetailPage({
             <CardBody>
               <h2 className="text-lg font-semibold text-navy-900">Posicionamento</h2>
               <p className="mt-1 text-xs text-[var(--color-muted)]">
-                Perfil: <span className="font-medium text-navy-800">{position.profileLabel}</span>
+                Posição:{" "}
+                <span className="font-medium text-navy-800">{position.profileLabel}</span>
               </p>
-              <div className="mt-3">
+              {position.basis > 0 ? (
+                <div className="mt-3">
+                  <SpectrumBar spectrum={position.spectrum} basis={position.basis} />
+                </div>
+              ) : null}
+              <div className="mt-4">
                 <PositioningChart
                   economic={position.economic}
                   social={position.social}

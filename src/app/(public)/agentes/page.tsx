@@ -61,6 +61,7 @@ export default async function AgentsPage({
   type Row = {
     agent: ReturnType<typeof toPublicAgent>;
     profileLabel: string;
+    profileKey: string;
     profileBasis: number;
     alignment: number | null;
   };
@@ -68,6 +69,7 @@ export default async function AgentsPage({
   let rows: Row[] = agents.map((a, i) => ({
     agent: toPublicAgent(a),
     profileLabel: positions[i].profileLabel,
+    profileKey: positions[i].profileKey,
     profileBasis: positions[i].basis,
     alignment: alignments?.get(a.kid)?.alignment ?? null,
   }));
@@ -149,6 +151,7 @@ export default async function AgentsPage({
               key={row.agent.kid}
               agent={row.agent}
               profileLabel={row.profileLabel}
+              profileKey={row.profileKey}
               profileBasis={row.profileBasis}
               alignment={session ? row.alignment : null}
             />

@@ -91,15 +91,17 @@ that user's voting record.
 
 ### 3.2 Political Positioning Index (secondary feature)
 
-Position users and public agents on a political spectrum **without** the dated, polarizing labels
-(far-right, right, center-right, center, center-left, left, far-left).
+Position users, public agents and parties on the classic left↔right political spectrum, using a
+**5-point scale**:
 
-- We want a representation that is **non-pejorative** but still meaningful.
-- **Proposal (to validate):** a multi-dimensional model where each theme is tagged with one or more
-  value dimensions (e.g. economic, social, environmental, security, individual-vs-collective).
-  Aggregate a person's votes per dimension into a position, and surface neutral, descriptive
-  **profile names** instead of a single left↔right line.
-- Keep the naming neutral and descriptive; the labels are a product/branding decision to be refined.
+> Esquerda · Centro-esquerda · Centro · Centro-direita · Direita
+
+- Each theme is tagged with value dimensions on two underlying axes — **economic** (Estado ↔ Mercado)
+  and **social** (Comunidade ↔ Indivíduo), each weighted −1..1.
+- A person's votes are aggregated per axis (YES pushes toward the tag, NO away, ABSTENTION ignored),
+  normalized to −100..100, then combined into a single **spectrum** score (economic-weighted) that
+  maps to one of the five bands. Implementation: `src/lib/indexes/positioning.ts`.
+- The two axes are retained for a supporting two-axis positioning chart.
 
 > The data architecture is **not rigid**. Propose improvements where pertinent — especially around
 > how themes map to positioning dimensions.
@@ -300,7 +302,8 @@ APIs exist for this and require no authentication.
 
 ## 11. Open Questions / To Validate
 
-- Final naming scheme for the **Political Positioning Index** profiles.
+- Tune the economic/social weighting and band thresholds of the **Political Positioning Index**
+  (currently 5-point left↔right: Esquerda · Centro-esquerda · Centro · Centro-direita · Direita).
 - Exact similarity formula and theme weighting for the **Alignment Index**.
 - Theme → positioning-dimension tagging model.
 - Confirm gov.br / bank OIDC provider availability and onboarding requirements.

@@ -1,23 +1,22 @@
 /**
- * Political Positioning Index (CLAUDE.md §3.2) — provisional model (§11).
+ * Political Positioning Index (CLAUDE.md §3.2).
  *
- * We deliberately avoid the dated, polarizing left↔right vocabulary. Instead each
- * person (citizen or agent) is placed on two neutral, descriptive axes derived
- * from how they voted on themes tagged with dimension weights:
+ * Each person (citizen or agent) is placed on the classic left↔right political
+ * spectrum using a 5-point scale:
  *
- *   - Economic axis:  "Estado"  (−)  ↔  "Mercado"  (+)
- *       (preference for collective/state coordination vs market mechanisms)
+ *   Esquerda · Centro-esquerda · Centro · Centro-direita · Direita
+ *
+ * The placement is derived from how they voted on themes tagged with dimension
+ * weights on two underlying axes:
+ *   - Economic axis:  "Estado" (−) ↔ "Mercado" (+)
  *   - Social axis:    "Comunidade" (−) ↔ "Indivíduo" (+)
- *       (shared community norms vs individual autonomy)
  *
  * A YES vote pushes the person toward the theme's tagged direction; NO pushes the
- * opposite; ABSTENTION is ignored. Coordinates are normalized to −100..+100.
- *
- * The derived `profile` is a neutral label (Votto's own vocabulary), NOT a
- * left/right placement. Names are provisional and meant to be validated.
+ * opposite; ABSTENTION is ignored. The two axes are normalized to −100..+100 and
+ * combined into a single left↔right `spectrum` score (economic-weighted), which
+ * maps to one of the five bands. The two axes are retained for the supporting
+ * positioning chart.
  */
-import type { VoteValue } from "@/generated/prisma";
-
 export interface ThemeDimensions {
   /** −1..1 — how a YES vote leans on the economic axis (Estado − / Mercado +). */
   economic?: number;
@@ -30,11 +29,17 @@ export interface Position {
   economic: number;
   /** −100..100 (Comunidade ↔ Indivíduo) */
   social: number;
+  /** −100..100 single left↔right score (negative = esquerda, positive = direita). */
+  spectrum: number;
   /** number of votes that contributed to the position */
   basis: number;
+  /** band key, e.g. "centro-direita" */
   profileKey: string;
+  /** band label, e.g. "Centro-direita" */
   profileLabel: string;
 }
+
+import type { VoteValue } from "@/generated/prisma";
 
 function parseDimensions(value: unknown): ThemeDimensions {
   if (!value || typeof value !== "object") return {};
@@ -47,25 +52,22 @@ function voteScore(v: VoteValue): number {
   return v === "YES" ? 1 : v === "NO" ? -1 : 0;
 }
 
-/**
- * Map raw axis coordinates to a neutral, descriptive profile. The center band is
- * "Equilibrado"; otherwise we combine the dominant pole of each axis.
- */
-export function deriveProfile(economic: number, social: number): { key: string; label: string } {
-  const dead = 18; // central dead-zone → balanced
-  if (Math.abs(economic) <= dead && Math.abs(social) <= dead) {
-    return { key: "balanced", label: "Equilibrado" };
-  }
-  const eco = economic >= 0 ? "mercado" : "estado";
-  const soc = social >= 0 ? "individuo" : "comunidade";
-  const map: Record<string, string> = {
-    "estado:comunidade": "Comunitário",
-    "estado:individuo": "Reformador",
-    "mercado:comunidade": "Pragmático",
-    "mercado:individuo": "Autonomista",
-  };
-  const key = `${eco}:${soc}`;
-  return { key, label: map[key] ?? "Equilibrado" };
+/** The five spectrum bands, ordered left → right (for legends/filters). */
+export const SPECTRUM_BANDS = [
+  { key: "esquerda", label: "Esquerda" },
+  { key: "centro-esquerda", label: "Centro-esquerda" },
+  { key: "centro", label: "Centro" },
+  { key: "centro-direita", label: "Centro-direita" },
+  { key: "direita", label: "Direita" },
+] as const;
+
+/** Map a −100..100 spectrum score to one of the five left↔right bands. */
+export function deriveBand(spectrum: number): { key: string; label: string } {
+  if (spectrum >= 50) return { key: "direita", label: "Direita" };
+  if (spectrum >= 15) return { key: "centro-direita", label: "Centro-direita" };
+  if (spectrum > -15) return { key: "centro", label: "Centro" };
+  if (spectrum > -50) return { key: "centro-esquerda", label: "Centro-esquerda" };
+  return { key: "esquerda", label: "Esquerda" };
 }
 
 /**
@@ -98,9 +100,18 @@ export function computePosition(
 
   const economic = ecoW > 0 ? Math.round((ecoSum / ecoW) * 100) : 0;
   const social = socW > 0 ? Math.round((socSum / socW) * 100) : 0;
-  const profile = deriveProfile(economic, social);
+  // Single left↔right score: economic axis dominates, social contributes less.
+  const spectrum = Math.max(-100, Math.min(100, Math.round(economic * 0.7 + social * 0.3)));
+  const band = deriveBand(spectrum);
 
-  return { economic, social, basis, profileKey: profile.key, profileLabel: profile.label };
+  return {
+    economic,
+    social,
+    spectrum,
+    basis,
+    profileKey: band.key,
+    profileLabel: band.label,
+  };
 }
 
 export const POSITIONING_AXES = {
