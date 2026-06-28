@@ -51,8 +51,10 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
   const [active, setActive] = React.useState(tabs[0]?.key ?? "");
   const current = tabs.find((t) => t.key === active) ?? tabs[0];
   if (!current) return null;
-  const rounded =
-    current.avatarShape === "square" ? "rounded-lg bg-white object-contain p-0.5" : "rounded-full";
+  const avatarClass =
+    current.avatarShape === "square"
+      ? "rounded-lg border border-navy-200 bg-navy-50 object-contain p-0.5"
+      : "rounded-full border border-navy-200 bg-navy-50 object-cover";
 
   return (
     <Card>
@@ -106,12 +108,12 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
                   <ImageWithFallback
                     src={row.imageUrl}
                     alt={row.name}
-                    className={cn("h-9 w-9", rounded, "object-cover")}
+                    className={cn("h-9 w-9", avatarClass)}
                     fallback={
                       <div
                         className={cn(
                           "flex h-9 w-9 items-center justify-center bg-navy-100 text-xs font-bold text-navy-700",
-                          rounded,
+                          current.avatarShape === "square" ? "rounded-lg" : "rounded-full",
                         )}
                       >
                         {initialsOf(row.name)}

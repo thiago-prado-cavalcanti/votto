@@ -37,7 +37,7 @@ export function AgentCard({
           <ImageWithFallback
             src={agent.imageUrl}
             alt={fullName}
-            className="h-14 w-14 rounded-full object-cover"
+            className="h-14 w-14 rounded-full border border-navy-200 bg-navy-50 object-cover"
             fallback={
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-navy-100 text-sm font-semibold text-navy-700">
                 {initials}
