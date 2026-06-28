@@ -1,0 +1,87 @@
+# Production stack for a single box (everything bundled). sa-east-1 Lightsail/EC2.
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Env comes from .env.production (copy from .env.example and fill secrets).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-votto}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-votto}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-votto}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Not published to the host — only the app reaches it over the compose network.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1"]
+    volumes:
+      - redisdata:/data
+
+  web:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      # Point the app at the bundled services (override any host values).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-votto}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-votto}?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    expose:
+      - "3000"
+    ports:
+      # Remove this once Caddy (HTTPS) is in front; kept for IP:3000 access.
+      - "3000:3000"
+
+  # One-off migrations / seed. Uses the build stage (full deps + Prisma CLI + source).
+  #   docker compose -f docker-compose.prod.yml run --rm migrate
+  #   docker compose -f docker-compose.prod.yml run --rm migrate npm run db:seed
+  migrate:
+    build:
+      context: .
+      target: builder
+    profiles: ["tools"]
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-votto}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-votto}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npx", "prisma", "migrate", "deploy"]
+
+  # Optional HTTPS reverse proxy. Enable with: --profile proxy. Needs a domain
+  # (set DOMAIN in .env.production) pointing to this box, ports 80/443 open.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["proxy"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:

@@ -1,0 +1,6 @@
+# Automatic HTTPS for Votto. Set DOMAIN in .env.production (e.g. votto.com.br).
+# Caddy provisions and renews TLS certificates automatically.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}

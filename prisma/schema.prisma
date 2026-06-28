@@ -8,8 +8,11 @@
 //   - Imported records are deduped idempotently by (source, externalRef).
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  // "native" for local dev (macOS); the Debian target matches the node:20-slim
+  // production Docker image.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
