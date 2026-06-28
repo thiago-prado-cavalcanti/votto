@@ -75,6 +75,14 @@
 
 :root {
   color-scheme: light;
+
+  /* Emitted as plain CSS vars (not only via @theme) so inline styles and
+     arbitrary var() references resolve reliably. */
+  --color-positive: #0e9d6a;
+  --color-negative: #ce3a4b;
+  --color-vote-yes: #0e9d6a;
+  --color-vote-no: #ce3a4b;
+  --color-vote-abstention: #64748b;
 }
 
 html {
