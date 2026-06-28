@@ -132,10 +132,10 @@ export async function citizenPartyAlignments(
   return out;
 }
 
-// ─── Electorate engagement (agent/party vs. the whole electorate) ─────────────
+// ─── Global alignment (agent/party vs. the whole electorate) ──────────────────
 // A login-independent companion to the personal alignment: how aligned an agent
-// (or party) is with the AGGREGATE of all citizens who voted. This is the core
-// "engajamento com eleitores" index shown everywhere, even when logged out.
+// (or party) is with the AGGREGATE of all citizens who voted. This is the
+// "Alinhamento com eleitores" index shown everywhere, even when logged out.
 
 export interface ElectorateAlignment {
   /** 0–100; null when there is no overlap with citizen votes. */

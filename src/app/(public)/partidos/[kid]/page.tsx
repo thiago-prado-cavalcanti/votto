@@ -137,41 +137,52 @@ export default async function PartyDetailPage({
         <div className="flex flex-col gap-6">
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Engajamento com eleitores</h2>
-              {engagement !== null ? (
-                <div className="mt-3">
-                  <AlignmentMeter value={engagement} label="Concordância com o eleitorado" />
-                  <p className="mt-2 text-xs text-[var(--color-muted)]">
-                    O quanto os agentes do partido acompanham o conjunto dos cidadãos.
+              <h2 className="text-lg font-semibold text-navy-900">Alinhamento</h2>
+
+              {/* Global alignment (always shown) */}
+              <div className="mt-3">
+                {engagement !== null ? (
+                  <>
+                    <AlignmentMeter value={engagement} label="Alinhamento com eleitores" />
+                    <p className="mt-2 text-xs text-[var(--color-muted)]">
+                      O quanto os agentes do partido acompanham o conjunto dos cidadãos.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-[var(--color-muted)]">
+                    Ainda não há votos de cidadãos suficientes para o alinhamento com eleitores.
                   </p>
+                )}
+              </div>
+
+              {/* Personal alignment (logged-in citizens) */}
+              {session ? (
+                <div className="mt-4 border-t border-[var(--color-line)] pt-4">
+                  {partyAlignment !== null ? (
+                    <>
+                      <AlignmentMeter value={partyAlignment} label="Seu alinhamento" />
+                      <p className="mt-2 text-xs text-[var(--color-muted)]">
+                        Média do seu alinhamento com os agentes do partido.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-[var(--color-muted)]">
+                      Vote em mais temas para calcular o seu alinhamento com este partido.
+                    </p>
+                  )}
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-[var(--color-muted)]">
-                  Ainda não há votos de cidadãos em comum para calcular.
-                </p>
+                <div className="mt-4 border-t border-[var(--color-line)] pt-4">
+                  <p className="text-xs text-[var(--color-muted)]">
+                    <Link href="/login" className="font-medium text-navy-700 hover:text-navy-900">
+                      Entre
+                    </Link>{" "}
+                    para ver o seu alinhamento pessoal.
+                  </p>
+                </div>
               )}
             </CardBody>
           </Card>
-
-          {session ? (
-            <Card>
-              <CardBody>
-                <h2 className="text-lg font-semibold text-navy-900">Seu alinhamento</h2>
-                {partyAlignment !== null ? (
-                  <div className="mt-3">
-                    <AlignmentMeter value={partyAlignment} />
-                    <p className="mt-2 text-xs text-[var(--color-muted)]">
-                      Média do alinhamento com os agentes do partido.
-                    </p>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-[var(--color-muted)]">
-                    Vote em mais temas para calcular o alinhamento com este partido.
-                  </p>
-                )}
-              </CardBody>
-            </Card>
-          ) : null}
 
           <Card>
             <CardBody>
@@ -192,14 +203,6 @@ export default async function PartyDetailPage({
                   basis={position.basis}
                 />
               </div>
-              {!session ? (
-                <p className="mt-3 text-xs text-[var(--color-muted)]">
-                  <Link href="/login" className="text-navy-600 hover:text-navy-800">
-                    Entre
-                  </Link>{" "}
-                  para ver seu alinhamento com este partido.
-                </p>
-              ) : null}
             </CardBody>
           </Card>
         </div>

@@ -2,12 +2,10 @@
  * Public home page: pitch for Votto, headline platform statistics and a
  * "Temas quentes" section with quick voting.
  */
-import Link from "next/link";
-import { Container, Card, CardBody, ButtonLink, Badge } from "@/components/ui";
+import { Container, Card, CardBody, ButtonLink } from "@/components/ui";
 import { StatStrip } from "@/components/public/StatStrip";
 import { ThemeCard } from "@/components/public/ThemeCard";
-import { RankingList, type RankingRow } from "@/components/public/RankingList";
-import { ImageWithFallback } from "@/components/public/ImageWithFallback";
+import { RankingTabs, type RankingRow } from "@/components/public/RankingTabs";
 import { db } from "@/lib/db";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -54,16 +52,15 @@ export default async function HomePage() {
     currentVotes = new Map(votes.map((v) => [v.theme.kid, v.value]));
   }
 
-  // ─── Alignment ranking (top deputies / senators / parties / president) ──────
+  // ─── Alignment ranking (top deputies / senators / parties) ──────────────────
   type AgentWithParty = Prisma.PublicAgentGetPayload<{ include: { party: true } }>;
-  const [deputies, senators, president, allParties] = await Promise.all([
+  const [deputies, senators, allParties] = await Promise.all([
     db.publicAgent.findMany({ where: { status: "ACTIVE", type: "FEDERAL_DEPUTY" }, include: { party: true } }),
     db.publicAgent.findMany({ where: { status: "ACTIVE", type: "SENATOR" }, include: { party: true } }),
-    db.publicAgent.findFirst({ where: { status: "ACTIVE", type: "PRESIDENT" }, include: { party: true } }),
     db.party.findMany({ where: { status: "ACTIVE" } }),
   ]);
 
-  // Electorate engagement (always available) + personal alignment (when logged in).
+  // Global alignment with the electorate (always) + personal alignment (logged in).
   const [agentEngage, partyEngage] = await Promise.all([
     agentElectorateAlignments(),
     partyElectorateAlignments(),
@@ -83,7 +80,7 @@ export default async function HomePage() {
     }
   }
 
-  // Ranking score: personal alignment when logged in, else electorate engagement.
+  // Ranking score: personal alignment when logged in, else global alignment.
   const toAgentRow = (a: AgentWithParty): RankingRow => ({
     kid: a.kid,
     name: `${a.firstName} ${a.lastName}`.trim(),
@@ -112,7 +109,6 @@ export default async function HomePage() {
     }))
     .sort(byAlignment)
     .slice(0, 5);
-  const presidentRow = president ? toAgentRow(president) : null;
 
   return (
     <>
@@ -124,8 +120,10 @@ export default async function HomePage() {
         </div>
         <Container className="relative py-20 sm:py-28">
           <div className="max-w-3xl">
-            <Badge tone="accent">Democracia direta</Badge>
-            <h1 className="mt-5 font-display text-5xl font-extrabold leading-[1.03] tracking-tight text-white sm:text-6xl lg:text-7xl">
+            <p className="text-base font-semibold uppercase tracking-[0.18em] text-accent-500 sm:text-lg">
+              Democracia direta
+            </p>
+            <h1 className="mt-4 font-display text-5xl font-extrabold leading-[1.03] tracking-tight text-white sm:text-6xl lg:text-7xl">
               Sua voz no <span className="text-accent-500">centro</span> da democracia.
             </h1>
             <p className="mt-6 max-w-2xl text-lg text-navy-200 sm:text-xl">
@@ -165,8 +163,8 @@ export default async function HomePage() {
               </h2>
               <p className="mt-1 text-sm text-[var(--color-muted)]">
                 {isAuthenticated
-                  ? "Quem mais vota como você — do maior para o menor alinhamento."
-                  : "Engajamento dos representantes com o eleitorado. Entre para ver seu alinhamento pessoal."}
+                  ? "Quem mais vota como você — do maior para o menor alinhamento pessoal."
+                  : "Alinhamento dos representantes com o eleitorado. Entre para ver seu alinhamento pessoal."}
               </p>
             </div>
             {!isAuthenticated ? (
@@ -176,64 +174,29 @@ export default async function HomePage() {
             ) : null}
           </div>
 
-          {/* President highlight */}
-          {presidentRow ? (
-            <Card className="mt-6 overflow-hidden">
-              <CardBody className="flex items-center gap-4 bg-navy-900 text-white sm:gap-5">
-                <ImageWithFallback
-                  src={presidentRow.imageUrl}
-                  alt={presidentRow.name}
-                  className="h-16 w-16 rounded-2xl object-cover"
-                  fallback={
-                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-lg font-extrabold text-white">
-                      {presidentRow.name.split(" ").slice(0, 2).map((p) => p[0]).join("")}
-                    </div>
-                  }
-                />
-                <div className="min-w-0 flex-1">
-                  <Badge tone="accent">Presidente</Badge>
-                  <Link href={presidentRow.href} className="mt-1.5 block">
-                    <p className="truncate font-display text-xl font-extrabold">{presidentRow.name}</p>
-                  </Link>
-                  <p className="truncate text-sm text-navy-300">{presidentRow.subtitle}</p>
-                </div>
-                <div className="text-right">
-                  {presidentRow.alignment !== null ? (
-                    <>
-                      <div className="font-display text-3xl font-extrabold text-accent-500">
-                        {presidentRow.alignment}%
-                      </div>
-                      <div className="text-xs text-navy-300">
-                        {isAuthenticated ? "seu alinhamento" : "engajamento"}
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-sm font-medium text-navy-300">—</span>
-                  )}
-                </div>
-              </CardBody>
-            </Card>
-          ) : null}
-
-          <div className="mt-6 grid gap-5 lg:grid-cols-2">
-            <RankingList
-              title="Top 10 deputados federais"
-              rows={topDeputies}
-              hrefAll="/agentes?type=FEDERAL_DEPUTY"
-            />
-            <RankingList
-              title="Top 10 senadores"
-              rows={topSenators}
-              hrefAll="/agentes?type=SENATOR"
-            />
-          </div>
-
-          <div className="mt-5">
-            <RankingList
-              title="Top 5 partidos"
-              rows={topParties}
-              hrefAll="/partidos"
-              avatarShape="square"
+          <div className="mt-6">
+            <RankingTabs
+              tabs={[
+                {
+                  key: "deputados",
+                  label: "Deputados federais",
+                  rows: topDeputies,
+                  hrefAll: "/agentes?type=FEDERAL_DEPUTY",
+                },
+                {
+                  key: "senadores",
+                  label: "Senadores",
+                  rows: topSenators,
+                  hrefAll: "/agentes?type=SENATOR",
+                },
+                {
+                  key: "partidos",
+                  label: "Partidos",
+                  rows: topParties,
+                  hrefAll: "/partidos",
+                  avatarShape: "square",
+                },
+              ]}
             />
           </div>
         </section>
@@ -275,7 +238,7 @@ export default async function HomePage() {
             <div>
               <h2 className="text-2xl font-bold tracking-tight text-navy-900">Temas quentes</h2>
               <p className="mt-1 text-sm text-[var(--color-muted)]">
-                Os temas com maior engajamento dos cidadãos agora.
+                Os temas com maior participação dos cidadãos agora.
               </p>
             </div>
             <ButtonLink href="/temas" variant="ghost" size="sm">

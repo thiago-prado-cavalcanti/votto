@@ -149,47 +149,58 @@ export default async function AgentDetailPage({
           </Card>
         </div>
 
-        {/* Sidebar: positioning + alignment */}
+        {/* Sidebar: alignment + positioning */}
         <div className="flex flex-col gap-6">
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Engajamento com eleitores</h2>
-              {engagement !== null ? (
-                <div className="mt-3">
-                  <AlignmentMeter value={engagement} label="Concordância com o eleitorado" />
-                  <p className="mt-2 text-xs text-[var(--color-muted)]">
-                    O quanto os votos deste agente acompanham o conjunto dos cidadãos.
+              <h2 className="text-lg font-semibold text-navy-900">Alinhamento</h2>
+
+              {/* Global alignment (always shown) */}
+              <div className="mt-3">
+                {engagement !== null ? (
+                  <>
+                    <AlignmentMeter value={engagement} label="Alinhamento com eleitores" />
+                    <p className="mt-2 text-xs text-[var(--color-muted)]">
+                      O quanto os votos deste agente acompanham o conjunto dos cidadãos.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-[var(--color-muted)]">
+                    Ainda não há votos de cidadãos suficientes para o alinhamento com eleitores.
                   </p>
+                )}
+              </div>
+
+              {/* Personal alignment (logged-in citizens) */}
+              {session ? (
+                <div className="mt-4 border-t border-[var(--color-line)] pt-4">
+                  {alignment !== null ? (
+                    <>
+                      <AlignmentMeter value={alignment} label="Seu alinhamento" />
+                      <p className="mt-2 text-xs text-[var(--color-muted)]">
+                        Baseado em {sharedThemes}{" "}
+                        {sharedThemes === 1 ? "tema em comum" : "temas em comum"}.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-[var(--color-muted)]">
+                      Vocês ainda não votaram nos mesmos temas. Vote mais para calcular o seu
+                      alinhamento.
+                    </p>
+                  )}
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-[var(--color-muted)]">
-                  Ainda não há votos de cidadãos em comum para calcular.
-                </p>
+                <div className="mt-4 border-t border-[var(--color-line)] pt-4">
+                  <p className="text-xs text-[var(--color-muted)]">
+                    <Link href="/login" className="font-medium text-navy-700 hover:text-navy-900">
+                      Entre
+                    </Link>{" "}
+                    para ver o seu alinhamento pessoal.
+                  </p>
+                </div>
               )}
             </CardBody>
           </Card>
-
-          {session ? (
-            <Card>
-              <CardBody>
-                <h2 className="text-lg font-semibold text-navy-900">Seu alinhamento</h2>
-                {alignment !== null ? (
-                  <div className="mt-3">
-                    <AlignmentMeter value={alignment} />
-                    <p className="mt-2 text-xs text-[var(--color-muted)]">
-                      Baseado em {sharedThemes}{" "}
-                      {sharedThemes === 1 ? "tema em comum" : "temas em comum"}.
-                    </p>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-[var(--color-muted)]">
-                    Vocês ainda não votaram nos mesmos temas. Vote mais para calcular o
-                    alinhamento.
-                  </p>
-                )}
-              </CardBody>
-            </Card>
-          ) : null}
 
           <Card>
             <CardBody>

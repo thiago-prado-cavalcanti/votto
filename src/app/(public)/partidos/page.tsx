@@ -86,7 +86,7 @@ export default async function PartiesPage({
             <Field label="Ordenar por">
               <Select name="sort" defaultValue={sort ?? ""}>
                 <option value="">Nome</option>
-                <option value="engagement">Engajamento com eleitores</option>
+                <option value="engagement">Alinhamento com eleitores</option>
                 <option value="agents">Nº de agentes</option>
                 {session ? <option value="alignment">Seu alinhamento</option> : null}
               </Select>

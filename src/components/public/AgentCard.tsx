@@ -68,7 +68,7 @@ export function AgentCard({
 
         <div className="mt-auto space-y-2 pt-2">
           {engagement !== null ? (
-            <AlignmentMeter value={engagement} label="Engajamento com eleitores" />
+            <AlignmentMeter value={engagement} label="Alinhamento com eleitores" />
           ) : null}
           {alignment !== null ? <AlignmentMeter value={alignment} label="Seu alinhamento" /> : null}
         </div>

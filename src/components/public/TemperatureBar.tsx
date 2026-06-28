@@ -19,7 +19,7 @@ export function TemperatureBar({
   return (
     <div>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-[var(--color-muted)]">Engajamento</span>
+        <span className="text-[var(--color-muted)]">Temperatura</span>
         <span className="font-semibold text-colonial-700">{temperature}°</span>
       </div>
       <div className="mt-1 flex h-2 w-full overflow-hidden rounded-full bg-[#eef1f5]">

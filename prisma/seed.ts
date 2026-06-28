@@ -170,14 +170,8 @@ const FALLBACK_SENATORS: RawSenator[] = [
   { codigo: "6358", nome: "Ana Paula Lobato", sigla: "PSB", uf: "MA" },
 ];
 
-/** The current President of the Republic. */
-const PRESIDENT = {
-  ref: "seed:agent:pres:lula",
-  firstName: "Luiz Inácio",
-  lastName: "Lula da Silva",
-  partySigla: "PT",
-  imageUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/Lula_-_foto_oficial05.jpg",
-};
+// Note: we deliberately do NOT seed the President or governors — they don't vote
+// directly on themes, so there's no clear basis to measure their alignment.
 
 /** Build a stable party ref from a party acronym. */
 function partyRef(sigla: string): string {
@@ -312,21 +306,9 @@ async function buildRoster(): Promise<{ parties: SeedParty[]; agents: SeedAgent[
   const agents: SeedAgent[] = [
     ...deputies.map(deputyToAgent),
     ...senators.map(senatorToAgent),
-    {
-      ref: PRESIDENT.ref,
-      firstName: PRESIDENT.firstName,
-      lastName: PRESIDENT.lastName,
-      type: AgentType.PRESIDENT,
-      partyRef: partyRef(PRESIDENT.partySigla),
-      imageUrl: PRESIDENT.imageUrl,
-    },
   ];
 
-  const siglas = [
-    ...deputies.map((d) => d.siglaPartido),
-    ...senators.map((s) => s.sigla),
-    PRESIDENT.partySigla,
-  ];
+  const siglas = [...deputies.map((d) => d.siglaPartido), ...senators.map((s) => s.sigla)];
   const parties = buildParties(siglas, partyName);
 
   return { parties, agents, live };
@@ -804,7 +786,7 @@ async function main(): Promise<void> {
   console.log(`   • Partidos:   ${partyIdByRef.size} (reais, com logo)`);
   console.log(
     `   • Agentes:    ${agentIds.length} reais — ${byType(AgentType.FEDERAL_DEPUTY)} deputados, ` +
-      `${byType(AgentType.SENATOR)} senadores, ${byType(AgentType.PRESIDENT)} presidente`,
+      `${byType(AgentType.SENATOR)} senadores`,
   );
   console.log(`   • Temas:      ${themeIds.length}`);
   console.log(`   • Votos agentes: ${agentVoteCount}`);
