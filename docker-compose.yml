@@ -1,0 +1,33 @@
+# Local infrastructure for Votto: PostgreSQL + Redis.
+# Usage: `docker compose up -d`
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: votto-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: votto
+      POSTGRES_PASSWORD: votto
+      POSTGRES_DB: votto
+    ports:
+      - "5432:5432"
+    volumes:
+      - votto_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U votto"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: votto-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - votto_redisdata:/data
+
+volumes:
+  votto_pgdata:
+  votto_redisdata:

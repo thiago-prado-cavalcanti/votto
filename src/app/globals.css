@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/*
+ * Votto design tokens (CLAUDE.md §9): sober, Brazil-associated colors —
+ * navy blue + colonial green — modern sans-serif, fintech-grade polish.
+ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Brand: navy (primary) */
+  --color-navy-50: #eef3f9;
+  --color-navy-100: #d6e2f0;
+  --color-navy-200: #adc5e1;
+  --color-navy-300: #7ea3cf;
+  --color-navy-400: #4c79b4;
+  --color-navy-500: #2d5a96;
+  --color-navy-600: #1f4474;
+  --color-navy-700: #163356;
+  --color-navy-800: #0f2540;
+  --color-navy-900: #0a1a2e;
+  --color-navy-950: #061120;
+
+  /* Brand: colonial green (secondary/accent) */
+  --color-colonial-50: #eef6f1;
+  --color-colonial-100: #d4e9dd;
+  --color-colonial-200: #a8d3bb;
+  --color-colonial-300: #74b594;
+  --color-colonial-400: #459170;
+  --color-colonial-500: #2f7355;
+  --color-colonial-600: #235a43;
+  --color-colonial-700: #1b4636;
+  --color-colonial-800: #15372a;
+  --color-colonial-900: #0f2920;
+
+  /* Semantic surfaces */
+  --color-ink: #0b1622;
+  --color-muted: #5b6b7b;
+  --color-line: #e3e8ee;
+  --color-surface: #ffffff;
+  --color-canvas: #f6f8fb;
+
+  --color-positive: #1b7a4b;
+  --color-negative: #b4232a;
+  --color-neutral: #8a6d1f;
+
+  --radius-card: 16px;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+/* Subtle focus ring consistent across interactive elements. */
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-navy-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

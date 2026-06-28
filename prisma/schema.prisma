@@ -1,0 +1,275 @@
+// Votto data model.
+// Conventions (see CLAUDE.md):
+//   - All names in English.
+//   - Internal `id` is NEVER exposed externally; externally-referenced entities
+//     carry a `kid` (short public id). DTO mappers omit id/*Id (see src/lib/ids.ts).
+//   - Citizen PII is minimized: only first/last name in clear; CPF is encrypted,
+//     plus a deterministic HMAC (`cpfHash`) for dedup and a 6-digit clear prefix.
+//   - Imported records are deduped idempotently by (source, externalRef).
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum AgentType {
+  FEDERAL_DEPUTY
+  STATE_DEPUTY
+  COUNCILLOR
+  SENATOR
+  GOVERNOR
+  MAYOR
+  PRESIDENT
+}
+
+enum VoteValue {
+  YES
+  NO
+  ABSTENTION
+}
+
+enum VoterType {
+  USER
+  AGENT
+}
+
+enum Scope {
+  NATIONAL
+  STATE
+  MUNICIPAL
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum EntityStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum ImportSource {
+  MANUAL
+  CAMARA
+  SENADO
+}
+
+// ─── Core entities ─────────────────────────────────────────────────────────
+
+/// Political party. `kid` is the public identifier used in URLs/DTOs.
+model Party {
+  id          String       @id @default(cuid())
+  kid         String       @unique
+  name        String
+  acronym     String?
+  description String?
+  logoUrl     String?
+  status      EntityStatus @default(ACTIVE)
+
+  // Denormalized counts for fast dashboards (kept in sync on writes/imports).
+  agentCount  Int          @default(0)
+
+  // Provenance for idempotent imports.
+  source      ImportSource @default(MANUAL)
+  externalRef String?
+
+  agents      PublicAgent[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([source, externalRef])
+  @@index([status])
+}
+
+/// Elected/public agent (deputy, councillor, senator, governor, etc.).
+model PublicAgent {
+  id           String       @id @default(cuid())
+  kid          String       @unique
+  firstName    String
+  lastName     String
+  email        String?
+  phone        String?
+  imageUrl     String?
+  description  String?
+
+  // CPF stored encrypted; HMAC for dedup; 6-digit clear prefix. Optional for agents
+  // imported from public sources where CPF is not provided.
+  cpfEncrypted String?
+  cpfHash      String?      @unique
+  cpfPrefix    String?
+
+  type         AgentType
+  state        String?
+  municipality String?
+  status       EntityStatus @default(ACTIVE)
+
+  partyId      String?
+  party        Party?       @relation(fields: [partyId], references: [id])
+
+  source       ImportSource @default(MANUAL)
+  externalRef  String?
+
+  votes        Vote[]
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([source, externalRef])
+  @@index([type])
+  @@index([state])
+  @@index([status])
+  @@index([partyId])
+}
+
+/// A political theme (bill, amendment, law, etc.) citizens and agents vote on.
+model Theme {
+  id          String       @id @default(cuid())
+  kid         String       @unique
+  name        String
+  summary     String       @default("")
+  scope       Scope        @default(NATIONAL)
+  state       String?
+  municipality String?
+  status      EntityStatus @default(ACTIVE)
+
+  // Positioning dimensions: { economic: -1..1, social: -1..1, ... } weights used by
+  // the political positioning index. Provisional model (CLAUDE.md §11).
+  dimensions  Json?
+
+  // Denormalized vote tallies for fast "temperature" display.
+  yesCount    Int          @default(0)
+  noCount     Int          @default(0)
+  absCount    Int          @default(0)
+
+  source      ImportSource @default(MANUAL)
+  externalRef String?
+
+  articles    Article[]
+  votes       Vote[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([source, externalRef])
+  @@index([status])
+  @@index([scope])
+}
+
+/// Source article attached to a Theme. AI enrichment reads it to grow the summary.
+model Article {
+  id          String       @id @default(cuid())
+  kid         String       @unique
+  title       String?
+  originalUrl String
+  downloadUrl String?
+
+  themeId     String
+  theme       Theme        @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  source      ImportSource @default(MANUAL)
+  externalRef String?
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([source, externalRef])
+  @@index([themeId])
+}
+
+/// A vote on a Theme by either a citizen (User) or a PublicAgent.
+/// One vote per CPF per Theme is enforced via @@unique([cpfHash, themeId]).
+model Vote {
+  id          String       @id @default(cuid())
+  value       VoteValue
+  voterType   VoterType
+
+  themeId     String
+  theme       Theme        @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  // Citizen vote: linked by user + cpfHash (no plaintext CPF).
+  userId      String?
+  user        User?        @relation(fields: [userId], references: [id])
+  cpfHash     String?
+
+  // Agent vote.
+  agentId     String?
+  agent       PublicAgent? @relation(fields: [agentId], references: [id])
+
+  source      ImportSource @default(MANUAL)
+  externalRef String?
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // One citizen vote per CPF per theme.
+  @@unique([cpfHash, themeId])
+  // One agent vote per theme.
+  @@unique([agentId, themeId])
+  @@unique([source, externalRef])
+  @@index([themeId])
+  @@index([userId])
+  @@index([agentId])
+}
+
+/// Citizen / voter. Minimal PII: only first/last name in clear (CLAUDE.md §5).
+model User {
+  id           String   @id @default(cuid())
+  kid          String   @unique
+  firstName    String
+  lastName     String
+
+  cpfEncrypted String
+  cpfHash      String   @unique
+  cpfPrefix    String
+
+  // Bumped on each vote to invalidate cached alignment indexes.
+  voteVersion  Int      @default(0)
+
+  votes        Vote[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Backend administrator (separate auth from citizens).
+model Administrator {
+  id           String       @id @default(cuid())
+  kid          String       @unique
+  firstName    String
+  lastName     String
+  email        String       @unique
+  mobile       String?
+  passwordHash String
+  role         AdminRole    @default(EDITOR)
+  imageUrl     String?
+  status       EntityStatus @default(ACTIVE)
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([status])
+}
+
+/// Tracks the last successful sync watermark per import source (resumable imports).
+model ImportRun {
+  id          String       @id @default(cuid())
+  source      ImportSource
+  startedAt   DateTime     @default(now())
+  finishedAt  DateTime?
+  itemsSeen   Int          @default(0)
+  itemsUpserted Int        @default(0)
+  ok          Boolean      @default(false)
+  note        String?
+
+  @@index([source])
+}

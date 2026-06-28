@@ -8,6 +8,10 @@ node_modules/
 out/
 dist/
 build/
+next-env.d.ts
+
+# Prisma generated client (regenerated via `prisma generate`)
+src/generated/
 
 # Environment & secrets
 .env
