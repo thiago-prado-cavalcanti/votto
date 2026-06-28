@@ -132,8 +132,10 @@ Position users and public agents on a political spectrum **without** the dated, 
 ### Themes & Articles ingestion
 
 - A Theme can be created with **multiple Articles**.
-- When an Article is uploaded, it must pass through an **AI step** that reads the article and
-  **incrementally enriches the Theme's summary**.
+- Ingestion can be **manual** (admin upload) **or automated** via the official-source integration
+  (§8) — both paths converge on the same model.
+- When an Article is ingested (manually or imported), it must pass through an **AI step** that reads
+  the article and **incrementally enriches the Theme's summary**.
 
 ---
 
@@ -225,7 +227,56 @@ Each method **must have a description** (doc comment). Required operations:
 
 ---
 
-## 8. Design
+## 8. Integration (official sources)
+
+Themes, articles, and **public-agent votes** must be importable from — and continuously monitored
+against — official Brazilian sources, instead of relying only on manual upload. Public open-data
+APIs exist for this and require no authentication.
+
+### Sources
+
+- **Câmara dos Deputados — Dados Abertos API v2** — `https://dadosabertos.camara.leg.br/api/v2`
+  (REST, JSON, no auth, refreshed daily). Relevant collections:
+  - `proposicoes` → **Theme** candidates (bills/amendments).
+  - `votacoes` and their `votos` → **public-agent Votes** on themes.
+  - `deputados`, `partidos` → **PublicAgent** / **Party** sync.
+- **Senado Federal — Dados Abertos** — `https://legis.senado.leg.br/dadosabertos` (XML by default;
+  JSON via `.json` suffix or `Accept: application/json`). Relevant resources:
+  - `materia` → **Theme** candidates.
+  - `votacoes` and `senador/{codigo}/votacoes` → **public-agent Votes**.
+  - `materia/atualizadas.json?numdias=N` → polling endpoint for what changed recently.
+- Keep the source list **extensible** for other official bodies (state assemblies, municipal
+  chambers, TSE, etc.) behind a common importer interface.
+
+### Mapping to the data model
+
+- Official bill/amendment → **Theme** (name + summary). Attached official documents/links →
+  **Article** (original link + download link); each imported Article still passes through the **AI
+  enrichment step** (§4) that incrementally updates the Theme summary.
+- Official roll-call vote → **Vote** cast by a **PublicAgent** (yes / no / abstention), mapped to our
+  `+1 / -1 / 0` model.
+- Official legislators/parties → **PublicAgent** / **Party** records.
+
+### Sync design (MVP → scalable)
+
+- **Pull/polling** model: a scheduled job periodically queries each source's "recently updated"
+  endpoint (e.g. Câmara by date range, Senado `materia/atualizadas`), then fetches details only for
+  changed items. No source pushes to us.
+- **Idempotent upserts:** store each source's native identifier as an internal `source` +
+  `external_ref` pair and upsert on it, so re-runs never duplicate. (These are the government's IDs,
+  used only internally for dedup — they are **not** exposed externally; our public identifiers remain
+  `kid` / `tsuuid` per §5.)
+- **Importer abstraction:** one importer per source behind a shared interface (fetch-updated →
+  normalize → upsert), so new official bodies can be added without touching core logic.
+- **Provenance & trust:** persist source, fetch timestamp, and raw payload reference for auditability;
+  imported records are clearly attributable to their official origin.
+- **Resilience:** rate-limit, retry with backoff, and tolerate source downtime without data loss
+  (resume from last successful sync watermark).
+- Start simple (a cron-style job hitting the APIs); evolve to a queue/worker pipeline as volume grows.
+
+---
+
+## 9. Design
 
 - Clean, modern, conveying **robustness and security**.
 - **Sober colors** associated with Brazil — navy blue or colonial green.
@@ -235,20 +286,24 @@ Each method **must have a description** (doc comment). Required operations:
 
 ---
 
-## 9. Conventions
+## 10. Conventions
 
 - All database objects, columns, and code are in **English**.
 - Every backend method has a descriptive doc comment.
 - Never expose internal IDs externally (§5).
 - Never run DB statements/migrations from this environment (§5).
+- Imported records are upserted idempotently by `(source, external_ref)`; never expose source IDs
+  externally (§8).
 - Prefer the simplest design that meets the requirement.
 
 ---
 
-## 10. Open Questions / To Validate
+## 11. Open Questions / To Validate
 
 - Final naming scheme for the **Political Positioning Index** profiles.
 - Exact similarity formula and theme weighting for the **Alignment Index**.
 - Theme → positioning-dimension tagging model.
 - Confirm gov.br / bank OIDC provider availability and onboarding requirements.
 - Confirm hosting choice (Fly.io `gru` vs AWS `sa-east-1`).
+- Confirm coverage / rate limits of the Câmara & Senado APIs and which state/municipal bodies expose
+  open data (§8).
