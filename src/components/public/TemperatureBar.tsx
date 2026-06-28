@@ -1,5 +1,5 @@
 /**
- * Compact "Votação" breakdown for a theme: a stacked Sim / Não / Abstenção bar
+ * Compact "Votação" breakdown for a theme: a stacked Sim / Não / Neutro bar
  * plus the per-option tallies. Colors use the dedicated vote tokens (emerald /
  * crimson / slate) so Sim and Não don't clash and abstention reads as neutral.
  */
@@ -38,7 +38,7 @@ export function TemperatureBar({
           {pct(noCount)}%)
         </span>
         <span>
-          <span className="font-semibold text-[var(--color-vote-abstention)]">Abstenção</span>{" "}
+          <span className="font-semibold text-[var(--color-vote-abstention)]">Neutro</span>{" "}
           {absCount} ({pct(absCount)}%)
         </span>
       </div>

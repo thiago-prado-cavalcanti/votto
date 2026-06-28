@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Client-side quick-vote control (Sim / Não / Abstenção).
+ * Client-side quick-vote control (Sim / Não / Neutro).
  *
  * When the citizen is logged in it calls the `castVote` server action and
  * highlights the current choice. When not logged in, the buttons route to the
@@ -17,7 +17,7 @@ import type { VoteValue } from "@/generated/prisma";
 const OPTIONS: Array<{ value: VoteValue; label: string }> = [
   { value: "YES", label: "Sim" },
   { value: "NO", label: "Não" },
-  { value: "ABSTENTION", label: "Abstenção" },
+  { value: "ABSTENTION", label: "Neutro" },
 ];
 
 export function VoteButtons({

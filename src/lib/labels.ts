@@ -20,10 +20,18 @@ export const scopeLabel: Record<Scope, string> = {
   MUNICIPAL: "Municipal",
 };
 
+/** Vote labels for public agents (their formal position). */
 export const voteValueLabel: Record<VoteValue, string> = {
   YES: "Sim",
   NO: "Não",
   ABSTENTION: "Abstenção",
+};
+
+/** Vote labels for citizens — they vote "Neutro" rather than abstaining. */
+export const citizenVoteValueLabel: Record<VoteValue, string> = {
+  YES: "Sim",
+  NO: "Não",
+  ABSTENTION: "Neutro",
 };
 
 export const BR_STATES = [
