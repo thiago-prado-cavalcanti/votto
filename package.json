@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "assets:brand": "node scripts/generate-brand-assets.mjs",
     "import:camara": "tsx scripts/import.ts camara",
     "import:senado": "tsx scripts/import.ts senado"
   },
