@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, CardBody, Badge } from "@/components/ui";
 import { TemperatureBar } from "@/components/public/TemperatureBar";
 import { VoteButtons } from "@/components/public/VoteButtons";
+import { ShareButton } from "@/components/public/ShareButton";
 import { scopeLabel } from "@/lib/labels";
 import type { PublicTheme } from "@/lib/dto";
 import type { VoteValue } from "@/generated/prisma";
@@ -25,9 +26,12 @@ export function ThemeCard({
       <CardBody className="flex flex-1 flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           <Badge tone="navy">{scopeLabel[theme.scope]}</Badge>
-          {location ? (
-            <span className="text-xs text-[var(--color-muted)]">{location}</span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {location ? (
+              <span className="text-xs text-[var(--color-muted)]">{location}</span>
+            ) : null}
+            <ShareButton kind="tema" kid={theme.kid} title={theme.name} />
+          </div>
         </div>
         <Link href={`/temas/${theme.kid}`} className="group">
           <h3 className="text-lg font-semibold leading-snug text-navy-900 group-hover:text-navy-600">

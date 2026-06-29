@@ -2,18 +2,47 @@
  * Theme detail page: summary, source articles, live tallies and the vote control.
  * If the citizen already voted, their current choice is highlighted and changeable.
  */
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Container, Card, CardBody, Badge } from "@/components/ui";
 import { TemperatureBar } from "@/components/public/TemperatureBar";
 import { VoteButtons } from "@/components/public/VoteButtons";
+import { ShareButton } from "@/components/public/ShareButton";
 import { db } from "@/lib/db";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { scopeLabel } from "@/lib/labels";
+import { env } from "@/lib/env";
 import type { VoteValue } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ kid: string }>;
+}): Promise<Metadata> {
+  const { kid } = await params;
+  const theme = await db.theme.findUnique({
+    where: { kid },
+    select: { name: true, summary: true, status: true },
+  });
+  if (!theme || theme.status !== "ACTIVE") return {};
+  const description =
+    theme.summary || "Vote neste tema e veja o resultado em tempo real no Votto.";
+  const ogImage = `${env.appUrl}/api/og/tema/${kid}`;
+  return {
+    title: theme.name,
+    description,
+    openGraph: {
+      title: `${theme.name} · Votto`,
+      description,
+      images: [{ url: ogImage, width: 1200, height: 630 }],
+    },
+    twitter: { card: "summary_large_image", title: `${theme.name} · Votto`, description, images: [ogImage] },
+  };
+}
 
 export default async function ThemeDetailPage({
   params,
@@ -44,9 +73,12 @@ export default async function ThemeDetailPage({
 
   return (
     <Container className="py-10">
-      <Link href="/temas" className="text-sm text-navy-600 hover:text-navy-800">
-        ← Voltar para temas
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/temas" className="text-sm text-navy-600 hover:text-navy-800">
+          ← Voltar para temas
+        </Link>
+        <ShareButton kind="tema" kid={dto.kid} title={dto.name} variant="button" />
+      </div>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">

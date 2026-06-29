@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
 import { PositionBadge } from "@/components/public/PositionBadge";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
+import { ShareButton } from "@/components/public/ShareButton";
 import type { PublicParty } from "@/lib/dto";
 
 export function PartyCard({
@@ -52,6 +53,12 @@ export function PartyCard({
               {party.agentCount === 1 ? "agente" : "agentes"}
             </p>
           </div>
+          <ShareButton
+            kind="partido"
+            kid={party.kid}
+            title={party.name}
+            className="ml-auto shrink-0 self-start"
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

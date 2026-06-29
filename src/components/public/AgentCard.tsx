@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
 import { PositionBadge } from "@/components/public/PositionBadge";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
+import { ShareButton } from "@/components/public/ShareButton";
 import { agentTypeLabel } from "@/lib/labels";
 import type { PublicAgentDTO } from "@/lib/dto";
 
@@ -55,6 +56,12 @@ export function AgentCard({
               {location ? ` · ${location}` : ""}
             </p>
           </div>
+          <ShareButton
+            kind="agente"
+            kid={agent.kid}
+            title={fullName}
+            className="ml-auto shrink-0 self-start"
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

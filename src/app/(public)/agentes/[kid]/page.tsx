@@ -3,6 +3,7 @@
  * labels + profile), alignment (for logged-in citizens) and the agent's recent
  * theme votes.
  */
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Container, Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
@@ -10,6 +11,7 @@ import { PositionBadge } from "@/components/public/PositionBadge";
 import { PositioningChart } from "@/components/public/PositioningChart";
 import { SpectrumBar } from "@/components/public/SpectrumBar";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
+import { ShareButton } from "@/components/public/ShareButton";
 import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -17,8 +19,31 @@ import { getAgentPosition } from "@/lib/domain/positions";
 import { citizenAgentAlignment, agentElectorateAlignments } from "@/lib/indexes/alignment";
 import { agentTypeLabel, voteValueLabel } from "@/lib/labels";
 import { POSITIONING_AXES } from "@/lib/indexes/positioning";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ kid: string }>;
+}): Promise<Metadata> {
+  const { kid } = await params;
+  const agent = await db.publicAgent.findUnique({
+    where: { kid },
+    select: { firstName: true, lastName: true, type: true, status: true },
+  });
+  if (!agent || agent.status !== "ACTIVE") return {};
+  const name = `${agent.firstName} ${agent.lastName}`.trim();
+  const description = `Veja o alinhamento com eleitores e o posicionamento de ${name} (${agentTypeLabel[agent.type]}) no Votto.`;
+  const ogImage = `${env.appUrl}/api/og/agente/${kid}`;
+  return {
+    title: name,
+    description,
+    openGraph: { title: `${name} · Votto`, description, images: [{ url: ogImage, width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image", title: `${name} · Votto`, description, images: [ogImage] },
+  };
+}
 
 export default async function AgentDetailPage({
   params,
@@ -65,9 +90,12 @@ export default async function AgentDetailPage({
 
   return (
     <Container className="py-10">
-      <Link href="/agentes" className="text-sm text-navy-600 hover:text-navy-800">
-        ← Voltar para agentes
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/agentes" className="text-sm text-navy-600 hover:text-navy-800">
+          ← Voltar para agentes
+        </Link>
+        <ShareButton kind="agente" kid={dto.kid} title={fullName} variant="button" />
+      </div>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         {/* Profile */}

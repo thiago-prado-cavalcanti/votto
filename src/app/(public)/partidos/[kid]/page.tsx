@@ -3,6 +3,7 @@
  * two-axis chart), the citizen's alignment (when logged in) and the party's
  * agents.
  */
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Container, Card, CardBody, AlignmentMeter } from "@/components/ui";
@@ -11,6 +12,7 @@ import { PositioningChart } from "@/components/public/PositioningChart";
 import { SpectrumBar } from "@/components/public/SpectrumBar";
 import { AgentCard } from "@/components/public/AgentCard";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
+import { ShareButton } from "@/components/public/ShareButton";
 import { db } from "@/lib/db";
 import { toPublicParty, toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -20,8 +22,31 @@ import {
   citizenPartyAlignments,
   partyElectorateAlignments,
 } from "@/lib/indexes/alignment";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ kid: string }>;
+}): Promise<Metadata> {
+  const { kid } = await params;
+  const party = await db.party.findUnique({
+    where: { kid },
+    select: { name: true, acronym: true, status: true },
+  });
+  if (!party || party.status !== "ACTIVE") return {};
+  const label = party.acronym ? `${party.name} (${party.acronym})` : party.name;
+  const description = `Veja o alinhamento com eleitores e o posicionamento do ${label} no Votto.`;
+  const ogImage = `${env.appUrl}/api/og/partido/${kid}`;
+  return {
+    title: party.name,
+    description,
+    openGraph: { title: `${party.name} · Votto`, description, images: [{ url: ogImage, width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image", title: `${party.name} · Votto`, description, images: [ogImage] },
+  };
+}
 
 export default async function PartyDetailPage({
   params,
@@ -68,9 +93,12 @@ export default async function PartyDetailPage({
 
   return (
     <Container className="py-10">
-      <Link href="/partidos" className="text-sm text-navy-600 hover:text-navy-800">
-        ← Voltar para partidos
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/partidos" className="text-sm text-navy-600 hover:text-navy-800">
+          ← Voltar para partidos
+        </Link>
+        <ShareButton kind="partido" kid={dto.kid} title={dto.name} variant="button" />
+      </div>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         {/* Identity + agents */}
