@@ -65,7 +65,7 @@
 
   /* Vote colors — abstention is always neutral slate (never amber/green/red). */
   --color-vote-yes: #0e9d6a;
-  --color-vote-no: #ce3a4b;
+  --color-vote-no: #ff9a2e;
   --color-vote-abstention: #64748b;
 
   --radius-card: 20px;
@@ -81,7 +81,7 @@
   --color-positive: #0e9d6a;
   --color-negative: #ce3a4b;
   --color-vote-yes: #0e9d6a;
-  --color-vote-no: #ce3a4b;
+  --color-vote-no: #ff9a2e;
   --color-vote-abstention: #64748b;
 }
 
