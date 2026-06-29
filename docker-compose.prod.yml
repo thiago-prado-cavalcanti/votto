@@ -1,6 +1,7 @@
-# Production stack for a single box (everything bundled). sa-east-1 Lightsail/EC2.
-#   docker compose -f docker-compose.prod.yml up -d --build
-# Env comes from .env.production (copy from .env.example and fill secrets).
+# Production stack for a single box (everything bundled). Lightsail/EC2.
+# IMPORTANT: pass --env-file so Compose interpolates ${...} from .env.production:
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+# Copy .env.example to .env.production and fill the secrets first.
 services:
   db:
     image: postgres:16-alpine

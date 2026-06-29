@@ -93,17 +93,17 @@ Optional: `ANTHROPIC_API_KEY` (AI summary), real `GOVBR_*` for production login.
 ## 4. Build & start
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 ```
 
 ## 5. Apply the database schema + seed (you run this)
 
 ```bash
 # schema (Prisma migrations)
-docker compose -f docker-compose.prod.yml run --rm migrate
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
 
 # optional: synthetic data + real Câmara/Senado roster + admin user
-docker compose -f docker-compose.prod.yml run --rm migrate npm run db:seed
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate npm run db:seed
 ```
 
 Seed prints the admin login (`admin@votto.gov.br` / `Votto@2026` — change it).
@@ -115,7 +115,7 @@ With `DOMAIN` set and DNS pointing to the box, bring up Caddy and stop exposing
 
 ```bash
 # remove the "3000:3000" ports mapping from the web service first (optional),
-docker compose -f docker-compose.prod.yml --profile proxy up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml --profile proxy up -d
 ```
 
 Caddy obtains and renews TLS automatically. The app is now at `https://<DOMAIN>`.
@@ -128,13 +128,13 @@ Without a domain, access it at `http://<static-ip>:3000`.
 **Update to a new version**
 ```bash
 git pull
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml run --rm migrate   # if schema changed
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate   # if schema changed
 ```
 
 **Database backup (do this regularly)**
 ```bash
-docker compose -f docker-compose.prod.yml exec db \
+docker compose --env-file .env.production -f docker-compose.prod.yml exec db \
   pg_dump -U votto votto | gzip > votto-$(date +%F).sql.gz
 ```
 Copy the dump off the box (e.g. to S3). For a managed alternative later, restore
@@ -142,13 +142,13 @@ this dump into **RDS** and point `DATABASE_URL` there.
 
 **Import official data (Câmara/Senado)**
 ```bash
-docker compose -f docker-compose.prod.yml run --rm migrate npm run import:camara
-docker compose -f docker-compose.prod.yml run --rm migrate npm run import:senado
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate npm run import:camara
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate npm run import:senado
 ```
 
 **Logs**
 ```bash
-docker compose -f docker-compose.prod.yml logs -f web
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f web
 ```
 
 ---
