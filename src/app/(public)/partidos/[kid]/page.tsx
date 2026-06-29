@@ -82,7 +82,7 @@ export default async function PartyDetailPage({
                 alt={acronym}
                 className="h-20 w-20 rounded-2xl bg-navy-50 object-contain p-1.5"
                 fallback={
-                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-navy-900 text-lg font-extrabold text-white">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-navy-100 bg-navy-50 px-2 text-center text-base font-extrabold leading-tight text-navy-700">
                     {acronym}
                   </div>
                 }
