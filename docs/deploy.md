@@ -25,8 +25,19 @@ managed-service fees.
 4. Plan: at least **2 GB RAM** (`next build` needs memory). 4 GB is comfortable.
 5. Create. Then **Networking → IPv4 firewall**, open ports **80** and **443**
    (and **3000** temporarily if you'll test before setting up a domain).
-6. Attach a **static IP** (Networking → Create static IP) and point your domain's
-   A record to it (if you have one).
+6. Attach a **static IP** (Networking → Create static IP). Note this IP.
+
+### Point votto.online (Namecheap) at the box
+
+In Namecheap → Domain List → **Manage** votto.online → **Advanced DNS**, add:
+
+| Type    | Host | Value                      |
+| ------- | ---- | -------------------------- |
+| A       | `@`  | `<your Lightsail static IP>` |
+| CNAME   | `www`| `votto.online.`            |
+
+Remove any default "URL Redirect"/parking records on `@`. DNS can take a few
+minutes to propagate; Caddy then issues TLS automatically for the domain.
 
 > EC2 equivalent: a `t4g.small` in sa-east-1 with a security group opening 80/443.
 
@@ -51,9 +62,13 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ## 3. Get the code & configure secrets
 
 ```bash
-git clone <your-repo-url> votto && cd votto
+git clone -b feature/project-bootstrap \
+  https://github.com/thiago-prado-cavalcanti/votto.git votto && cd votto
 cp .env.example .env.production
 ```
+
+> Private repo: when prompted, use a GitHub Personal Access Token as the password
+> (or set up a deploy key / `gh auth login` on the box).
 
 Generate strong secrets and put them in `.env.production`:
 
@@ -65,8 +80,8 @@ openssl rand -base64 24   # POSTGRES_PASSWORD
 
 Set at minimum in `.env.production`:
 `AUTH_SECRET`, `CPF_ENC_KEY`, `CPF_HMAC_KEY`, `POSTGRES_PASSWORD`,
-`APP_URL` (e.g. `https://votto.com.br`), `DOMAIN` (e.g. `votto.com.br`),
-`GOVBR_REDIRECT_URI` (`https://votto.com.br/api/auth/govbr/callback`).
+`APP_URL` (e.g. `https://votto.online`), `DOMAIN` (e.g. `votto.online`),
+`GOVBR_REDIRECT_URI` (`https://votto.online/api/auth/govbr/callback`).
 Optional: `ANTHROPIC_API_KEY` (AI summary), real `GOVBR_*` for production login.
 
 > `DATABASE_URL` / `REDIS_URL` are set automatically by compose to the bundled
