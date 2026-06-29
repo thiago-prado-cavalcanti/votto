@@ -32,10 +32,18 @@ export default async function EditThemePage({
   });
   if (!theme) notFound();
 
+  const vp = (theme.viewpoints ?? null) as {
+    right?: string;
+    center?: string;
+    left?: string;
+  } | null;
+
   const values: ThemeFormValues = {
     kid: theme.kid,
     name: theme.name,
     summary: theme.summary,
+    description: theme.description,
+    viewpoints: vp,
     scope: theme.scope,
     state: theme.state,
     municipality: theme.municipality,

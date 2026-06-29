@@ -42,10 +42,18 @@ export interface PublicArticle {
   downloadUrl: string | null;
 }
 
+export interface ThemeViewpoints {
+  right?: string;
+  center?: string;
+  left?: string;
+}
+
 export interface PublicTheme {
   kid: string;
   name: string;
   summary: string;
+  description: string;
+  viewpoints: ThemeViewpoints | null;
   scope: Scope;
   state: string | null;
   municipality: string | null;
@@ -122,6 +130,8 @@ type ThemeLike = {
   kid: string;
   name: string;
   summary: string;
+  description?: string;
+  viewpoints?: unknown;
   scope: Scope;
   state: string | null;
   municipality: string | null;
@@ -132,11 +142,21 @@ type ThemeLike = {
   articles?: ArticleLike[];
 };
 
+function parseViewpoints(value: unknown): ThemeViewpoints | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const s = (x: unknown) => (typeof x === "string" && x.trim() ? x : undefined);
+  const out: ThemeViewpoints = { right: s(v.right), center: s(v.center), left: s(v.left) };
+  return out.right || out.center || out.left ? out : null;
+}
+
 export function toPublicTheme(t: ThemeLike): PublicTheme {
   return {
     kid: t.kid,
     name: t.name,
     summary: t.summary,
+    description: t.description ?? "",
+    viewpoints: parseViewpoints(t.viewpoints),
     scope: t.scope,
     state: t.state,
     municipality: t.municipality,

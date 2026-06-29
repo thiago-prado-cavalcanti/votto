@@ -31,6 +31,10 @@ const articleSchema = z.object({
 const themeSchema = z.object({
   name: z.string().trim().min(1, "Informe o nome do tema."),
   summary: z.string().trim().optional().or(z.literal("")),
+  description: z.string().trim().optional().or(z.literal("")),
+  viewpointRight: z.string().trim().optional().or(z.literal("")),
+  viewpointCenter: z.string().trim().optional().or(z.literal("")),
+  viewpointLeft: z.string().trim().optional().or(z.literal("")),
   scope: z.enum(SCOPES),
   state: z.string().trim().optional().or(z.literal("")),
   municipality: z.string().trim().optional().or(z.literal("")),
@@ -49,12 +53,29 @@ function readThemeForm(formData: FormData) {
   return {
     name: formData.get("name"),
     summary: formData.get("summary"),
+    description: formData.get("description"),
+    viewpointRight: formData.get("viewpointRight"),
+    viewpointCenter: formData.get("viewpointCenter"),
+    viewpointLeft: formData.get("viewpointLeft"),
     scope: formData.get("scope"),
     state: formData.get("state"),
     municipality: formData.get("municipality"),
     economic: economicRaw === "" ? undefined : economicRaw,
     social: socialRaw === "" ? undefined : socialRaw,
   };
+}
+
+/** Build the viewpoints JSON from the three perspective fields. */
+function buildViewpoints(d: {
+  viewpointRight?: string;
+  viewpointCenter?: string;
+  viewpointLeft?: string;
+}): Prisma.InputJsonValue | undefined {
+  const right = (d.viewpointRight ?? "").trim();
+  const center = (d.viewpointCenter ?? "").trim();
+  const left = (d.viewpointLeft ?? "").trim();
+  if (!right && !center && !left) return undefined;
+  return { right, center, left };
 }
 
 /**
@@ -126,16 +147,19 @@ export async function createThemeAction(formData: FormData): Promise<ActionResul
   }
 
   const dimensions = buildDimensions(d.economic, d.social);
+  const viewpoints = buildViewpoints(d);
 
   await db.theme.create({
     data: {
       kid: kid("thm"),
       name: themeName,
       summary,
+      description: (d.description ?? "").trim(),
       scope: d.scope,
       state: emptyToNull(d.state),
       municipality: emptyToNull(d.municipality),
       ...(dimensions !== undefined ? { dimensions } : {}),
+      ...(viewpoints !== undefined ? { viewpoints } : {}),
       articles: {
         create: articles.map((a) => ({
           kid: kid("art"),
@@ -189,16 +213,19 @@ export async function updateThemeAction(
   }
 
   const dimensions = buildDimensions(d.economic, d.social);
+  const viewpoints = buildViewpoints(d);
 
   await db.theme.update({
     where: { kid: themeKid },
     data: {
       name: d.name,
       summary,
+      description: (d.description ?? "").trim(),
       scope: d.scope,
       state: emptyToNull(d.state),
       municipality: emptyToNull(d.municipality),
       dimensions: dimensions === undefined ? Prisma.JsonNull : dimensions,
+      viewpoints: viewpoints === undefined ? Prisma.JsonNull : viewpoints,
       ...(newArticles.length > 0
         ? {
             articles: {

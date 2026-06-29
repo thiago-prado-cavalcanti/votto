@@ -318,6 +318,8 @@ interface SeedTheme {
   ref: string;
   name: string;
   summary: string;
+  description: string; // ≥2 paragraphs (separate with a blank line)
+  viewpoints: { right: string; center: string; left: string };
   scope: Scope;
   state?: string;
   economic: number; // -1..1
@@ -329,7 +331,17 @@ const THEMES: SeedTheme[] = [
   {
     ref: "seed:theme:tax-reform",
     name: "Reforma Tributária Simplificada",
-    summary: "Unificação de tributos sobre consumo com alíquota única.",
+    summary: "Unificação de tributos sobre consumo em um modelo de alíquota única.",
+    description:
+      "A proposta substitui vários tributos sobre consumo por um imposto unificado, com regras e alíquota padronizadas em todo o país. O objetivo declarado é reduzir a complexidade do sistema atual, diminuir o custo de conformidade das empresas e tornar a cobrança mais transparente para o consumidor.\n\nEntre os pontos em disputa estão a alíquota final, os setores que teriam tratamento diferenciado e como ficaria a partilha de receitas entre União, estados e municípios. Defensores apontam ganhos de eficiência; críticos temem aumento de carga para serviços e perda de autonomia dos entes federativos.",
+    viewpoints: {
+      right:
+        "Simplificar e unificar tributos reduz burocracia e o 'custo Brasil', estimula investimento e dá previsibilidade às empresas. Quanto menos exceções e menor a carga, melhor para a economia.",
+      center:
+        "A simplificação é necessária, mas o sucesso depende de calibrar a alíquota e as transições para não onerar serviços nem desorganizar as contas de estados e municípios.",
+      left:
+        "A reforma deve ser progressiva: é preciso garantir que o peso não recaia sobre os mais pobres, com devolução de imposto (cashback) e proteção a setores essenciais.",
+    },
     scope: Scope.NATIONAL,
     economic: 0.7,
     social: 0.1,
@@ -342,6 +354,16 @@ const THEMES: SeedTheme[] = [
     ref: "seed:theme:public-childcare",
     name: "Expansão de Creches Públicas",
     summary: "Financiamento federal para ampliar a rede pública de creches.",
+    description:
+      "O tema trata de aumentar o repasse federal para que municípios construam e mantenham creches, ampliando o número de vagas para crianças de até três anos. A medida é apresentada como política de educação infantil e também de apoio às famílias, sobretudo às mães que precisam conciliar trabalho e cuidado.\n\nA discussão envolve o custo fiscal permanente, a capacidade de execução dos municípios e se o dinheiro deve financiar apenas a rede pública ou também convênios com creches privadas e comunitárias. Avalia-se ainda o impacto sobre emprego, renda das famílias e desenvolvimento das crianças.",
+    viewpoints: {
+      right:
+        "O foco deve ser eficiência: parcerias com creches privadas e conveniadas podem ampliar vagas mais rápido e mais barato do que expandir apenas a estrutura estatal.",
+      center:
+        "Ampliar vagas é consenso; o debate é sobre o melhor desenho de financiamento e metas claras de qualidade e cobertura, combinando rede pública e conveniada.",
+      left:
+        "Educação infantil é direito e dever do Estado: a prioridade é uma rede pública, gratuita e universal, com investimento direto e valorização dos profissionais.",
+    },
     scope: Scope.NATIONAL,
     economic: -0.8,
     social: -0.4,
@@ -350,7 +372,17 @@ const THEMES: SeedTheme[] = [
   {
     ref: "seed:theme:state-privatization",
     name: "Privatização de Estatais de Energia",
-    summary: "Venda do controle acionário de distribuidoras estaduais.",
+    summary: "Venda do controle acionário de distribuidoras estaduais de energia.",
+    description:
+      "A proposta autoriza a venda do controle de distribuidoras de energia hoje sob gestão pública. Os recursos da venda poderiam abater dívidas e financiar investimentos, enquanto a operação passaria à iniciativa privada, sob regulação de uma agência setorial.\n\nO debate gira em torno de tarifas, qualidade do serviço, metas de universalização e do que fazer com os trabalhadores e a dívida das empresas. Há divergência sobre se a iniciativa privada entregaria mais investimento e eficiência ou se o serviço essencial perderia controle social e ficaria mais caro em regiões pouco lucrativas.",
+    viewpoints: {
+      right:
+        "O Estado não precisa operar distribuidoras: privatizar atrai investimento, melhora a gestão e libera recursos públicos, com a regulação garantindo o interesse do consumidor.",
+      center:
+        "Privatizar pode fazer sentido caso a caso, desde que com regulação forte, metas de qualidade e cláusulas que protejam tarifa e atendimento em áreas menos rentáveis.",
+      left:
+        "Energia é serviço estratégico: vender estatais arrisca tarifas mais altas e menor controle social. Melhor reestruturar e investir mantendo o controle público.",
+    },
     scope: Scope.NATIONAL,
     economic: 0.9,
     social: 0.2,
@@ -362,7 +394,17 @@ const THEMES: SeedTheme[] = [
   {
     ref: "seed:theme:data-privacy",
     name: "Proteção de Dados e Privacidade Digital",
-    summary: "Reforço de garantias individuais sobre uso de dados pessoais.",
+    summary: "Reforço de garantias individuais sobre o uso de dados pessoais.",
+    description:
+      "A medida fortalece regras sobre coleta, tratamento e compartilhamento de dados pessoais por empresas e pelo poder público, ampliando direitos como consentimento, acesso e exclusão de informações. Também discute sanções e o papel da autoridade reguladora.\n\nO ponto central é o equilíbrio entre proteção do cidadão e o custo de conformidade para empresas, especialmente as menores, além dos limites para uso de dados pela segurança pública. Avalia-se o impacto sobre inovação, publicidade e a confiança das pessoas no ambiente digital.",
+    viewpoints: {
+      right:
+        "Privacidade importa, mas regras precisam ser proporcionais para não sufocar empresas e a inovação; excesso de burocracia pesa sobretudo sobre as menores.",
+      center:
+        "Direitos claros e fiscalização eficaz, com obrigações calibradas pelo porte da empresa, equilibram proteção do cidadão e ambiente saudável para negócios.",
+      left:
+        "Dados são poder: o cidadão precisa de proteção forte contra abusos de grandes plataformas e do Estado, com sanções efetivas e transparência.",
+    },
     scope: Scope.NATIONAL,
     economic: -0.1,
     social: 0.8,
@@ -372,6 +414,16 @@ const THEMES: SeedTheme[] = [
     ref: "seed:theme:community-policing",
     name: "Conselhos Comunitários de Segurança",
     summary: "Gestão compartilhada da segurança com base nas comunidades locais.",
+    description:
+      "A proposta cria conselhos que reúnem moradores, polícia e poder público para definir prioridades de segurança em cada território, com prestação de contas periódica. A ideia é aproximar a polícia da comunidade e direcionar o trabalho preventivo conforme as demandas locais.\n\nDiscute-se o poder real desses conselhos, o risco de captura por grupos locais e como medir resultados. Há quem veja aí um caminho para reduzir crimes e melhorar a confiança na polícia, e quem tema que vire instância burocrática sem efeito sobre a violência.",
+    viewpoints: {
+      right:
+        "Participação é bem-vinda desde que reforce a autoridade policial e o combate ao crime; o foco deve ser eficiência e responsabilização, não burocracia.",
+      center:
+        "Aproximar polícia e comunidade tende a melhorar resultados, desde que os conselhos tenham regras claras, metas e transparência para evitar capturas.",
+      left:
+        "Segurança se constrói com participação social, prevenção e direitos: os conselhos devem dar voz às comunidades e controlar abusos, não só apoiar a repressão.",
+    },
     scope: Scope.STATE,
     state: "SP",
     economic: -0.2,
@@ -382,6 +434,16 @@ const THEMES: SeedTheme[] = [
     ref: "seed:theme:carbon-tax",
     name: "Tributação sobre Emissões de Carbono",
     summary: "Precificação de carbono para grandes emissores.",
+    description:
+      "A proposta cria um preço para as emissões de gases de efeito estufa, cobrando dos maiores emissores e estimulando a redução da poluição. A receita poderia financiar a transição para energias limpas ou compensar setores e famílias afetadas.\n\nO debate envolve o impacto sobre preços e competitividade da indústria, o risco de repasse ao consumidor e como usar os recursos arrecadados. De um lado, o argumento ambiental e de inovação; de outro, a preocupação com custo de vida e empregos em setores intensivos em carbono.",
+    viewpoints: {
+      right:
+        "Se houver precificação, que seja neutra em arrecadação e sem prejudicar a competitividade; mercado e tecnologia resolvem melhor que novos impostos.",
+      center:
+        "Precificar carbono é instrumento eficiente se bem desenhado, com transição gradual e uso da receita para mitigar impactos sobre indústria e consumidores.",
+      left:
+        "Quem polui mais deve pagar mais: a precificação deve financiar a transição justa, proteger os mais pobres e acelerar energias limpas.",
+    },
     scope: Scope.NATIONAL,
     economic: -0.5,
     social: -0.3,
@@ -394,7 +456,17 @@ const THEMES: SeedTheme[] = [
   {
     ref: "seed:theme:labor-flexibility",
     name: "Flexibilização das Jornadas de Trabalho",
-    summary: "Ampliação de modelos de jornada e contratação.",
+    summary: "Ampliação de modelos de jornada e de contratação.",
+    description:
+      "A medida amplia formatos de jornada e de contratação, como acordos individuais, banco de horas e modelos híbridos, dando mais liberdade para empresas e trabalhadores combinarem condições. É apresentada como adaptação às novas formas de trabalho e à economia digital.\n\nO ponto de tensão é o equilíbrio entre flexibilidade e proteção: até onde acordos podem se sobrepor à lei, quais garantias permanecem e qual o efeito sobre renda, jornada efetiva e segurança do emprego. Defensores falam em mais vagas e produtividade; críticos, em risco de precarização.",
+    viewpoints: {
+      right:
+        "Mais liberdade para negociar gera empregos e produtividade; o acordo entre as partes deve prevalecer, reduzindo a rigidez que afasta contratações.",
+      center:
+        "Flexibilizar pode ajudar, desde que mantenha um piso de direitos e regras claras para evitar abusos, equilibrando competitividade e proteção.",
+      left:
+        "Flexibilização sem garantias vira precarização: é preciso preservar direitos, jornada saudável e o poder de negociação coletiva dos trabalhadores.",
+    },
     scope: Scope.NATIONAL,
     economic: 0.6,
     social: 0.5,
@@ -403,7 +475,17 @@ const THEMES: SeedTheme[] = [
   {
     ref: "seed:theme:basic-income",
     name: "Renda Básica Permanente",
-    summary: "Transferência de renda incondicional a famílias de baixa renda.",
+    summary: "Transferência de renda permanente a famílias de baixa renda.",
+    description:
+      "A proposta institui uma transferência de renda contínua para famílias abaixo de uma linha de renda, com o objetivo de combater a pobreza e dar previsibilidade ao orçamento familiar. Discute-se o valor, os critérios de elegibilidade e a relação com outros programas sociais.\n\nO debate central é o custo fiscal e os efeitos sobre incentivos ao trabalho e sobre a economia local. Há quem veja um piso de dignidade e estímulo ao consumo; há quem tema dependência, peso no orçamento público e necessidade de contrapartidas.",
+    viewpoints: {
+      right:
+        "Apoio aos vulneráveis sim, mas com responsabilidade fiscal e contrapartidas (capacitação, busca de emprego), evitando dependência e gastos insustentáveis.",
+      center:
+        "Uma renda mínima bem focalizada pode reduzir pobreza sem desorganizar as contas, desde que integrada a outros programas e com regras de saída claras.",
+      left:
+        "Renda básica é um direito que garante dignidade e reduz desigualdade; deve ser ampla e permanente, financiada por uma tributação mais justa.",
+    },
     scope: Scope.NATIONAL,
     economic: -0.9,
     social: -0.2,
@@ -413,6 +495,16 @@ const THEMES: SeedTheme[] = [
     ref: "seed:theme:school-autonomy",
     name: "Autonomia Curricular das Escolas",
     summary: "Maior liberdade para escolas definirem parte do currículo.",
+    description:
+      "A medida amplia a margem para que cada escola defina parte do currículo, adaptando conteúdos à realidade local e ao projeto pedagógico, dentro de uma base comum nacional. A ideia é dar mais protagonismo a professores, gestores e comunidades escolares.\n\nDiscute-se até onde vai essa autonomia sem comprometer a equidade e a comparabilidade entre escolas, além do impacto na formação de professores e na avaliação. Defensores destacam inovação e pertinência; críticos alertam para desigualdades entre redes e perda de parâmetros comuns.",
+    viewpoints: {
+      right:
+        "Mais autonomia e menos centralização: escolas e famílias devem ter liberdade de escolha, com avaliação de resultados cobrando desempenho.",
+      center:
+        "Autonomia é positiva sobre uma base comum sólida, com apoio às escolas e avaliação que garanta qualidade e equidade entre redes.",
+      left:
+        "Autonomia não pode aprofundar desigualdades: é preciso base comum forte, financiamento equânime e valorização docente para todas as escolas.",
+    },
     scope: Scope.STATE,
     state: "MG",
     economic: 0.2,
@@ -423,6 +515,16 @@ const THEMES: SeedTheme[] = [
     ref: "seed:theme:public-transport",
     name: "Tarifa Zero no Transporte Público",
     summary: "Gratuidade do transporte coletivo municipal.",
+    description:
+      "A proposta torna o transporte coletivo municipal gratuito para o usuário, com o custo financiado por impostos ou outras fontes públicas. O objetivo é ampliar a mobilidade, reduzir o uso de carros e beneficiar quem depende do ônibus no dia a dia.\n\nO debate é como custear o sistema de forma sustentável, o efeito sobre a qualidade e a frequência do serviço e os impactos no trânsito e no meio ambiente. Defensores veem um direito à cidade e ganho ambiental; críticos questionam o custo fiscal e o risco de sucateamento sem receita da tarifa.",
+    viewpoints: {
+      right:
+        "Gratuidade total pressiona o orçamento e pode degradar o serviço; melhor focar subsídios em quem precisa e buscar eficiência na operação.",
+      center:
+        "Tarifa zero pode funcionar com fonte de custeio estável e metas de qualidade; sem financiamento sólido, há risco de piorar o serviço.",
+      left:
+        "Mobilidade é direito: transporte gratuito democratiza a cidade, reduz desigualdade e poluição, e deve ser financiado por quem tem mais.",
+    },
     scope: Scope.MUNICIPAL,
     economic: -0.7,
     social: -0.5,
@@ -432,6 +534,16 @@ const THEMES: SeedTheme[] = [
     ref: "seed:theme:startup-deregulation",
     name: "Desregulamentação para Startups",
     summary: "Redução de exigências para empresas nascentes.",
+    description:
+      "A medida reduz exigências burocráticas, tributárias e regulatórias para empresas nascentes, criando regimes simplificados de abertura, contratação e testes de novos produtos (ambientes regulatórios experimentais). O objetivo é estimular inovação e empreendedorismo.\n\nDiscute-se o equilíbrio entre facilitar negócios e manter proteções a consumidores, trabalhadores e concorrência. Defensores apontam mais empresas, empregos e tecnologia; críticos temem que a flexibilização abra brechas de proteção e favoreça poucos.",
+    viewpoints: {
+      right:
+        "Menos burocracia e impostos liberam o empreendedorismo: simplificar é o melhor caminho para gerar inovação, empregos e crescimento.",
+      center:
+        "Facilitar a vida das startups é positivo, com salvaguardas para consumidores e concorrência e regras proporcionais ao risco de cada setor.",
+      left:
+        "Apoiar inovação não pode significar remover proteções: é preciso garantir direitos trabalhistas, defesa do consumidor e concorrência justa.",
+    },
     scope: Scope.NATIONAL,
     economic: 0.8,
     social: 0.4,
@@ -441,6 +553,16 @@ const THEMES: SeedTheme[] = [
     ref: "seed:theme:cultural-quota",
     name: "Cotas para Produção Cultural Local",
     summary: "Reserva de fomento para produções culturais regionais.",
+    description:
+      "A proposta reserva parte do fomento público à cultura para produções regionais e artistas locais, buscando descentralizar recursos historicamente concentrados em poucos polos. A medida envolve editais, critérios de seleção e metas de distribuição territorial.\n\nO debate trata do papel do Estado no financiamento da cultura, dos critérios de mérito versus distribuição e da fiscalização do uso dos recursos. Defensores falam em diversidade e economia criativa local; críticos questionam eficiência, possível dirigismo e a relação custo-benefício.",
+    viewpoints: {
+      right:
+        "O Estado deve gastar pouco e bem com cultura; melhor incentivos privados e mérito do que cotas que podem virar dirigismo e ineficiência.",
+      center:
+        "Descentralizar o fomento é válido, desde que com critérios transparentes de mérito, metas claras e fiscalização do uso dos recursos.",
+      left:
+        "Cultura é direito e gera economia e identidade: cotas regionais corrigem desigualdades históricas e democratizam o acesso ao fomento.",
+    },
     scope: Scope.STATE,
     state: "BA",
     economic: -0.3,
@@ -508,12 +630,15 @@ async function seedAgent(a: SeedAgent, partyId: string): Promise<string> {
 /** Upsert a seed theme with dimensions; returns internal id. Tallies reset to 0. */
 async function seedTheme(t: SeedTheme): Promise<string> {
   const dimensions: Prisma.InputJsonValue = { economic: t.economic, social: t.social };
+  const viewpoints: Prisma.InputJsonValue = { ...t.viewpoints };
   const row = await db.theme.upsert({
     where: { source_externalRef: { source: SRC, externalRef: t.ref } },
     create: {
       kid: kid("thm"),
       name: t.name,
       summary: t.summary,
+      description: t.description,
+      viewpoints,
       scope: t.scope,
       state: t.state,
       dimensions,
@@ -523,6 +648,8 @@ async function seedTheme(t: SeedTheme): Promise<string> {
     update: {
       name: t.name,
       summary: t.summary,
+      description: t.description,
+      viewpoints,
       scope: t.scope,
       state: t.state,
       dimensions,

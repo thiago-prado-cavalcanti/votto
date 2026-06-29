@@ -140,6 +140,10 @@ model Theme {
   kid         String       @unique
   name        String
   summary     String       @default("")
+  // Long-form explanation (≥2 paragraphs) shown on the theme detail page.
+  description String       @default("")
+  // Three perspectives on the theme: { right, center, left } (strings).
+  viewpoints  Json?
   scope       Scope        @default(NATIONAL)
   state       String?
   municipality String?

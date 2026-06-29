@@ -31,6 +31,8 @@ export interface ThemeFormValues {
   kid: string;
   name: string;
   summary: string;
+  description: string;
+  viewpoints: { right?: string; center?: string; left?: string } | null;
   scope: Scope;
   state: string | null;
   municipality: string | null;
@@ -91,8 +93,53 @@ export function ThemeForm({ theme, aiEnabled }: { theme?: ThemeFormValues; aiEna
                 : "IA desativada: artigos adicionados serão anexados ao resumo."
             }
           >
-            <Textarea id="summary" name="summary" defaultValue={theme?.summary ?? ""} className="min-h-32" />
+            <Textarea id="summary" name="summary" defaultValue={theme?.summary ?? ""} className="min-h-24" />
           </Field>
+
+          <Field
+            label="Descrição completa"
+            htmlFor="description"
+            hint="Texto longo (2+ parágrafos). Separe parágrafos com uma linha em branco."
+          >
+            <Textarea
+              id="description"
+              name="description"
+              defaultValue={theme?.description ?? ""}
+              className="min-h-40"
+            />
+          </Field>
+
+          <fieldset className="rounded-xl border border-line p-4">
+            <legend className="px-1 text-sm font-semibold text-navy-800">
+              Pontos de vista
+            </legend>
+            <div className="grid gap-4">
+              <Field label="Visão à esquerda" htmlFor="viewpointLeft">
+                <Textarea
+                  id="viewpointLeft"
+                  name="viewpointLeft"
+                  defaultValue={theme?.viewpoints?.left ?? ""}
+                  className="min-h-20"
+                />
+              </Field>
+              <Field label="Visão ao centro" htmlFor="viewpointCenter">
+                <Textarea
+                  id="viewpointCenter"
+                  name="viewpointCenter"
+                  defaultValue={theme?.viewpoints?.center ?? ""}
+                  className="min-h-20"
+                />
+              </Field>
+              <Field label="Visão à direita" htmlFor="viewpointRight">
+                <Textarea
+                  id="viewpointRight"
+                  name="viewpointRight"
+                  defaultValue={theme?.viewpoints?.right ?? ""}
+                  className="min-h-20"
+                />
+              </Field>
+            </div>
+          </fieldset>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Abrangência" htmlFor="scope">

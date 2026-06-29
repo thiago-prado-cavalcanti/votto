@@ -62,9 +62,44 @@ export default async function ThemeDetailPage({
                 {dto.name}
               </h1>
               {dto.summary ? (
-                <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-ink">
+                <p className="mt-4 text-base font-medium leading-relaxed text-navy-800">
                   {dto.summary}
                 </p>
+              ) : null}
+
+              {dto.description ? (
+                <div className="mt-4 space-y-3 text-sm leading-relaxed text-ink">
+                  {dto.description.split(/\n{2,}/).map((p, i) => (
+                    <p key={i}>{p}</p>
+                  ))}
+                </div>
+              ) : null}
+
+              {dto.viewpoints ? (
+                <div className="mt-7">
+                  <h2 className="text-sm font-semibold text-navy-900">
+                    Pontos de vista sobre o tema
+                  </h2>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    {(
+                      [
+                        { label: "Visão à esquerda", tone: "negative", text: dto.viewpoints.left },
+                        { label: "Visão ao centro", tone: "gray", text: dto.viewpoints.center },
+                        { label: "Visão à direita", tone: "navy", text: dto.viewpoints.right },
+                      ] as const
+                    )
+                      .filter((v) => v.text)
+                      .map((v) => (
+                        <div
+                          key={v.label}
+                          className="rounded-xl border border-line bg-canvas p-3.5"
+                        >
+                          <Badge tone={v.tone}>{v.label}</Badge>
+                          <p className="mt-2 text-xs leading-relaxed text-ink">{v.text}</p>
+                        </div>
+                      ))}
+                  </div>
+                </div>
               ) : null}
 
               {dto.articles && dto.articles.length > 0 ? (
