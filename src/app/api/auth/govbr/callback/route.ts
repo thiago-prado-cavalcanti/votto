@@ -7,12 +7,15 @@
  * redirects home. On an invalid CPF it redirects back to the dev IdP with an error.
  */
 import { NextResponse, type NextRequest } from "next/server";
-import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { kid } from "@/lib/ids";
 import { isValidCpf, deriveCpfFields } from "@/lib/crypto/cpf";
-import { setCitizenSession } from "@/lib/auth/session";
+import {
+  CITIZEN_COOKIE,
+  createCitizenSessionToken,
+  sessionCookieOptions,
+} from "@/lib/auth/session";
 import { GOVBR_STATE_COOKIE } from "@/app/api/auth/govbr/start/route";
 
 export const dynamic = "force-dynamic";
@@ -25,8 +28,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const lastName = String(form.get("lastName") ?? "").trim();
   const cpf = String(form.get("cpf") ?? "").trim();
 
-  const store = await cookies();
-  const expectedState = store.get(GOVBR_STATE_COOKIE)?.value;
+  const expectedState = req.cookies.get(GOVBR_STATE_COOKIE)?.value;
 
   // Validate CSRF state.
   if (!expectedState || !submittedState || expectedState !== submittedState) {
@@ -54,15 +56,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     select: { kid: true, cpfHash: true, firstName: true, lastName: true },
   });
 
-  await setCitizenSession({
+  const token = await createCitizenSessionToken({
     kind: "citizen",
     userKid: user.kid,
     cpfHash: user.cpfHash,
     name: `${user.firstName} ${user.lastName}`.trim(),
   });
 
-  // Consume the state cookie.
-  store.delete(GOVBR_STATE_COOKIE);
-
-  return NextResponse.redirect(new URL("/", env.appUrl), { status: 303 });
+  // Set the session cookie ON the redirect response (cookies() isn't merged into
+  // a manually-returned NextResponse), and consume the state cookie.
+  const res = NextResponse.redirect(new URL("/", env.appUrl), { status: 303 });
+  res.cookies.set(CITIZEN_COOKIE, token, sessionCookieOptions());
+  res.cookies.set(GOVBR_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+  return res;
 }

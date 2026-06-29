@@ -38,6 +38,23 @@ async function sign(payload: SessionPayload): Promise<string> {
     .sign(secret());
 }
 
+/** Cookie options shared by both sessions. Exposed for route handlers that must
+ *  set the cookie on their own NextResponse (cookies() isn't merged there). */
+export function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: MAX_AGE,
+  };
+}
+
+/** Sign a citizen session token (for setting the cookie on a NextResponse). */
+export function createCitizenSessionToken(s: CitizenSession): Promise<string> {
+  return sign(s);
+}
+
 async function verify<T extends SessionPayload>(token: string): Promise<T | null> {
   try {
     const { payload } = await jwtVerify(token, secret());

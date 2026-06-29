@@ -6,7 +6,6 @@
  * 501 explaining that real gov.br OIDC is not configured.
  */
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { env } from "@/lib/env";
 
@@ -18,19 +17,19 @@ export const GOVBR_STATE_COOKIE = "votto_govbr_state";
 export async function GET(): Promise<NextResponse> {
   const state = randomBytes(16).toString("hex");
 
-  const store = await cookies();
-  store.set(GOVBR_STATE_COOKIE, state, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 600, // 10 min
-  });
-
   if (env.govbr.mode === "mock") {
     const url = new URL("/dev-idp", env.appUrl);
     url.searchParams.set("state", state);
-    return NextResponse.redirect(url);
+    // Set the cookie ON the redirect response so it's actually persisted.
+    const res = NextResponse.redirect(url);
+    res.cookies.set(GOVBR_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 600, // 10 min
+    });
+    return res;
   }
 
   // Real gov.br OIDC is not configured in this environment.
