@@ -52,13 +52,25 @@ function maskableSvg(size) {
   </svg>`;
 }
 
-/** 1200×630 social/share card for WhatsApp, X, Facebook, LinkedIn, etc. */
+/** 1200×630 social/share card: just the mark + "Votto", centered on teal. */
 function ogSvg() {
   const W = 1200;
   const H = 630;
-  const markScale = 4.6; // 40 → ~184px mark
-  const markX = 120;
-  const markY = 150;
+  const markScale = 5; // 40 → 200px mark
+  const markSize = 40 * markScale;
+
+  // Wordmark metrics (Sora 800). Width is estimated from the font's average
+  // advance so the mark+wordmark group can be centered as a whole.
+  const fontSize = 150;
+  const gap = 48;
+  const wordWidth = fontSize * 2.55; // ~"Votto" at this size/weight
+
+  const groupW = markSize + gap + wordWidth;
+  const markX = Math.round((W - groupW) / 2);
+  const markY = Math.round((H - markSize) / 2);
+  const textX = markX + markSize + gap;
+  const textBaseline = markY + markSize / 2 + fontSize * 0.35; // optical centering
+
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -68,12 +80,10 @@ function ogSvg() {
     </defs>
     <rect width="${W}" height="${H}" fill="url(#bg)" />
     <!-- mark tile -->
-    <rect x="${markX}" y="${markY}" width="${40 * markScale}" height="${40 * markScale}" rx="${40 * markScale * 0.22}" fill="rgba(255,255,255,0.06)" />
+    <rect x="${markX}" y="${markY}" width="${markSize}" height="${markSize}" rx="${markSize * 0.22}" fill="rgba(255,255,255,0.06)" />
     ${markPaths(markScale, markX, markY)}
-    <!-- wordmark + tagline -->
-    <text x="${markX + 40 * markScale + 56}" y="278" font-family="'Sora','Segoe UI',sans-serif" font-size="118" font-weight="800" fill="${WHITE}" letter-spacing="-3">Votto</text>
-    <text x="${markX + 40 * markScale + 60}" y="350" font-family="'Inter','Segoe UI',sans-serif" font-size="40" font-weight="500" fill="rgba(255,255,255,0.78)">sua voz no centro da democracia</text>
-    <text x="${markX}" y="540" font-family="'Inter','Segoe UI',sans-serif" font-size="32" font-weight="400" fill="rgba(255,255,255,0.62)">Voto popular direto e alinhamento entre cidadãos e agentes públicos.</text>
+    <!-- wordmark -->
+    <text x="${textX}" y="${Math.round(textBaseline)}" font-family="'Sora','Segoe UI',sans-serif" font-size="${fontSize}" font-weight="800" fill="${WHITE}" letter-spacing="-4">Votto</text>
   </svg>`;
 }
 
