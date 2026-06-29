@@ -108,6 +108,26 @@ docker compose --env-file .env.production -f docker-compose.prod.yml run --rm mi
 
 Seed prints the admin login (`admin@votto.gov.br` / `Votto@2026` — change it).
 
+> **Order matters:** always run `migrate` (and rebuild) BEFORE the new web image
+> serves traffic, so the schema and code stay in sync. The auto-deploy workflow
+> (`.github/workflows/deploy.yml`) does this for you: `git reset --hard` → build
+> → `migrate` → `up`.
+
+> **Troubleshooting — `column ... does not exist` (P2022) but `migrate` says
+> "No pending migrations":** the migration is recorded as applied but its SQL
+> never ran (usually after building from a stale/cached image). Apply the missing
+> change manually, e.g.:
+> ```bash
+> docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
+>   psql -U votto -d votto <<'SQL'
+> ALTER TABLE "Theme"
+>   ADD COLUMN IF NOT EXISTS "description" TEXT NOT NULL DEFAULT '',
+>   ADD COLUMN IF NOT EXISTS "viewpoints" JSONB;
+> SQL
+> ```
+> Then re-run the seed to populate content. Forcing `docker compose build
+> --no-cache` before `migrate` also prevents stale-image migrations.
+
 ## 6. HTTPS with your domain (recommended)
 
 With `DOMAIN` set and DNS pointing to the box, bring up Caddy and stop exposing

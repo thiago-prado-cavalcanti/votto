@@ -1,7 +1,7 @@
 name: Deploy
 
-# Push to the deploy branch → SSH into the Lightsail box → pull + rebuild + migrate.
-# Manual run is also available (Actions tab → Deploy → Run workflow).
+# Push to the deploy branch → SSH into the Lightsail box → sync code, build,
+# MIGRATE (before serving), then bring services up. Manual run also available.
 on:
   push:
     branches: [feature/project-bootstrap]
@@ -21,12 +21,29 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          command_timeout: 30m
+          command_timeout: 40m
           script: |
             set -e
             cd ~/votto
-            git pull --ff-only origin feature/project-bootstrap
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
-            docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
-            docker compose --env-file .env.production -f docker-compose.prod.yml --profile proxy up -d
+
+            # 1) Make the working tree EXACTLY match the remote branch (avoids
+            #    "pull was a no-op" / stale-source builds). .env.production is
+            #    untracked, so it is preserved.
+            git fetch --prune origin
+            git reset --hard origin/feature/project-bootstrap
+
+            COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
+
+            # 2) Build images from the now-current source.
+            $COMPOSE build
+
+            # 3) Bring up data services and apply pending migrations BEFORE the
+            #    web app serves traffic — schema and code always move together.
+            $COMPOSE up -d db redis
+            $COMPOSE run --rm migrate
+
+            # 4) Start/refresh the app + HTTPS proxy.
+            $COMPOSE up -d
+            $COMPOSE --profile proxy up -d
+
             docker image prune -f
