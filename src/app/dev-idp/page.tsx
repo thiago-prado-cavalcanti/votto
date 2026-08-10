@@ -5,7 +5,9 @@
  * test CPFs) and a custom form. All options post the identity to the gov.br
  * callback, carrying the CSRF `state` produced by /api/auth/govbr/start.
  */
+import { notFound } from "next/navigation";
 import { Container, Card, CardBody, Button, Field, Input } from "@/components/ui";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,13 @@ export default async function DevIdpPage({
 }: {
   searchParams: Promise<{ state?: string; error?: string }>;
 }) {
+  // This page mints an identity from a form. Reachable in production it would
+  // hand anyone a vote under any CPF, destroying the one-vote-per-citizen
+  // guarantee the whole platform rests on. The callback already refuses the
+  // submission outside mock mode, but the page must not exist at all — a
+  // visible fake login is its own kind of failure.
+  if (env.govbr.mode !== "mock") notFound();
+
   const { state = "", error } = await searchParams;
 
   return (
