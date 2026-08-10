@@ -49,10 +49,28 @@ function log(message: string): void {
   console.log(`[${formatZoned(new Date())}] ${message}`);
 }
 
-/** Run one job and report the outcome. */
+/**
+ * Seconds between progress lines. The heavy jobs run for tens of minutes; a
+ * log that says nothing between "started" and "finished" is indistinguishable
+ * from a hang, which is how an operator ends up killing a healthy import.
+ */
+const HEARTBEAT_SECONDS = 30;
+
+/** Run one job and report the outcome, with a throttled progress heartbeat. */
 async function execute(job: SyncJobDefinition): Promise<void> {
   log(`▶ ${job.name} — ${job.label}`);
-  const outcome = await runJob(job);
+
+  const startedAt = Date.now();
+  let lastBeat = startedAt;
+  const outcome = await runJob(job, {
+    onProgress: (progress) => {
+      const now = Date.now();
+      if (now - lastBeat < HEARTBEAT_SECONDS * 1000) return;
+      lastBeat = now;
+      const secs = Math.round((now - startedAt) / 1000);
+      log(`  … ${progress.note ?? `${progress.seen} itens`} (${progress.upserted} gravados, ${secs}s)`);
+    },
+  });
 
   if (outcome.status === "ok") {
     const secs = (outcome.durationMs / 1000).toFixed(1);
