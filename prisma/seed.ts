@@ -6,6 +6,20 @@
  * with a stable `externalRef` (e.g. `seed:party:pt`), so re-running this seed
  * never duplicates rows.
  *
+ * ## Modes — read before seeding production
+ *
+ *   `--mode=demo` (default) — everything below. For development and demos.
+ *   `--mode=admin`          — administrator only.
+ *   `--mode=purge-demo`     — administrator, plus removal of any demo roster,
+ *                             themes, votes and citizens a previous demo seed
+ *                             left behind.
+ *
+ * The demo roster is written with `source: MANUAL`, while the official importers
+ * (`npm run sync`) write the same people with `source: CAMARA`/`SENADO`. Running
+ * both therefore lists every deputy **twice**. In production seed with
+ * `--mode=admin` and let the sync workers supply the real data; if a demo seed
+ * already ran there, `--mode=purge-demo` cleans it up.
+ *
  * Contents:
  *   - REAL parties (from Câmara Dados Abertos, with offline fallback)
  *   - REAL sitting federal deputies as PublicAgents (name, party, state, photo)
@@ -790,9 +804,114 @@ async function cleanupStaleSeed(
   return { agents: staleAgents.length, parties: staleParties.length };
 }
 
-/** Run the full idempotent seed and print a concise summary. */
+/** How much of the dataset to write. See the module doc comment. */
+type SeedMode = "demo" | "admin" | "purge-demo";
+
+/** Read `--mode=` from argv, defaulting to the development-friendly full seed. */
+function parseMode(argv: string[]): SeedMode {
+  const flag = argv.find((a) => a.startsWith("--mode="))?.slice("--mode=".length);
+  if (flag === "admin" || flag === "purge-demo" || flag === "demo") return flag;
+  if (flag) {
+    console.error(`Modo desconhecido: "${flag}". Use demo, admin ou purge-demo.`);
+    process.exit(2);
+  }
+  return "demo";
+}
+
+/** Upsert the administrator. Present in every mode — it is the way in. */
+async function seedAdministrator(): Promise<void> {
+  const passwordHash = await hashPassword(ADMIN.password);
+  await db.administrator.upsert({
+    where: { email: ADMIN.email },
+    create: {
+      kid: kid("adm"),
+      firstName: ADMIN.firstName,
+      lastName: ADMIN.lastName,
+      email: ADMIN.email,
+      passwordHash,
+      role: AdminRole.SUPER_ADMIN,
+    },
+    update: { firstName: ADMIN.firstName, lastName: ADMIN.lastName, role: AdminRole.SUPER_ADMIN },
+  });
+}
+
+/**
+ * Remove everything a previous demo seed created, so the site shows only what
+ * the official importers brought in. Votes go first (they reference agents,
+ * themes and users), then the entities themselves.
+ *
+ * Scoped strictly to `source: MANUAL` rows whose `externalRef` starts with
+ * `seed:` — imported records and anything an editor created by hand are
+ * untouched.
+ */
+async function purgeDemoData(): Promise<void> {
+  const [agents, parties, themes] = await Promise.all([
+    db.publicAgent.findMany({
+      where: { source: SRC, externalRef: { startsWith: "seed:agent:" } },
+      select: { id: true },
+    }),
+    db.party.findMany({
+      where: { source: SRC, externalRef: { startsWith: "seed:party:" } },
+      select: { id: true },
+    }),
+    db.theme.findMany({
+      where: { source: SRC, externalRef: { startsWith: "seed:theme:" } },
+      select: { id: true },
+    }),
+  ]);
+
+  const agentIds = agents.map((a) => a.id);
+  const themeIds = themes.map((t) => t.id);
+
+  // Votes cast by demo agents, or on demo themes, or by demo citizens.
+  const votes = await db.vote.deleteMany({
+    where: {
+      OR: [
+        { agentId: { in: agentIds } },
+        { themeId: { in: themeIds } },
+        { source: SRC, externalRef: { startsWith: "seed:" } },
+      ],
+    },
+  });
+
+  // Themes cascade to their articles (onDelete: Cascade on Article.themeId).
+  const removedThemes = await db.theme.deleteMany({ where: { id: { in: themeIds } } });
+  const removedAgents = await db.publicAgent.deleteMany({ where: { id: { in: agentIds } } });
+  const removedParties = await db.party.deleteMany({
+    where: { id: { in: parties.map((p) => p.id) } },
+  });
+  const removedUsers = await db.user.deleteMany({
+    where: { cpfHash: { in: CITIZENS.map((c) => deriveCpfFields(c.cpf).cpfHash) } },
+  });
+
+  console.log(
+    `  • Removidos: ${removedAgents.count} agentes, ${removedParties.count} partidos, ` +
+      `${removedThemes.count} temas, ${votes.count} votos, ${removedUsers.count} cidadãos de demonstração.`,
+  );
+}
+
+/** Run the idempotent seed for the selected mode and print a concise summary. */
 async function main(): Promise<void> {
-  console.log("▶ Semeando dados (idempotente)…");
+  const mode = parseMode(process.argv.slice(2));
+
+  if (mode !== "demo") {
+    console.log(`▶ Seed em modo "${mode}"…`);
+    if (mode === "purge-demo") await purgeDemoData();
+    await seedAdministrator();
+    console.log("✓ Seed concluído.");
+    console.log("   Administrador (use para login):");
+    console.log(`     e-mail: ${ADMIN.email}`);
+    console.log(`     senha:  ${ADMIN.password}`);
+    console.log("");
+    console.log("   Dados oficiais: `npm run sync all` (ou aguarde o worker semanal).");
+    return;
+  }
+
+  console.log("▶ Semeando dados de demonstração (idempotente)…");
+  console.warn(
+    "  ⚠ Este modo cria uma bancada com source=MANUAL. Em produção use " +
+      "`--mode=admin` para não duplicar os dados dos importadores oficiais.",
+  );
 
   // 0) Real roster: deputies (Câmara) + senators (Senado) + President.
   const roster = await buildRoster();
@@ -893,19 +1012,7 @@ async function main(): Promise<void> {
   }
 
   // 8) Administrator.
-  const passwordHash = await hashPassword(ADMIN.password);
-  await db.administrator.upsert({
-    where: { email: ADMIN.email },
-    create: {
-      kid: kid("adm"),
-      firstName: ADMIN.firstName,
-      lastName: ADMIN.lastName,
-      email: ADMIN.email,
-      passwordHash,
-      role: AdminRole.SUPER_ADMIN,
-    },
-    update: { firstName: ADMIN.firstName, lastName: ADMIN.lastName, role: AdminRole.SUPER_ADMIN },
-  });
+  await seedAdministrator();
 
   // Summary.
   const byType = (t: AgentType) => roster.agents.filter((a) => a.type === t).length;

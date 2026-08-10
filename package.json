@@ -13,10 +13,18 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:admin": "tsx prisma/seed.ts --mode=admin",
+    "db:seed:purge-demo": "tsx prisma/seed.ts --mode=purge-demo",
     "assets:brand": "node scripts/generate-brand-assets.mjs",
     "assets:fonts": "node scripts/fetch-widget-fonts.mjs",
-    "import:camara": "tsx scripts/import.ts camara",
-    "import:senado": "tsx scripts/import.ts senado"
+    "check:sources": "tsx scripts/check-sources.ts",
+    "backfill": "tsx scripts/backfill.ts",
+    "reprioritize": "tsx scripts/reprioritize.ts",
+    "summarize": "tsx scripts/sync.ts ai:summaries",
+    "estimate:ai": "tsx scripts/estimate-ai-cost.ts",
+    "sync": "tsx scripts/sync.ts",
+    "sync:all": "tsx scripts/sync.ts all",
+    "worker": "tsx scripts/worker.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

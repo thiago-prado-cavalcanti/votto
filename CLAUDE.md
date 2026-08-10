@@ -119,10 +119,17 @@ Position users, public agents and parties on the classic left↔right political 
 
 - **PublicAgent** — deputies, councillors, governors, senators, etc.
   Fields: first name, last name, email, phone, image, description, CPF, type (deputy, councillor,
-  governor, senator, …), state, municipality. Belongs to a **Party**.
-- **Party** — first/display name, description, logo, plus denormalized counts (number of deputies,
-  governors, councillors, etc., kept for fast dashboards).
+  governor, senator, …), state, municipality, plus `externalUrl`, `legislature` and `inOffice`
+  (false once the mandate ends — the record and its votes are kept, see §8). Belongs to a **Party**.
+  Agent CPF is **not** imported even where a source publishes it: the source's own id already
+  establishes identity, so collecting it would add risk for nothing.
+- **Party** — first/display name, description, logo, official leader/website/head count, plus
+  denormalized counts (number of deputies, governors, councillors, etc., kept for fast dashboards).
+  A party exists **once** across houses, keyed by acronym.
 - **Theme** — political amendments, laws, etc. Fields: name, summary. Has many **Articles**.
+  Imported themes additionally carry their official record: `identifier` (e.g. "PL 3085/2026"),
+  `house`, `externalUrl`, `situation`, `urgency` (procedural regime), `priority` (0–100, see §8),
+  `classifications`, `keywords`, `inProgress`, `presentedAt`, `lastActionAt`.
 - **Article** — always connected to a Theme. Fields: link to original article, link to download the
   original article, foreign key to Theme.
 - **Vote** — a vote on a Theme. Value: abstention / yes / no. Cast by a **User** or a **PublicAgent**.
@@ -165,9 +172,18 @@ Position users, public agents and parties on the classic left↔right political 
 ### Authentication
 
 - **Users cannot create accounts.** No sign-up flow, no stored credentials.
-- Users log in **only via official Brazilian identity providers** that already pre-verify CPF, so we
-  can trust the identity: **gov.br** and **banks** (OAuth2 / OpenID Connect).
-- We rely on the provider's validated name + CPF; we never collect or verify CPF ourselves.
+- Users log in **only via gov.br** (Login Único, OIDC authorization-code + PKCE), which already
+  pre-verifies the CPF. Implementation: `src/lib/auth/govbr.ts`; identity reaches the database only
+  through `signInCitizen` (`src/lib/auth/citizen-login.ts`), which owns the CPF privacy rules.
+- We rely on the provider's validated name + CPF (the `sub` claim); we never collect or verify CPF
+  ourselves. Identity is always read from the **signature-verified** id_token, never the query string.
+- **Bank identity is reached through gov.br, not directly.** Brazilian banks expose no public
+  identity API — each would need a bilateral commercial agreement. Validating an account at a
+  credentialed bank is what grants the gov.br **selo prata**, so `GOVBR_MIN_TRUST=prata` is how
+  bank-grade identity is enforced. A future bank IdP plugs in as another provider behind
+  `signInCitizen`.
+- A development-only mock IdP (`/dev-idp`) exists for local work; the callback refuses its form
+  submission whenever `GOVBR_MODE != mock`, so a half-finished production switch fails closed.
 - **Administrators** authenticate with email + hashed password (separate from citizen auth).
 
 ### Internal IDs must never leave the system (global rule)
@@ -216,8 +232,10 @@ Each method **must have a description** (doc comment). Required operations:
   user for manual execution per the global DB rule.
 - **Cache / index acceleration:** Redis (alignment-index caching, hot themes).
 - **AI step:** Claude (latest model) for incremental theme-summary enrichment from uploaded articles.
-- **Auth:** OIDC clients for **gov.br** and **bank** providers (citizens); credential + session auth
-  for administrators.
+- **Auth:** OIDC client for **gov.br** (citizens); credential + session auth for administrators.
+- **Sync worker:** a separate long-running container running the weekly official-source jobs
+  (`scripts/worker.ts`) plus a one-off historical loader (`scripts/backfill.ts`), kept out of the web process so multi-minute imports never compete with
+  request handling and a redeploy doesn't interrupt a running import.
 
 ### Hosting (Brazil-located, simple, scalable)
 
@@ -238,17 +256,33 @@ APIs exist for this and require no authentication.
 ### Sources
 
 - **Câmara dos Deputados — Dados Abertos API v2** — `https://dadosabertos.camara.leg.br/api/v2`
-  (REST, JSON, no auth, refreshed daily). Relevant collections:
-  - `proposicoes` → **Theme** candidates (bills/amendments).
-  - `votacoes` and their `votos` → **public-agent Votes** on themes.
-  - `deputados`, `partidos` → **PublicAgent** / **Party** sync.
+  (REST, JSON, no auth, refreshed daily). Collections in use:
+  - `proposicoes` (+ `/{id}`, `/{id}/temas`) → **Theme**, with urgency regime, situation and the
+    official subject classification.
+  - `votacoes` (+ `/{id}`, `/{id}/votos`) → **public-agent Votes**.
+  - `deputados`, `partidos` (+ `/{id}`) → **PublicAgent** / **Party**.
 - **Senado Federal — Dados Abertos** — `https://legis.senado.leg.br/dadosabertos` (XML by default;
-  JSON via `.json` suffix or `Accept: application/json`). Relevant resources:
-  - `materia` → **Theme** candidates.
-  - `votacoes` and `senador/{codigo}/votacoes` → **public-agent Votes**.
-  - `materia/atualizadas.json?numdias=N` → polling endpoint for what changed recently.
+  JSON via `Accept: application/json`). Resources in use:
+  - `processo` (+ `/{id}`) → **Theme**, with situation and classification hierarchy.
+  - `votacao` → **public-agent Votes** (nominal roll calls, votes embedded).
+  - `senador/lista/atual`, `composicao/lista/partidos` → **PublicAgent** / **Party**.
+- ⚠️ The legacy `materia/*` family is **deprecated** (2025-03-18; shutdown 2026-02-01) in favour of
+  `/processo`. Do not build on it.
 - Keep the source list **extensible** for other official bodies (state assemblies, municipal
   chambers, TSE, etc.) behind a common importer interface.
+
+### Source quirks that constrain the design
+
+Verified against the live APIs; `npm run check:sources` re-checks them.
+
+- Câmara `votacoes` list returns `uriProposicaoObjeto: null` almost always — resolve the voted bill
+  from the detail endpoint's `proposicoesAfetadas`.
+- Only the **Plenário** (`idOrgao=180`) has nominal votes; committee decisions return `votos: []`
+  (sometimes 404).
+- Câmara `votacoes` rejects date ranges wider than **3 months** — chunk any look-back.
+- Senado `processo?numdias=` is capped at **30 days**.
+- A party must exist **once** across both houses: the Senado importer reuses a party already
+  imported by the Câmara when the acronym matches.
 
 ### Mapping to the data model
 
@@ -259,22 +293,52 @@ APIs exist for this and require no authentication.
   `+1 / -1 / 0` model.
 - Official legislators/parties → **PublicAgent** / **Party** records.
 
-### Sync design (MVP → scalable)
+### Urgency & classification
 
-- **Pull/polling** model: a scheduled job periodically queries each source's "recently updated"
-  endpoint (e.g. Câmara by date range, Senado `materia/atualizadas`), then fetches details only for
-  changed items. No source pushes to us.
+Neither house publishes a ready-made urgency score, but both publish its inputs. `Theme.priority`
+(0–100, `src/lib/domain/priority.ts`) folds procedural regime, current situation and recency into a
+single rank that SQL can order by; concluded bills are capped at 10. Two calibration constraints,
+found against the first real load: the base leaves headroom (35 of 42 bills on the Câmara floor carry
+an "Urgência" regime, so a high base marks everything urgent and the badge stops informing), and the
+houses must be comparable (the Senado publishes no regime, so its situation vocabulary supplies the
+base instead — otherwise no Senado bill could ever out-rank a Câmara one). Retuning needs no
+re-import: `npm run reprioritize` recomputes from stored columns. Bands: Urgente (≥80),
+Prioritário (≥60), Tramitação normal (≥30), Baixa prioridade.
+
+`Theme.classifications` stores the official subject taxonomy verbatim (Câmara `codTema`/`relevancia`,
+Senado `classificacoes` with hierarchy). The source's numeric code stays internal — the DTO exposes
+label, hierarchy and the "main subject" flag only.
+
+### Sync design
+
+- **Pull/polling** model: scheduled jobs query each source's "recently updated" endpoint, then fetch
+  details only for changed items. No source pushes to us.
 - **Idempotent upserts:** store each source's native identifier as an internal `source` +
   `external_ref` pair and upsert on it, so re-runs never duplicate. (These are the government's IDs,
   used only internally for dedup — they are **not** exposed externally; our public identifiers remain
   `kid` / `tsuuid` per §5.)
-- **Importer abstraction:** one importer per source behind a shared interface (fetch-updated →
-  normalize → upsert), so new official bodies can be added without touching core logic.
-- **Provenance & trust:** persist source, fetch timestamp, and raw payload reference for auditability;
-  imported records are clearly attributable to their official origin.
-- **Resilience:** rate-limit, retry with backoff, and tolerate source downtime without data loss
-  (resume from last successful sync watermark).
-- Start simple (a cron-style job hitting the APIs); evolve to a queue/worker pipeline as volume grows.
+- **Relevance has to be derived.** Neither house ranks bills, and the Câmara's `/proposicoes` silently
+  ignores `codSituacao`, so "the ones that matter" cannot be queried. The floor agenda is the closest
+  proxy that exists: `*:agenda` jobs read `orgaos/180/eventos` → `eventos/{id}/pauta` (Câmara) and
+  `processo?siglaSituacao=` (Senado, which does filter server-side). They overlap with the broad
+  `*:themes` sweep on purpose — cheap high-signal first, exhaustive second.
+- **One job per (source × domain)** — parties, agents, agenda, themes, votes — registered in
+  `src/lib/integration/jobs.ts` and scheduled weekly (Sunday early morning, America/São_Paulo). Jobs
+  are independent: an agent job creates a missing party, a vote job creates a missing agent, so
+  running them out of order loses detail but never correctness.
+- **Worker:** a dedicated container (`scripts/worker.ts`) runs the schedule, catches up on boot for
+  any job idle >8 days, runs jobs sequentially and isolates failures. An authenticated
+  `POST /api/cron/{job}` and the `/admin/sincronizacao` panel drive the same jobs manually.
+- **Single flight:** each job holds a lock in `SyncJob` (4h lease, reclaimable) so a worker run and a
+  manual trigger never import the same window concurrently.
+- **Provenance & trust:** every imported theme keeps its official identifier, house, situation and a
+  link back to the source page; `ImportRun` logs every attempt.
+- **Resilience:** rate-limit, retry with backoff, tolerate source downtime without data loss. An
+  agent run that returns nothing never retires the whole house.
+- **Mandates end, history doesn't:** agents dropped from the official roster get `inOffice = false`
+  instead of being deleted — their votes are what the alignment index is built from.
+- **Contract check:** `npm run check:sources` asserts every field the importers read is still present
+  in the live responses, without touching the database. Neither house versions its open data.
 
 ---
 
@@ -305,8 +369,14 @@ APIs exist for this and require no authentication.
 - Tune the economic/social weighting and band thresholds of the **Political Positioning Index**
   (currently 5-point left↔right: Esquerda · Centro-esquerda · Centro · Centro-direita · Direita).
 - Exact similarity formula and theme weighting for the **Alignment Index**.
-- Theme → positioning-dimension tagging model.
-- Confirm gov.br / bank OIDC provider availability and onboarding requirements.
+- Theme → positioning-dimension tagging model. The official classification now imported
+  (`Theme.classifications`) is the obvious input to automate this — currently unused by the
+  positioning index.
+- Tune the **priority** weights in `src/lib/domain/priority.ts` against real editorial judgement.
+- **gov.br credentials:** obtain `client_id`/`client_secret` for staging then production, and
+  register the exact `redirect_uri` (see `docs/integracao.md`). Nothing else blocks real login.
+  Note gov.br's discovery document does not advertise `code_challenge_methods_supported`, hence the
+  `GOVBR_PKCE` toggle.
 - Confirm hosting choice (Fly.io `gru` vs AWS `sa-east-1`).
-- Confirm coverage / rate limits of the Câmara & Senado APIs and which state/municipal bodies expose
-  open data (§8).
+- Which state/municipal bodies expose open data, and whether the AI enrichment step (§4) should run
+  on the newly imported bills (it is not wired into the importers yet).

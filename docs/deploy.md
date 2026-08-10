@@ -102,11 +102,18 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 # schema (Prisma migrations)
 docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
 
-# optional: synthetic data + real Câmara/Senado roster + admin user
-docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate npm run db:seed
+# administrator only — the sync worker supplies all the real data
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate npm run db:seed:admin
 ```
 
 Seed prints the admin login (`admin@votto.gov.br` / `Votto@2026` — change it).
+
+> **Do not run the plain `npm run db:seed` in production.** Its demo mode writes a
+> synthetic roster with `source: MANUAL`, while the importers write the same
+> people with `source: CAMARA`/`SENADO` — every deputy would appear twice. If a
+> demo seed already ran on this box, clean it up with
+> `npm run db:seed:purge-demo` (removes only `seed:*` rows, leaving imported and
+> hand-edited records intact).
 
 > **Order matters:** always run `migrate` (and rebuild) BEFORE the new web image
 > serves traffic, so the schema and code stay in sync. The auto-deploy workflow
@@ -127,6 +134,21 @@ Seed prints the admin login (`admin@votto.gov.br` / `Votto@2026` — change it).
 > ```
 > Then re-run the seed to populate content. Forcing `docker compose build
 > --no-cache` before `migrate` also prevents stale-image migrations.
+
+## 5b. Start the synchronization worker
+
+The `worker` service keeps the federal data current (deputies, senators, parties,
+bills and roll-call votes). It is part of the default compose stack, so `up -d`
+already started it — confirm and watch its first catch-up run:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml ps worker
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f worker
+```
+
+On a fresh box it imports everything immediately (no job has a recent successful
+run), which takes roughly 30–60 minutes end to end. After that it only wakes on
+the Sunday early-morning slots. Full details in [integracao.md](integracao.md).
 
 ## 6. HTTPS with your domain (recommended)
 
@@ -160,15 +182,20 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec db \
 Copy the dump off the box (e.g. to S3). For a managed alternative later, restore
 this dump into **RDS** and point `DATABASE_URL` there.
 
-**Import official data (Câmara/Senado)**
+**Official data (Câmara/Senado)** — handled by the `worker` container, which runs
+every job on its weekly slot and catches up on boot. See
+[integracao.md](integracao.md) for the job list, manual runs and troubleshooting.
+
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate npm run import:camara
-docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate npm run import:senado
+# force a single job now (see integracao.md for the full list)
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  run --rm migrate npm run sync camara:votes
 ```
 
 **Logs**
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml logs -f web
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f worker
 ```
 
 ---
@@ -192,7 +219,12 @@ Because the app reads everything from env vars, each step is just changing a URL
 
 - **gov.br login:** the dev mock (`GOVBR_MODE=mock`) must NOT be used in
   production. Register the app with gov.br, set `GOVBR_MODE=real` and the real
-  `GOVBR_CLIENT_ID/SECRET/ISSUER/REDIRECT_URI`.
+  `GOVBR_CLIENT_ID/SECRET/ISSUER/REDIRECT_URI`. The callback route refuses the
+  mock form submission whenever the mode is not `mock`, so a half-finished
+  switch fails closed. Onboarding steps: [integracao.md](integracao.md#govbr).
+- **Source contract check:** run `npm run check:sources` after a deploy. It hits
+  the Câmara/Senado/gov.br endpoints and fails loudly if a payload shape changed
+  — neither house versions its open data. It touches no database.
 - **Admin password:** change the seeded admin password immediately.
 - **Secrets:** keep `.env.production` off git (already gitignored) and back up
   `CPF_ENC_KEY` securely (e.g. AWS Secrets Manager).

@@ -35,7 +35,7 @@ docker compose up -d
 
 # 4) Banco: schema + dados
 npm run db:migrate        # cria/aplica o schema (Prisma migrate dev)
-npm run db:seed           # popula dados sintéticos determinísticos
+npm run db:seed           # dados de demonstração (só desenvolvimento)
 
 # 5) App
 npm run dev               # http://localhost:3000
@@ -49,19 +49,25 @@ npm run dev               # http://localhost:3000
 - **Site público:** http://localhost:3000
 - **Backend admin:** http://localhost:3000/admin
   - Login (do seed): `admin@votto.gov.br` / `Votto@2026`
-- **Login de cidadão (mock gov.br):** clique em *Entrar* → *Entrar com gov.br*. No ambiente de
+- **Login de cidadão (gov.br):** em produção, OIDC real (`GOVBR_MODE=real`). Em desenvolvimento, clique em *Entrar* → *Entrar com gov.br*. No ambiente de
   simulação (`/dev-idp`) escolha uma identidade de teste ou informe nome + um CPF válido.
 
-## Importação de dados oficiais (Câmara / Senado)
+## Dados oficiais (Câmara / Senado)
 
-Importadores idempotentes a partir das APIs públicas de Dados Abertos (sem autenticação):
+Deputados, senadores, partidos, proposições em pauta e votos nominais vêm das APIs públicas de
+Dados Abertos (sem autenticação), por dez jobs independentes que rodam **semanalmente** no
+container `worker`. Os registros são deduplicados por `(source, externalRef)`, então reexecutar
+nunca duplica.
 
 ```bash
-npm run import:camara     # tsx scripts/import.ts camara --days 30
-npm run import:senado     # tsx scripts/import.ts senado --days 60
+npm run backfill -- --top 100           # carga inicial: 6 meses, 100 proposições por casa
+npm run sync all                        # refresh federal completo
+npm run sync camara:votes -- --days 90  # reimporta três meses de votações
+npm run check:sources                   # confere os contratos das APIs (não toca no banco)
 ```
 
-Os registros são deduplicados por `(source, externalRef)`, então rodar de novo não duplica.
+Painel operacional em `/admin/sincronizacao`. Detalhes — jobs, urgência/classificação,
+gatilho HTTP e onboarding do gov.br — em [`docs/integracao.md`](docs/integracao.md).
 
 ## Scripts
 
@@ -73,8 +79,14 @@ Os registros são deduplicados por `(source, externalRef)`, então rodar de novo
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:migrate` | Aplica o schema (Prisma migrate dev) |
-| `npm run db:seed` | Popula dados sintéticos |
-| `npm run import:camara` / `:senado` | Importa dados oficiais |
+| `npm run db:seed` | Dados de demonstração (só desenvolvimento) |
+| `npm run db:seed:admin` | Só o administrador — use em produção |
+| `npm run db:seed:purge-demo` | Remove os dados de demonstração |
+| `npm run backfill` | Carga histórica das fontes oficiais |
+| `npm run reprioritize` | Recalcula a prioridade dos temas (sem rede) |
+| `npm run sync <job\|all>` | Sincroniza uma fonte oficial agora |
+| `npm run worker` | Agendador semanal das sincronizações |
+| `npm run check:sources` | Verifica os contratos das APIs oficiais |
 
 ## Segurança & privacidade
 
@@ -90,11 +102,13 @@ Os registros são deduplicados por `(source, externalRef)`, então rodar de novo
 src/
   app/(public)/      # site público (home, login, agentes, temas, voto)
   app/(admin)/admin/ # backend (login, dashboard, CRUDs)
-  app/api/auth/      # gov.br (mock) + admin
+  app/api/auth/      # gov.br (OIDC real + mock) + admin
+  app/api/cron/      # gatilho HTTP das sincronizações (CRON_SECRET)
   app/dev-idp/       # provedor gov.br simulado (dev)
   lib/               # db, redis, auth, crypto/cpf, indexes, ai, integration, dto
   components/         # ui (design system), public, admin
 prisma/              # schema.prisma, seed.ts
-scripts/import.ts    # CLI de importação
+scripts/             # sync.ts (CLI), worker.ts (agendador), check-sources.ts
+docs/integracao.md   # integração com as fontes oficiais + gov.br
 docs/migrations/     # SQL do schema (execução manual)
 ```
