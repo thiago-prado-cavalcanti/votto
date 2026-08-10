@@ -5,7 +5,9 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
-    ignores: ["node_modules/**", ".next/**", "src/generated/**"],
+    // `brand/` is the delivered brand kit: its patch/*.tsx files are code
+    // fragments, not modules, so they must stay out of the type/lint program.
+    ignores: ["node_modules/**", ".next/**", "src/generated/**", "brand/**"],
   },
 ];
 

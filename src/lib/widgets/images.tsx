@@ -57,11 +57,11 @@ function Mark({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
       <rect x={0} y={0} width={40} height={40} rx={9} fill={SUBTLE} />
-      <path d="M11 11 L19.5 28" stroke={WHITE} strokeWidth={5.4} strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10.8 10.6 L20 28.6" stroke={WHITE} strokeWidth={5.8} strokeLinecap="round" strokeLinejoin="round" />
       <path
-        d="M19.5 28 L24.2 18.5 L30.5 9.5"
+        d="M20 28.6 L29.2 10.6"
         stroke={ACCENT}
-        strokeWidth={5.4}
+        strokeWidth={5.8}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

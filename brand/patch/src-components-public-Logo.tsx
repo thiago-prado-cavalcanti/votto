@@ -48,7 +48,7 @@ export function Logo({
         strokeLinejoin="round"
       />
 
-      {/* right arm, mirrored — brand orange accent */}
+      {/* right arm — brand orange accent */}
       <path
         d="M20 28.6 L29.2 10.6"
         stroke="var(--color-accent-500)"

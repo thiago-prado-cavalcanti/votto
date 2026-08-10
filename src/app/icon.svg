@@ -1,8 +1,8 @@
 <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- solid brand tile so the mark stands out on a browser tab -->
   <rect width="40" height="40" rx="11" fill="#133e39" />
-  <!-- left arm of the V — institutional anchor -->
-  <path d="M11 11 L19.5 28" stroke="#ffffff" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round" />
-  <!-- right arm rising into a check — brand orange accent -->
-  <path d="M19.5 28 L24.2 18.5 L30.5 9.5" stroke="#ff9a2e" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- left arm — institutional anchor -->
+  <path d="M10.8 10.6 L20 28.6" stroke="#ffffff" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- right arm, mirrored — brand orange accent -->
+  <path d="M20 28.6 L29.2 10.6" stroke="#ff9a2e" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" />
 </svg>
