@@ -35,7 +35,11 @@ jobs:
             COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
 
             # 2) Build images from the now-current source.
-            $COMPOSE build
+            #    `migrate` sits behind the "tools" profile, and a bare
+            #    `compose build` skips services in inactive profiles — so it was
+            #    silently keeping a stale migrate image and running migrations
+            #    from old source. Name every buildable service explicitly.
+            $COMPOSE build web worker migrate
 
             # 3) Bring up data services and apply pending migrations BEFORE the
             #    web app serves traffic — schema and code always move together.

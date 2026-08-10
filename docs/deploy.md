@@ -120,6 +120,17 @@ Seed prints the admin login (`admin@votto.gov.br` / `Votto@2026` — change it).
 > (`.github/workflows/deploy.yml`) does this for you: `git reset --hard` → build
 > → `migrate` → `up`.
 
+> **Troubleshooting — `migrate` reports fewer migrations than the repo has
+> (e.g. "2 migrations found" when `prisma/migrations/` holds four):** the
+> `migrate` image is stale. It sits behind the `tools` profile, and a bare
+> `docker compose build` **skips services in inactive profiles** — so the
+> migrate image is never rebuilt and migrations run from old source. Name the
+> service explicitly:
+> ```bash
+> docker compose --env-file .env.production -f docker-compose.prod.yml build migrate
+> ```
+> The deploy workflow now builds `web worker migrate` by name for this reason.
+
 > **Troubleshooting — `column ... does not exist` (P2022) but `migrate` says
 > "No pending migrations":** the migration is recorded as applied but its SQL
 > never ran (usually after building from a stale/cached image). Apply the missing
