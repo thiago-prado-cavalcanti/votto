@@ -1,6 +1,6 @@
 /**
  * Shared importer infrastructure for official-source integrations
- * (Câmara dos Deputados, Senado Federal).
+ * (Câmara dos Deputados, Senado Federal — CLAUDE.md §8).
  *
  * Everything here is provenance-aware and idempotent: records are upserted on the
  * compound unique key `(source, externalRef)` so re-running an import never
@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { kid } from "@/lib/ids";
 import {
   AgentType,
+  House,
   ImportSource,
   Scope,
   VoteValue,
@@ -21,30 +22,54 @@ import {
   type Prisma,
 } from "@/generated/prisma";
 
-// ─── Importer contract ───────────────────────────────────────────────────────
+// ─── Sync step contract ──────────────────────────────────────────────────────
 
-/** Options accepted by every importer run. */
-export interface ImportOptions {
-  /** Look-back window in days for time-bounded resources (votes, matérias). */
+/** Progress heartbeat emitted during long imports. */
+export interface SyncProgress {
+  seen: number;
+  upserted: number;
+  /** What the step is working on right now, e.g. "janela 2026-05-16..2026-08-08". */
+  note?: string;
+}
+
+/** Options accepted by every sync step. */
+export interface SyncOptions {
+  /** Look-back window in days for time-bounded resources (votes, bills). */
   days?: number;
   /** Soft cap on the number of primary records processed (for quick test runs). */
   limit?: number;
+  /**
+   * Called periodically during long imports so a CLI can show it is alive. A
+   * six-month backfill runs for over an hour; without this it would print
+   * nothing between "started" and "finished".
+   */
+  onProgress?: (progress: SyncProgress) => void;
 }
 
-/** Aggregate counters returned by an importer run. */
-export interface ImportResult {
+/** How many primary records between {@link SyncOptions.onProgress} calls. */
+export const PROGRESS_INTERVAL = 25;
+
+/** Mutable counters threaded through a sync step. */
+export interface Counters {
+  seen: number;
+  upserted: number;
+}
+
+/** Create a zeroed counter bag. */
+export function counters(): Counters {
+  return { seen: 0, upserted: 0 };
+}
+
+/** Aggregate counts returned by a sync step. */
+export interface SyncResult {
   itemsSeen: number;
   itemsUpserted: number;
+  /** Optional cursor persisted on the SyncJob for the next incremental run. */
+  watermark?: string;
 }
 
-/**
- * Common interface implemented by each official-source importer. `source`
- * identifies the provenance written on every imported record.
- */
-export interface Importer {
-  source: ImportSource;
-  run(opts: ImportOptions): Promise<ImportResult>;
-}
+/** One unit of synchronization (agents, parties, themes or votes of a source). */
+export type SyncStep = (opts: SyncOptions) => Promise<SyncResult>;
 
 // ─── HTTP helper ─────────────────────────────────────────────────────────────
 
@@ -83,6 +108,7 @@ export async function fetchJson<T = unknown>(
       const res = await fetch(url, {
         headers: { Accept: "application/json", "User-Agent": "VottoBot/1.0", ...headers },
         signal: controller.signal,
+        redirect: "follow",
       });
       clearTimeout(timer);
 
@@ -109,6 +135,85 @@ export async function fetchJson<T = unknown>(
     : new Error(`Failed to fetch ${url}`);
 }
 
+// ─── Date helpers ────────────────────────────────────────────────────────────
+
+/** `YYYY-MM-DD` for a date `days` in the past (0 = today). */
+export function isoDaysAgo(days: number, from: Date = new Date()): string {
+  const d = new Date(from);
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Parse a source-provided date/datetime string into a Date, tolerating the several
+ * shapes the two houses emit (`2026-07-15`, `2026-07-15T14:00`, `2026-07-15T14:00:00.123`).
+ * Returns null for missing or unparseable values rather than an Invalid Date.
+ */
+export function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value.length === 10 ? `${value}T00:00:00Z` : value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Split `[from, to]` into consecutive windows of at most `maxDays`. The Câmara
+ * `votacoes` endpoint rejects ranges wider than three months, so any backfill
+ * must be chunked.
+ */
+export function dateWindows(
+  from: Date,
+  to: Date,
+  maxDays: number,
+): Array<{ start: string; end: string }> {
+  const windows: Array<{ start: string; end: string }> = [];
+  const cursor = new Date(from);
+  while (cursor <= to) {
+    const end = new Date(cursor);
+    end.setDate(end.getDate() + maxDays - 1);
+    const clamped = end > to ? to : end;
+    windows.push({
+      start: cursor.toISOString().slice(0, 10),
+      end: clamped.toISOString().slice(0, 10),
+    });
+    cursor.setDate(cursor.getDate() + maxDays);
+  }
+  return windows;
+}
+
+/** Split a full name into first + remaining as last name. */
+export function splitName(
+  full: string,
+  fallbackFirst: string,
+): { firstName: string; lastName: string } {
+  const trimmed = (full ?? "").trim();
+  if (!trimmed) return { firstName: fallbackFirst, lastName: "" };
+  const parts = trimmed.split(/\s+/);
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+/** Longest theme title we build from a bill's ementa, in characters. */
+const MAX_TITLE_LENGTH = 130;
+
+/**
+ * Human-readable title for an imported bill.
+ *
+ * The official identifier ("PL 3085/2026") is precise but means nothing to a
+ * citizen scanning a list, so the ementa — the one-line statement of what the
+ * bill does — becomes the title, trimmed at a word boundary. The identifier is
+ * still stored in its own column, shown as a badge and searchable.
+ *
+ * Falls back to the identifier when the source gives no ementa.
+ */
+export function billTitle(identifier: string, summary: string | null | undefined): string {
+  const text = (summary ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return identifier;
+  if (text.length <= MAX_TITLE_LENGTH) return text;
+
+  const cut = text.slice(0, MAX_TITLE_LENGTH);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 60 ? cut.slice(0, lastSpace) : cut).replace(/[,;:.\s]+$/, "")}…`;
+}
+
 // ─── Idempotent upsert helpers ───────────────────────────────────────────────
 
 /** Input for {@link upsertParty}. */
@@ -119,6 +224,10 @@ export interface PartyInput {
   acronym?: string | null;
   description?: string | null;
   logoUrl?: string | null;
+  leaderName?: string | null;
+  websiteUrl?: string | null;
+  /** The house's own head count for the party (may differ from our agentCount). */
+  memberCount?: number | null;
 }
 
 /**
@@ -126,27 +235,162 @@ export interface PartyInput {
  * id (never exposed externally) so callers can link agents to it.
  */
 export async function upsertParty(input: PartyInput): Promise<string> {
-  const { source, externalRef, name, acronym, description, logoUrl } = input;
+  const {
+    source,
+    externalRef,
+    name,
+    acronym,
+    description,
+    logoUrl,
+    leaderName,
+    websiteUrl,
+    memberCount,
+  } = input;
+
+  const data = {
+    name,
+    acronym: acronym ?? undefined,
+    description: description ?? undefined,
+    logoUrl: logoUrl ?? undefined,
+    leaderName: leaderName ?? undefined,
+    websiteUrl: websiteUrl ?? undefined,
+    memberCount: memberCount ?? undefined,
+  };
+
   const party = await db.party.upsert({
     where: { source_externalRef: { source, externalRef } },
-    create: {
-      kid: kid("pty"),
-      name,
-      acronym: acronym ?? undefined,
-      description: description ?? undefined,
-      logoUrl: logoUrl ?? undefined,
-      source,
-      externalRef,
-    },
-    update: {
-      name,
-      acronym: acronym ?? undefined,
-      description: description ?? undefined,
-      logoUrl: logoUrl ?? undefined,
-    },
+    create: { kid: kid("pty"), ...data, source, externalRef },
+    update: data,
     select: { id: true },
   });
   return party.id;
+}
+
+/**
+ * Check that a URL actually serves an image, returning null when it does not.
+ *
+ * The Câmara publishes a `urlLogo` for every party by formula
+ * (`.../partidos/{SIGLA}.gif`), but only about half of those files exist — 10 of
+ * 22 answer 404, including PL, MDB and REPUBLICANOS. Storing a known-dead URL
+ * means every page render asks the browser to fetch it and fall back, so the
+ * check happens once at import instead.
+ *
+ * Any network trouble is treated as "keep the URL": a transient failure must not
+ * silently strip working logos from the database.
+ */
+export async function verifyImageUrl(url: string | null | undefined): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(10_000),
+      redirect: "follow",
+    });
+    if (res.status === 404 || res.status === 410) return null;
+    if (!res.ok) return url;
+    const type = res.headers.get("content-type") ?? "";
+    return type.startsWith("image/") ? url : null;
+  } catch {
+    return url;
+  }
+}
+
+/** Lowercase alphanumerics only — for comparing names across sources. */
+function foldName(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Resolve the internal Party id for an acronym, reusing a party already imported
+ * by ANY source so each party exists exactly once — otherwise "PT" would appear
+ * twice on the parties page, once from the Câmara and once from the Senado.
+ * Only creates a record when the party is genuinely new, which also lets the
+ * agent jobs run before (or without) their party job.
+ *
+ * Matching is by acronym first, then by name. The two houses do not always agree
+ * on the abbreviation — the Câmara writes `PODE` where the Senado writes
+ * `PODEMOS` — but they do agree on the full name ("Podemos"), so the name is the
+ * reliable tiebreaker. Passing `name` is therefore worth it wherever it is known.
+ */
+export async function resolvePartyIdByAcronym(
+  acronym: string,
+  fallback: { source: ImportSource; name?: string },
+): Promise<string> {
+  const normalized = acronym.trim().toUpperCase();
+
+  const byAcronym = await db.party.findFirst({
+    where: { acronym: { equals: normalized, mode: "insensitive" } },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (byAcronym) return byAcronym.id;
+
+  // Only worth querying when the caller knows a name distinct from the acronym.
+  if (fallback.name && foldName(fallback.name) !== foldName(normalized)) {
+    const candidates = await db.party.findMany({
+      select: { id: true, name: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const target = foldName(fallback.name);
+    const byName = candidates.find((p) => foldName(p.name) === target);
+    if (byName) return byName.id;
+  }
+
+  return upsertParty({
+    source: fallback.source,
+    externalRef: `partido:${normalized}`,
+    name: fallback.name ?? normalized,
+    acronym: normalized,
+  });
+}
+
+/**
+ * Collapse parties that are the same party under different abbreviations,
+ * keeping the oldest record and moving every agent onto it.
+ *
+ * Self-healing rather than a one-off fix: the houses can diverge on an
+ * abbreviation at any time (they already do for Podemos), and a duplicate only
+ * becomes visible as a second, near-empty card on the parties page. Runs at the
+ * end of each party sync. Returns how many rows were merged away.
+ */
+export async function mergeDuplicateParties(): Promise<number> {
+  const parties = await db.party.findMany({
+    select: { id: true, name: true, acronym: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const groups = new Map<string, typeof parties>();
+  for (const party of parties) {
+    const key = foldName(party.name);
+    if (!key) continue;
+    const group = groups.get(key);
+    if (group) group.push(party);
+    else groups.set(key, [party]);
+  }
+
+  let merged = 0;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    // Oldest wins: it is the one the public `kid` links already point at.
+    const [survivor, ...duplicates] = group;
+    for (const duplicate of duplicates) {
+      await db.publicAgent.updateMany({
+        where: { partyId: duplicate.id },
+        data: { partyId: survivor.id },
+      });
+      await db.party.delete({ where: { id: duplicate.id } });
+      merged++;
+    }
+  }
+
+  // The survivor just absorbed the duplicate's members; without this its
+  // denormalized count would stay stale until the next agent import.
+  if (merged > 0) await syncPartyAgentCounts();
+  return merged;
 }
 
 /** Input for {@link upsertAgent}. */
@@ -162,6 +406,9 @@ export interface AgentInput {
   description?: string | null;
   state?: string | null;
   municipality?: string | null;
+  externalUrl?: string | null;
+  inOffice?: boolean;
+  legislature?: number | null;
   /** Internal party id (already resolved via {@link upsertParty}). */
   partyId?: string | null;
 }
@@ -169,6 +416,10 @@ export interface AgentInput {
 /**
  * Idempotently upsert a PublicAgent by `(source, externalRef)`. Returns the
  * internal id so callers can attach votes.
+ *
+ * CPF is deliberately NOT imported even though the Câmara publishes it: we keep
+ * citizen-grade PII to the minimum the product actually needs (CLAUDE.md §5),
+ * and agent identity is already established by the source's own id.
  */
 export async function upsertAgent(input: AgentInput): Promise<string> {
   const {
@@ -183,41 +434,46 @@ export async function upsertAgent(input: AgentInput): Promise<string> {
     description,
     state,
     municipality,
+    externalUrl,
+    inOffice,
+    legislature,
     partyId,
   } = input;
 
+  const data = {
+    firstName,
+    lastName,
+    type,
+    email: email ?? undefined,
+    phone: phone ?? undefined,
+    imageUrl: imageUrl ?? undefined,
+    description: description ?? undefined,
+    state: state ?? undefined,
+    municipality: municipality ?? undefined,
+    externalUrl: externalUrl ?? undefined,
+    legislature: legislature ?? undefined,
+    partyId: partyId ?? undefined,
+    ...(inOffice === undefined ? {} : { inOffice }),
+  };
+
   const agent = await db.publicAgent.upsert({
     where: { source_externalRef: { source, externalRef } },
-    create: {
-      kid: kid("agt"),
-      firstName,
-      lastName,
-      type,
-      email: email ?? undefined,
-      phone: phone ?? undefined,
-      imageUrl: imageUrl ?? undefined,
-      description: description ?? undefined,
-      state: state ?? undefined,
-      municipality: municipality ?? undefined,
-      partyId: partyId ?? undefined,
-      source,
-      externalRef,
-    },
-    update: {
-      firstName,
-      lastName,
-      type,
-      email: email ?? undefined,
-      phone: phone ?? undefined,
-      imageUrl: imageUrl ?? undefined,
-      description: description ?? undefined,
-      state: state ?? undefined,
-      municipality: municipality ?? undefined,
-      partyId: partyId ?? undefined,
-    },
+    create: { kid: kid("agt"), ...data, source, externalRef },
+    update: data,
     select: { id: true },
   });
   return agent.id;
+}
+
+/** One official subject classification attached to a theme. */
+export interface ThemeClassification {
+  /** Source-native code (Câmara `codTema`, Senado `classificacoes[].codigo`). */
+  code: string;
+  label: string;
+  /** Full hierarchy path, when the source provides one (Senado). */
+  hierarchy?: string;
+  /** 1 = the source flags this as the bill's main subject. */
+  relevance: number;
 }
 
 /** Input for {@link upsertTheme}. */
@@ -230,12 +486,32 @@ export interface ThemeInput {
   state?: string | null;
   municipality?: string | null;
   dimensions?: Prisma.InputJsonValue;
+  identifier?: string | null;
+  house?: House | null;
+  externalUrl?: string | null;
+  situation?: string | null;
+  urgency?: string | null;
+  priority?: number;
+  classifications?: ThemeClassification[] | null;
+  keywords?: string | null;
+  inProgress?: boolean;
+  presentedAt?: Date | null;
+  lastActionAt?: Date | null;
+  /** Internal agent id of the proposing parliamentarian, when there is one. */
+  proposerId?: string | null;
+  /** Author name when the author is not a parliamentarian (committee, Executive). */
+  proposerName?: string | null;
+  /** Internal agent id of the current rapporteur. */
+  rapporteurId?: string | null;
 }
 
 /**
  * Idempotently upsert a Theme by `(source, externalRef)`. Vote tallies are NOT
  * touched here — they are maintained incrementally by {@link upsertAgentVote}.
  * Returns the internal id.
+ *
+ * `summary` is only written when the source provides a non-empty one, so a
+ * metadata-only refresh never wipes an AI-enriched summary (CLAUDE.md §4).
  */
 export async function upsertTheme(input: ThemeInput): Promise<string> {
   const {
@@ -247,29 +523,51 @@ export async function upsertTheme(input: ThemeInput): Promise<string> {
     state,
     municipality,
     dimensions,
+    identifier,
+    house,
+    externalUrl,
+    situation,
+    urgency,
+    priority,
+    classifications,
+    keywords,
+    inProgress,
+    presentedAt,
+    lastActionAt,
+    proposerId,
+    proposerName,
+    rapporteurId,
   } = input;
+
+  const data = {
+    name,
+    scope,
+    state: state ?? undefined,
+    municipality: municipality ?? undefined,
+    identifier: identifier ?? undefined,
+    house: house ?? undefined,
+    externalUrl: externalUrl ?? undefined,
+    situation: situation ?? undefined,
+    urgency: urgency ?? undefined,
+    keywords: keywords ?? undefined,
+    presentedAt: presentedAt ?? undefined,
+    lastActionAt: lastActionAt ?? undefined,
+    proposerId: proposerId ?? undefined,
+    proposerName: proposerName ?? undefined,
+    rapporteurId: rapporteurId ?? undefined,
+    ...(summary ? { summary } : {}),
+    ...(priority === undefined ? {} : { priority }),
+    ...(inProgress === undefined ? {} : { inProgress }),
+    ...(dimensions === undefined ? {} : { dimensions }),
+    ...(classifications === undefined || classifications === null
+      ? {}
+      : { classifications: classifications as unknown as Prisma.InputJsonValue }),
+  };
 
   const theme = await db.theme.upsert({
     where: { source_externalRef: { source, externalRef } },
-    create: {
-      kid: kid("thm"),
-      name,
-      summary: summary ?? "",
-      scope,
-      state: state ?? undefined,
-      municipality: municipality ?? undefined,
-      dimensions: dimensions ?? undefined,
-      source,
-      externalRef,
-    },
-    update: {
-      name,
-      summary: summary ?? "",
-      scope,
-      state: state ?? undefined,
-      municipality: municipality ?? undefined,
-      ...(dimensions !== undefined ? { dimensions } : {}),
-    },
+    create: { kid: kid("thm"), summary: summary ?? "", ...data, source, externalRef },
+    update: data,
     select: { id: true },
   });
   return theme.id;
@@ -322,6 +620,10 @@ export interface AgentVoteInput {
   /** Internal agent id. */
   agentId: string;
   value: VoteValue;
+  /** When the roll call happened. */
+  occurredAt?: Date | null;
+  /** Source id of the roll call (internal use only). */
+  sessionRef?: string | null;
 }
 
 /**
@@ -332,44 +634,82 @@ export interface AgentVoteInput {
  * incremented; if a re-run changes an existing vote's value, the old counter is
  * decremented and the new one incremented. Wrapped in a transaction so the vote
  * and the tally never drift apart.
+ *
+ * An agent has at most one position per theme (`@@unique([agentId, themeId])`).
+ * When a bill is voted more than once (e.g. the bill itself and later an
+ * amendment), the newer roll call overwrites the older position instead of
+ * failing the whole run.
  */
-export async function upsertAgentVote(input: AgentVoteInput): Promise<void> {
-  const { source, externalRef, themeId, agentId, value } = input;
+export async function upsertAgentVote(input: AgentVoteInput): Promise<boolean> {
+  const { source, externalRef, themeId, agentId, value, occurredAt, sessionRef } = input;
 
-  await db.$transaction(async (tx) => {
+  return db.$transaction(async (tx) => {
     const existing = await tx.vote.findUnique({
       where: { source_externalRef: { source, externalRef } },
       select: { id: true, value: true },
     });
 
-    if (!existing) {
-      await tx.vote.create({
-        data: {
-          value,
-          voterType: VoterType.AGENT,
-          themeId,
-          agentId,
-          source,
-          externalRef,
-        },
-      });
-      await tx.theme.update({
-        where: { id: themeId },
-        data: tallyDelta(undefined, value),
-      });
-      return;
-    }
-
-    if (existing.value !== value) {
+    if (existing) {
+      if (existing.value === value) return false;
       await tx.vote.update({
         where: { id: existing.id },
-        data: { value },
+        data: { value, occurredAt: occurredAt ?? undefined, sessionRef: sessionRef ?? undefined },
       });
       await tx.theme.update({
         where: { id: themeId },
         data: tallyDelta(existing.value, value),
       });
+      return true;
     }
+
+    // A different roll call may already hold this agent's position on the theme.
+    const priorPosition = await tx.vote.findUnique({
+      where: { agentId_themeId: { agentId, themeId } },
+      select: { id: true, value: true, occurredAt: true },
+    });
+
+    if (priorPosition) {
+      // Keep the most recent roll call as the agent's standing position.
+      const priorAt = priorPosition.occurredAt?.getTime() ?? 0;
+      const newAt = occurredAt?.getTime() ?? 0;
+      if (newAt < priorAt) return false;
+
+      await tx.vote.update({
+        where: { id: priorPosition.id },
+        data: {
+          value,
+          occurredAt: occurredAt ?? undefined,
+          sessionRef: sessionRef ?? undefined,
+          source,
+          externalRef,
+        },
+      });
+      if (priorPosition.value !== value) {
+        await tx.theme.update({
+          where: { id: themeId },
+          data: tallyDelta(priorPosition.value, value),
+        });
+      }
+      return true;
+    }
+
+    await tx.vote.create({
+      data: {
+        value,
+        voterType: VoterType.AGENT,
+        themeId,
+        agentId,
+        occurredAt: occurredAt ?? undefined,
+        sessionRef: sessionRef ?? undefined,
+        source,
+        externalRef,
+      },
+    });
+    await tx.theme.update({
+      where: { id: themeId },
+      data: tallyDelta(undefined, value),
+    });
+    return true;
   });
 }
 
@@ -398,60 +738,49 @@ function tallyDelta(
 }
 
 /**
- * Recount a Party's `agentCount` from its current agents. Cheap and exact;
- * called at the end of an import so the denormalized count never drifts.
+ * Mark every agent of `(source, type)` whose externalRef was NOT seen in this
+ * run as no longer sitting, and re-mark the seen ones as sitting. Mandates end
+ * and substitutes rotate; without this, a former deputy would keep appearing in
+ * rankings forever. Votes are never deleted — the history is what the alignment
+ * index is built from (CLAUDE.md §3.1).
  */
-export async function syncPartyAgentCounts(source: ImportSource): Promise<void> {
-  const parties = await db.party.findMany({
-    where: { source },
-    select: { id: true },
+export async function reconcileInOffice(
+  source: ImportSource,
+  type: AgentType,
+  seenRefs: string[],
+): Promise<void> {
+  // A run that returned nothing is far more likely to be an API outage than an
+  // empty house — refuse to retire everyone on that basis.
+  if (seenRefs.length === 0) return;
+
+  await db.publicAgent.updateMany({
+    where: { source, type, externalRef: { notIn: seenRefs }, inOffice: true },
+    data: { inOffice: false },
   });
-  for (const p of parties) {
-    const count = await db.publicAgent.count({ where: { partyId: p.id } });
-    await db.party.update({ where: { id: p.id }, data: { agentCount: count } });
-  }
+  await db.publicAgent.updateMany({
+    where: { source, type, externalRef: { in: seenRefs }, inOffice: false },
+    data: { inOffice: true },
+  });
 }
 
-// ─── Run orchestration ───────────────────────────────────────────────────────
-
 /**
- * Execute an importer while recording an ImportRun row around it. Failures are
- * caught: the run is marked `ok: false` with the error note, and the error is
- * re-thrown so the CLI can exit non-zero. Always returns the final counts via
- * throw/return semantics handled by the caller.
+ * Recount every party's `agentCount` from its currently sitting agents. Cheap and
+ * exact; called at the end of an agent import so the denormalized count — which
+ * dashboards and party cards read — never drifts.
  */
-export async function runImport(
-  importer: Importer,
-  opts: ImportOptions = {},
-): Promise<ImportResult> {
-  const run = await db.importRun.create({
-    data: { source: importer.source, itemsSeen: 0, itemsUpserted: 0, ok: false },
-    select: { id: true },
+export async function syncPartyAgentCounts(): Promise<void> {
+  const grouped = await db.publicAgent.groupBy({
+    by: ["partyId"],
+    where: { partyId: { not: null }, inOffice: true, status: "ACTIVE" },
+    _count: { _all: true },
   });
+  const counts = new Map(grouped.map((g) => [g.partyId as string, g._count._all]));
 
-  try {
-    const result = await importer.run(opts);
-    await db.importRun.update({
-      where: { id: run.id },
-      data: {
-        finishedAt: new Date(),
-        itemsSeen: result.itemsSeen,
-        itemsUpserted: result.itemsUpserted,
-        ok: true,
-        note: `Importação concluída (${importer.source}).`,
-      },
-    });
-    return result;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await db.importRun.update({
-      where: { id: run.id },
-      data: {
-        finishedAt: new Date(),
-        ok: false,
-        note: `Falha: ${message}`.slice(0, 500),
-      },
-    });
-    throw err;
+  const parties = await db.party.findMany({ select: { id: true, agentCount: true } });
+  for (const p of parties) {
+    const next = counts.get(p.id) ?? 0;
+    if (next !== p.agentCount) {
+      await db.party.update({ where: { id: p.id }, data: { agentCount: next } });
+    }
   }
 }
