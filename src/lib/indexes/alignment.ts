@@ -109,7 +109,7 @@ export async function citizenPartyAlignments(
 ): Promise<Map<string, { partyKid: string; alignment: number | null; agents: number }>> {
   const agentAlignments = await citizenAgentAlignments(userId, voteVersion);
   const agents = await db.publicAgent.findMany({
-    where: { status: "ACTIVE", party: { isNot: null } },
+    where: { status: "ACTIVE", inOffice: true, party: { isNot: null } },
     select: { kid: true, party: { select: { kid: true } } },
   });
 
@@ -208,7 +208,7 @@ export async function partyElectorateAlignments(): Promise<
 > {
   const agentMap = await agentElectorateAlignments();
   const agents = await db.publicAgent.findMany({
-    where: { status: "ACTIVE", party: { isNot: null } },
+    where: { status: "ACTIVE", inOffice: true, party: { isNot: null } },
     select: { kid: true, party: { select: { kid: true } } },
   });
 

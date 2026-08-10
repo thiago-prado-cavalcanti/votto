@@ -66,7 +66,18 @@ export function AgentCard({
 
         <div className="flex flex-wrap items-center gap-2">
           {agent.party ? (
-            <Badge tone="navy">{agent.party.acronym ?? agent.party.name}</Badge>
+            // Logo + acronym: the mark is what people actually recognize, and
+            // the acronym stays so the badge still reads when the logo is one
+            // of the many the Câmara publishes as a dead link.
+            <Badge tone="navy" className="gap-1.5 pl-1.5">
+              <ImageWithFallback
+                src={agent.party.logoUrl}
+                alt=""
+                className="h-4 w-4 rounded-sm bg-white object-contain"
+                fallback={<></>}
+              />
+              {agent.party.acronym ?? agent.party.name}
+            </Badge>
           ) : (
             <Badge tone="gray">Sem partido</Badge>
           )}

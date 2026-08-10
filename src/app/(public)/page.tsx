@@ -27,7 +27,7 @@ export default async function HomePage() {
 
   const [themeCount, agentCount, partyCount, voteCount, hotThemesRaw] = await Promise.all([
     db.theme.count({ where: { status: "ACTIVE" } }),
-    db.publicAgent.count({ where: { status: "ACTIVE" } }),
+    db.publicAgent.count({ where: { status: "ACTIVE", inOffice: true } }),
     db.party.count({ where: { status: "ACTIVE" } }),
     db.vote.count({ where: { voterType: "USER" } }),
     db.theme.findMany({
@@ -57,8 +57,8 @@ export default async function HomePage() {
   // ─── Alignment ranking (top deputies / senators / parties) ──────────────────
   type AgentWithParty = Prisma.PublicAgentGetPayload<{ include: { party: true } }>;
   const [deputies, senators, allParties] = await Promise.all([
-    db.publicAgent.findMany({ where: { status: "ACTIVE", type: "FEDERAL_DEPUTY" }, include: { party: true } }),
-    db.publicAgent.findMany({ where: { status: "ACTIVE", type: "SENATOR" }, include: { party: true } }),
+    db.publicAgent.findMany({ where: { status: "ACTIVE", inOffice: true, type: "FEDERAL_DEPUTY" }, include: { party: true } }),
+    db.publicAgent.findMany({ where: { status: "ACTIVE", inOffice: true, type: "SENATOR" }, include: { party: true } }),
     db.party.findMany({ where: { status: "ACTIVE" } }),
   ]);
 

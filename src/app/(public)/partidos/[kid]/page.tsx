@@ -63,7 +63,7 @@ export default async function PartyDetailPage({
   const engagement = (await partyElectorateAlignments()).get(party.kid)?.alignment ?? null;
 
   const agents = await db.publicAgent.findMany({
-    where: { partyId: party.id, status: "ACTIVE" },
+    where: { partyId: party.id, status: "ACTIVE", inOffice: true },
     orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     include: { party: true },
   });

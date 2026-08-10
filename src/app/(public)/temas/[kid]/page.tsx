@@ -10,9 +10,12 @@ import { TemperatureBar } from "@/components/public/TemperatureBar";
 import { VoteButtons } from "@/components/public/VoteButtons";
 import { ShareButton } from "@/components/public/ShareButton";
 import { db } from "@/lib/db";
+import { PriorityBadge } from "@/components/public/PriorityBadge";
+import { OfficialRecord } from "@/components/public/OfficialRecord";
+import { ThemeAuthorLine } from "@/components/public/ThemeAuthorLine";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import { scopeLabel } from "@/lib/labels";
+import { scopeLabel, houseLabel } from "@/lib/labels";
 import { env } from "@/lib/env";
 import type { VoteValue } from "@/generated/prisma";
 
@@ -55,7 +58,11 @@ export default async function ThemeDetailPage({
 
   const theme = await db.theme.findUnique({
     where: { kid },
-    include: { articles: true },
+    include: {
+      articles: true,
+      proposer: { include: { party: true } },
+      rapporteur: { include: { party: true } },
+    },
   });
   if (!theme || theme.status !== "ACTIVE") notFound();
 
@@ -86,18 +93,52 @@ export default async function ThemeDetailPage({
             <CardBody>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone="navy">{scopeLabel[dto.scope]}</Badge>
+                {dto.house ? <Badge tone="gray">{houseLabel[dto.house]}</Badge> : null}
+                <PriorityBadge
+                  band={dto.band}
+                  urgency={dto.urgency}
+                  situation={dto.situation}
+                />
+                {!dto.inProgress ? <Badge tone="gray">Tramitação encerrada</Badge> : null}
                 {location ? (
                   <span className="text-xs text-[var(--color-muted)]">{location}</span>
                 ) : null}
               </div>
-              <h1 className="mt-3 text-3xl font-bold leading-tight tracking-tight text-navy-900">
-                {dto.name}
-              </h1>
-              {dto.summary ? (
-                <p className="mt-4 text-base font-medium leading-relaxed text-navy-800">
-                  {dto.summary}
+              {dto.identifier ? (
+                <p className="mt-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                  {dto.identifier}
                 </p>
               ) : null}
+              <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight text-navy-900">
+                {dto.plainTitle ?? dto.name}
+              </h1>
+
+              {/* Plain-language layer, clearly attributed. The official text is
+                  never replaced — it follows immediately below. */}
+              {dto.plainSummary ? (
+                <div className="mt-4 rounded-xl border border-line bg-canvas p-4">
+                  <p className="text-base leading-relaxed text-navy-800">{dto.plainSummary}</p>
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    Resumo em linguagem simples, gerado por IA a partir do texto oficial
+                    {dto.aiModel ? ` (${dto.aiModel})` : ""}. O texto oficial está abaixo.
+                  </p>
+                </div>
+              ) : null}
+
+              {dto.summary ? (
+                <div className="mt-5">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    Ementa oficial
+                  </h2>
+                  <p className="mt-1.5 text-base font-medium leading-relaxed text-navy-800">
+                    {dto.summary}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="mt-5">
+                <ThemeAuthorLine author={dto.author} />
+              </div>
 
               {dto.description ? (
                 <div className="mt-4 space-y-3 text-sm leading-relaxed text-ink">
@@ -133,6 +174,8 @@ export default async function ThemeDetailPage({
                   </div>
                 </div>
               ) : null}
+
+              <OfficialRecord theme={dto} />
 
               {dto.articles && dto.articles.length > 0 ? (
                 <div className="mt-6">

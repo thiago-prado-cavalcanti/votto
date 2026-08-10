@@ -20,7 +20,7 @@ const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
   title: {
-    default: "Votto — sua voz no centro da democracia",
+    default: "Votto — sua voz transformando a democracia",
     template: "%s · Votto",
   },
   description:
@@ -41,14 +41,14 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "Votto",
     locale: "pt_BR",
-    title: "Votto — sua voz no centro da democracia",
+    title: "Votto — sua voz transformando a democracia",
     description:
       "Voto popular direto e medição de alinhamento político entre cidadãos e agentes públicos.",
     url: "/",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Votto — sua voz no centro da democracia",
+    title: "Votto — sua voz transformando a democracia",
     description:
       "Voto popular direto e medição de alinhamento político entre cidadãos e agentes públicos.",
   },

@@ -14,6 +14,7 @@ const NAV = [
   { href: "/admin/agentes", label: "Agentes Públicos" },
   { href: "/admin/partidos", label: "Partidos" },
   { href: "/admin/temas", label: "Temas" },
+  { href: "/admin/sincronizacao", label: "Sincronização" },
   { href: "/admin/administradores", label: "Administradores" },
 ];
 

@@ -92,25 +92,31 @@ export function HeroB() {
               className="heroB-anim heroB-step-1 mt-6 font-display text-[2.85rem] font-extrabold leading-[0.98] tracking-tight sm:text-6xl lg:text-[4.1rem]"
               style={{ animationDelay: "0.13s" }}
             >
-              Sua voz no{" "}
-              <span className="relative inline-block text-accent-500">
-                centro
-                <svg
-                  aria-hidden
-                  viewBox="0 0 200 12"
-                  preserveAspectRatio="none"
-                  className="heroB-underline absolute -bottom-1 left-0 h-2.5 w-full text-accent-500"
-                >
-                  <path
-                    d="M2 8 C 50 2, 150 2, 198 7"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>{" "}
-              da democracia.
+              {/* Three explicit lines. Each segment is a block, so the break
+                  never depends on the viewport width — and the highlighted word
+                  stays `inline-block` inside its own block wrapper so the
+                  underline sizes to the word, not to the headline column. */}
+              <span className="block">Sua voz</span>
+              <span className="block">
+                <span className="relative inline-block text-accent-500">
+                  transformando
+                  <svg
+                    aria-hidden
+                    viewBox="0 0 200 12"
+                    preserveAspectRatio="none"
+                    className="heroB-underline absolute -bottom-1 left-0 h-2.5 w-full text-accent-500"
+                  >
+                    <path
+                      d="M2 8 C 50 2, 150 2, 198 7"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+              </span>
+              <span className="block">a democracia.</span>
             </h1>
 
             <p

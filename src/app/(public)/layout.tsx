@@ -55,7 +55,7 @@ export default async function PublicLayout({
           <div>
             <Wordmark tone="dark" />
             <p className="mt-3 max-w-md text-sm text-navy-300">
-              Sua voz no centro da democracia. Vote nos temas que importam e descubra
+              Sua voz transformando a democracia. Vote nos temas que importam e descubra
               quão alinhados estão os seus representantes.
             </p>
           </div>

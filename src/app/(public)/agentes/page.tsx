@@ -25,7 +25,9 @@ export default async function AgentsPage({
   const { type, state, party, sort } = await searchParams;
   const session = await getCitizenSession();
 
-  const where: Prisma.PublicAgentWhereInput = { status: "ACTIVE" };
+  // Former members keep their votes (the alignment index needs them) but are
+  // not listed or ranked — the page is about who holds a mandate today.
+  const where: Prisma.PublicAgentWhereInput = { status: "ACTIVE", inOffice: true };
   if (type && AGENT_TYPES.includes(type as AgentType)) where.type = type as AgentType;
   if (state) where.state = state;
   if (party) where.party = { kid: party };

@@ -6,7 +6,7 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Votto — sua voz no centro da democracia",
+    name: "Votto — sua voz transformando a democracia",
     short_name: "Votto",
     description:
       "Voto popular direto e medição de alinhamento político entre cidadãos e agentes públicos.",

@@ -2,7 +2,7 @@
  * PT-BR display labels for enums. Code/data stay in English (CLAUDE.md §10);
  * these are presentation-only.
  */
-import type { AgentType, Scope, VoteValue } from "@/generated/prisma";
+import type { AgentType, House, Scope, VoteValue } from "@/generated/prisma";
 
 export const agentTypeLabel: Record<AgentType, string> = {
   FEDERAL_DEPUTY: "Deputado(a) Federal",
@@ -12,6 +12,20 @@ export const agentTypeLabel: Record<AgentType, string> = {
   GOVERNOR: "Governador(a)",
   MAYOR: "Prefeito(a)",
   PRESIDENT: "Presidente",
+};
+
+/** Originating legislative house of an imported theme. */
+export const houseLabel: Record<House, string> = {
+  CAMARA: "Câmara dos Deputados",
+  SENADO: "Senado Federal",
+  CONGRESSO: "Congresso Nacional",
+};
+
+/** Compact house label, for badges where space is tight. */
+export const houseShortLabel: Record<House, string> = {
+  CAMARA: "Câmara",
+  SENADO: "Senado",
+  CONGRESSO: "Congresso",
 };
 
 export const scopeLabel: Record<Scope, string> = {
