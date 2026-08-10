@@ -66,6 +66,13 @@ enum ImportSource {
   SENADO
 }
 
+/// Legislative house a theme originates from (federal scope, for now).
+enum House {
+  CAMARA
+  SENADO
+  CONGRESSO
+}
+
 // ─── Core entities ─────────────────────────────────────────────────────────
 
 /// Political party. `kid` is the public identifier used in URLs/DTOs.
@@ -80,6 +87,13 @@ model Party {
 
   // Denormalized counts for fast dashboards (kept in sync on writes/imports).
   agentCount  Int          @default(0)
+
+  // Official metadata from the source (Câmara `partidos/{id}`, Senado
+  // `composicao/lista/partidos`). `memberCount` is the house's own head count and
+  // may legitimately differ from `agentCount` (which counts OUR records).
+  leaderName  String?
+  websiteUrl  String?
+  memberCount Int?
 
   // Provenance for idempotent imports.
   source      ImportSource @default(MANUAL)
@@ -116,6 +130,15 @@ model PublicAgent {
   municipality String?
   status       EntityStatus @default(ACTIVE)
 
+  // Official profile page on the source (camara.leg.br / senado.leg.br).
+  externalUrl  String?
+  // False once the source stops listing the agent as sitting (mandate ended,
+  // leave of absence, substitute stepped down). Kept instead of deleting so the
+  // vote history — and therefore the alignment index — stays intact.
+  inOffice     Boolean      @default(true)
+  /// Legislature number the agent was last seen in (Câmara: 57 = 2023–2027).
+  legislature  Int?
+
   partyId      String?
   party        Party?       @relation(fields: [partyId], references: [id])
 
@@ -123,6 +146,8 @@ model PublicAgent {
   externalRef  String?
 
   votes        Vote[]
+  proposedThemes    Theme[] @relation("ThemeProposer")
+  rapporteuredThemes Theme[] @relation("ThemeRapporteur")
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -132,6 +157,7 @@ model PublicAgent {
   @@index([state])
   @@index([status])
   @@index([partyId])
+  @@index([inOffice])
 }
 
 /// A political theme (bill, amendment, law, etc.) citizens and agents vote on.
@@ -153,6 +179,58 @@ model Theme {
   // the political positioning index. Provisional model (CLAUDE.md §11).
   dimensions  Json?
 
+  // ── Official legislative metadata (imported; null for manual themes) ───────
+  /// Official short identifier, e.g. "PL 3085/2026".
+  identifier  String?
+  house       House?
+  /// Public page for the bill on the source's own site.
+  externalUrl String?
+  /// Current procedural situation, verbatim from the source
+  /// (Câmara `statusProposicao.descricaoSituacao`, Senado `situacaoAtual`).
+  situation   String?
+  /// Urgency/priority regime, verbatim from the source
+  /// (Câmara `statusProposicao.regime`, e.g. "Urgência (Art. 155, RICD)").
+  urgency     String?
+  /// Normalized 0–100 priority rank derived from urgency + situation + recency.
+  /// See `src/lib/domain/priority.ts`. Recomputed on every import.
+  priority    Int          @default(0)
+  /// Official subject classification:
+  /// `[{ code, label, hierarchy?, relevance }]` — Câmara `proposicoes/{id}/temas`
+  /// (`relevance` 1 = main subject) and Senado `processo.classificacoes`.
+  classifications Json?
+  /// Source-provided indexing keywords, used for search and AI enrichment.
+  keywords    String?
+  /// Whether the bill is still moving through the house (`tramitando`).
+  inProgress  Boolean      @default(true)
+  presentedAt DateTime?
+  /// Timestamp of the last official action, used for recency ranking.
+  lastActionAt DateTime?
+
+  // ── Authorship (imported) ──────────────────────────────────────────────────
+  /// The parliamentarian who proposed the bill, when the author is one.
+  proposerId   String?
+  proposer     PublicAgent? @relation("ThemeProposer", fields: [proposerId], references: [id])
+  /// Author when it is not a sitting parliamentarian — a committee, the
+  /// Executive, or the other house ("Presidência da República").
+  proposerName String?
+  /// The parliamentarian currently reporting on the bill. Shown when there is no
+  /// parliamentarian proposer, since a relator is the next-best accountable face.
+  rapporteurId String?
+  rapporteur   PublicAgent? @relation("ThemeRapporteur", fields: [rapporteurId], references: [id])
+
+  // ── AI-generated plain language (CLAUDE.md §4) ─────────────────────────────
+  /// Short headline in plain Portuguese. The official `name`/`summary` are never
+  /// overwritten — this is an additional, clearly-attributed layer.
+  plainTitle   String?
+  /// Two or three sentences explaining what the bill does and whom it affects.
+  plainSummary String?
+  /// Model that produced the fields above, for provenance and re-runs.
+  aiModel      String?
+  aiUpdatedAt  DateTime?
+  /// Where `dimensions` came from: "AI" (generated) or "EDITOR" (human-set).
+  /// An editor's tagging is never overwritten by a later AI pass.
+  dimensionsSource String?
+
   // Denormalized vote tallies for fast "temperature" display.
   yesCount    Int          @default(0)
   noCount     Int          @default(0)
@@ -170,6 +248,11 @@ model Theme {
   @@unique([source, externalRef])
   @@index([status])
   @@index([scope])
+  @@index([priority])
+  @@index([lastActionAt])
+  @@index([inProgress])
+  @@index([proposerId])
+  @@index([rapporteurId])
 }
 
 /// Source article attached to a Theme. AI enrichment reads it to grow the summary.
@@ -211,6 +294,13 @@ model Vote {
   // Agent vote.
   agentId     String?
   agent       PublicAgent? @relation(fields: [agentId], references: [id])
+
+  /// When the roll call actually happened (agent votes only). Distinct from
+  /// `createdAt`, which is when WE imported it.
+  occurredAt  DateTime?
+  /// Source identifier of the roll call this vote belongs to (Câmara votação id,
+  /// Senado `codigoSessaoVotacao`). Internal only — never exposed (CLAUDE.md §5).
+  sessionRef  String?
 
   source      ImportSource @default(MANUAL)
   externalRef String?
@@ -267,10 +357,13 @@ model Administrator {
   @@index([status])
 }
 
-/// Tracks the last successful sync watermark per import source (resumable imports).
+/// History log: one row per import execution, successful or not.
 model ImportRun {
   id          String       @id @default(cuid())
   source      ImportSource
+  /// Registered job name that produced this run, e.g. "camara:votes"
+  /// (null for legacy/ad-hoc runs).
+  job         String?
   startedAt   DateTime     @default(now())
   finishedAt  DateTime?
   itemsSeen   Int          @default(0)
@@ -279,4 +372,28 @@ model ImportRun {
   note        String?
 
   @@index([source])
+  @@index([job, startedAt])
+}
+
+/// Current state of one scheduled sync job. Doubles as a single-flight lock so
+/// two worker instances (or a worker plus a manual trigger) never run the same
+/// job concurrently: a run claims the job by setting `runningSince`, and a stale
+/// claim older than the lease is reclaimable (see `src/lib/integration/runner.ts`).
+model SyncJob {
+  id             String    @id @default(cuid())
+  /// Registered job name, e.g. "camara:agents".
+  name           String    @unique
+  /// Set while a run holds the lock; null when idle.
+  runningSince   DateTime?
+  lastStartedAt  DateTime?
+  lastFinishedAt DateTime?
+  lastOk         Boolean   @default(false)
+  lastNote       String?
+  lastItemsSeen  Int       @default(0)
+  lastItemsUpserted Int    @default(0)
+  /// Resume cursor for incremental jobs (e.g. the last synced date).
+  watermark      String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
