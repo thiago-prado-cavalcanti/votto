@@ -38,7 +38,7 @@ export function AgentCard({
           <ImageWithFallback
             src={agent.imageUrl}
             alt={fullName}
-            className="h-14 w-14 rounded-full bg-navy-50 object-cover"
+            className="h-14 w-14 rounded-full bg-navy-100 object-cover"
             fallback={
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-navy-100 text-sm font-semibold text-navy-700">
                 {initials}
@@ -47,9 +47,7 @@ export function AgentCard({
           />
           <div className="min-w-0">
             <Link href={`/agentes/${agent.kid}`} className="group">
-              <h3 className="truncate text-base font-semibold text-navy-900 group-hover:text-navy-600">
-                {fullName}
-              </h3>
+              <h3 className="truncate text-lg text-navy-900 group-hover:underline">{fullName}</h3>
             </Link>
             <p className="text-xs text-[var(--color-muted)]">
               {agentTypeLabel[agent.type]}
@@ -73,7 +71,7 @@ export function AgentCard({
               <ImageWithFallback
                 src={agent.party.logoUrl}
                 alt=""
-                className="h-4 w-4 rounded-sm bg-white object-contain"
+                className="h-4 w-4 bg-surface object-contain"
                 fallback={<></>}
               />
               {agent.party.acronym ?? agent.party.name}

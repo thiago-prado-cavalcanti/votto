@@ -109,7 +109,7 @@ export function ThemeForm({ theme, aiEnabled }: { theme?: ThemeFormValues; aiEna
             />
           </Field>
 
-          <fieldset className="rounded-xl border border-line p-4">
+          <fieldset className="rounded-card border border-line p-4">
             <legend className="px-1 text-sm font-semibold text-navy-800">
               Pontos de vista
             </legend>
@@ -166,7 +166,7 @@ export function ThemeForm({ theme, aiEnabled }: { theme?: ThemeFormValues; aiEna
             </Field>
           </div>
 
-          <fieldset className="rounded-xl border border-line p-4">
+          <fieldset className="rounded-card border border-line p-4">
             <legend className="px-1 text-sm font-medium text-navy-800">Posicionamento (-1 a 1)</legend>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Eixo econômico" htmlFor="economic" hint="-1 (estatista) a 1 (liberal)">
@@ -201,7 +201,7 @@ export function ThemeForm({ theme, aiEnabled }: { theme?: ThemeFormValues; aiEna
                 {theme.articles.map((a) => (
                   <li
                     key={a.kid}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-line px-3.5 py-2.5"
+                    className="flex items-center justify-between gap-3 rounded-card border border-line px-3.5 py-2.5"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-ink">{a.title ?? a.originalUrl}</p>
@@ -241,7 +241,7 @@ export function ThemeForm({ theme, aiEnabled }: { theme?: ThemeFormValues; aiEna
             ) : (
               <div className="space-y-3">
                 {rows.map((row) => (
-                  <div key={row.id} className="rounded-xl border border-line p-3.5">
+                  <div key={row.id} className="rounded-card border border-line p-3.5">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Título" htmlFor={`articleTitle-${row.id}`}>
                         <Input id={`articleTitle-${row.id}`} name="articleTitle" />
@@ -275,7 +275,7 @@ export function ThemeForm({ theme, aiEnabled }: { theme?: ThemeFormValues; aiEna
           </div>
 
           {error ? (
-            <p className="rounded-xl bg-[#fbeaeb] px-3.5 py-2.5 text-sm text-[var(--color-negative)]">{error}</p>
+            <p className="rounded-card bg-[#f7e9e4] px-3.5 py-2.5 text-sm text-[var(--color-negative)]">{error}</p>
           ) : null}
 
           <div className="flex items-center gap-2">

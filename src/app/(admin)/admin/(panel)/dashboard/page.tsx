@@ -53,7 +53,7 @@ export default async function DashboardPage() {
 
       <div className="mt-8">
         <div className="mb-3 flex items-end justify-between">
-          <h2 className="font-display text-xl font-bold tracking-tight text-navy-900">
+          <h2 className="font-display text-xl text-navy-900">
             Temas recentes
           </h2>
           <Link

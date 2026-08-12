@@ -108,15 +108,15 @@ export default async function PartyDetailPage({
               <ImageWithFallback
                 src={dto.logoUrl}
                 alt={acronym}
-                className="h-20 w-20 rounded-2xl bg-navy-50 object-contain p-1.5"
+                className="h-20 w-20 rounded-card bg-navy-50 object-contain p-1.5"
                 fallback={
-                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-navy-100 bg-navy-50 px-2 text-center text-base font-extrabold leading-tight text-navy-700">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-card border border-navy-100 bg-navy-50 px-2 text-center text-base font-semibold leading-tight text-navy-700">
                     {acronym}
                   </div>
                 }
               />
               <div className="flex-1">
-                <h1 className="text-2xl font-bold tracking-tight text-navy-900">{dto.name}</h1>
+                <h1 className="text-[1.9rem] leading-tight text-navy-900">{dto.name}</h1>
                 <p className="mt-1 text-sm text-[var(--color-muted)]">
                   {acronym} · {dto.agentCount} {dto.agentCount === 1 ? "agente" : "agentes"}
                 </p>
@@ -136,7 +136,7 @@ export default async function PartyDetailPage({
 
           <Card className="mt-6">
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">
+              <h2 className="text-xl text-navy-900">
                 Agentes do partido ({agents.length})
               </h2>
               {agents.length === 0 ? (
@@ -165,7 +165,7 @@ export default async function PartyDetailPage({
         <div className="flex flex-col gap-6">
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Alinhamento</h2>
+              <h2 className="text-xl text-navy-900">Alinhamento</h2>
 
               {/* Global alignment (always shown) */}
               <div className="mt-3">
@@ -214,7 +214,7 @@ export default async function PartyDetailPage({
 
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Posicionamento</h2>
+              <h2 className="text-xl text-navy-900">Posicionamento</h2>
               <p className="mt-1 text-xs text-[var(--color-muted)]">
                 Posição:{" "}
                 <span className="font-medium text-navy-800">{position.profileLabel}</span>

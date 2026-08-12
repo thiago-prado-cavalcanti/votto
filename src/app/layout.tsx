@@ -1,17 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Sora } from "next/font/google";
+import { Instrument_Sans, Newsreader } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+// Instrument Sans carries labels, buttons, table headers and microcopy;
+// Newsreader (newspaper serif, weight 500) carries every display size and the
+// tabular numerals of the indexes. See docs/design.md.
+const instrument = Instrument_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  // Instrument Sans starts at 400 — there is no 300 to ask for.
+  weight: ["400", "500", "600"],
+  variable: "--font-instrument",
   display: "swap",
 });
 
-const sora = Sora({
+const newsreader = Newsreader({
   subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-sora",
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-newsreader",
   display: "swap",
 });
 
@@ -55,14 +61,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#133e39",
+  // Pinho 700 — the institutional green of the humanized palette.
+  themeColor: "#183a33",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${sora.variable}`}>
+    <html lang="pt-BR" className={`${instrument.variable} ${newsreader.variable}`}>
       <body className="font-sans antialiased">{children}</body>
     </html>
   );

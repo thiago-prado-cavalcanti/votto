@@ -33,15 +33,15 @@ export default async function PartyEmbed({ params }: { params: Promise<{ kid: st
         <ImageWithFallback
           src={party.logoUrl}
           alt={acronym}
-          className="h-12 w-12 rounded-xl bg-navy-50 object-contain p-1"
+          className="h-12 w-12 rounded-card bg-navy-50 object-contain p-1"
           fallback={
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-navy-100 bg-navy-50 px-1 text-center text-[10px] font-extrabold leading-none text-navy-700">
+            <div className="flex h-12 w-12 items-center justify-center rounded-card border border-navy-100 bg-navy-50 px-1 text-center text-[10px] font-semibold leading-none text-navy-700">
               {acronym}
             </div>
           }
         />
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold text-navy-900">{party.name}</h1>
+          <h1 className="truncate text-lg text-navy-900">{party.name}</h1>
           <p className="truncate text-xs text-[var(--color-muted)]">
             {acronym} · {party.agentCount} {party.agentCount === 1 ? "agente" : "agentes"}
           </p>
@@ -53,12 +53,12 @@ export default async function PartyEmbed({ params }: { params: Promise<{ kid: st
           Alinhamento com eleitores
         </div>
         <div className="mt-1 flex items-center gap-3">
-          <span className="font-display text-3xl font-extrabold tracking-tight text-navy-900">
+          <span className="vt-num text-3xl text-navy-900">
             {alignment === null ? "—" : `${alignment}%`}
           </span>
           {alignment !== null ? <StarRating value={alignment} size={18} /> : null}
           {band ? (
-            <span className="ml-auto rounded-full bg-navy-100 px-2.5 py-1 text-xs font-semibold text-navy-800">
+            <span className="ml-auto rounded-[2px] bg-navy-100 px-2 py-0.5 text-xs font-semibold text-navy-800">
               {band}
             </span>
           ) : null}

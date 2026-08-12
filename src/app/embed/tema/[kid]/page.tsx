@@ -20,7 +20,7 @@ export default async function ThemeEmbed({ params }: { params: Promise<{ kid: st
 
   return (
     <EmbedShell eyebrow={`Tema · ${scopeLabel[theme.scope]}`} href={`/temas/${theme.kid}`} cta="Votar">
-      <h1 className="line-clamp-3 text-lg font-bold leading-snug tracking-tight text-navy-900">
+      <h1 className="line-clamp-3 text-[1.35rem] leading-snug text-navy-900">
         {theme.name}
       </h1>
       <div className="mt-auto pt-4">

@@ -344,11 +344,27 @@ label, hierarchy and the "main subject" flag only.
 
 ## 9. Design
 
-- Clean, modern, conveying **robustness and security**.
-- **Sober colors** associated with Brazil — navy blue or colonial green.
-- Modern **sans-serif** fonts. Fully **responsive**.
-- Governmental gravitas but **high-end design quality** — inspiration from banks, fintechs, and
-  payment companies (most Brazilian public-sector products are poorly made; Votto must not be).
+> The full system — tokens, type, patterns, brand assets and a pre-ship checklist — lives in
+> [`docs/design.md`](docs/design.md). It is the source of truth; this section is the intent.
+
+**Positioning: "papel & pigmento".** Votto is a public institution that happens to be a website,
+so it reads like a well-set document rather than a dashboard. Governmental gravitas with
+high-end design quality (most Brazilian public-sector products are poorly made; Votto must not
+be), but the reference is a printed record, not a fintech app.
+
+- **Warm paper, never white** (`canvas #fcfaf6`). Structure is a **1px ink rule**, never a shadow.
+- **Sober colors of Brazil, as pigment:** warm ink, **pinho** (institutional green), **terracota**
+  (action) and **ocre** (highlight). Votes are moss / brick / stone; abstention is always neutral.
+- **Newspaper serif (Newsreader) at weight 500** for every display size and for the indexes
+  (`.vt-num`, tabular); **Instrument Sans** for labels, buttons, table headers and microcopy.
+  There is no 700/800 weight in the system.
+- **Paper folds, it does not round:** 4px corners (`--radius-card`), 2px on tags.
+- **One decoration:** a 3.5% paper grain in multiply over the document. No auroras, no grids.
+- Lists are documents: themes are an order paper with a voting panel, rankings are tables with an
+  index column, filters are labelled rules with no box.
+- The **animated `AlignmentRadar`** is the brand made visible — and, until per-area alignment is
+  computed, it is illustration, not a chart (see §11).
+- Fully **responsive**; all motion honours `prefers-reduced-motion`.
 
 ---
 
@@ -380,3 +396,10 @@ label, hierarchy and the "main subject" flag only.
 - Confirm hosting choice (Fly.io `gru` vs AWS `sa-east-1`).
 - Which state/municipal bodies expose open data, and whether the AI enrichment step (§4) should run
   on the newly imported bills (it is not wired into the importers yet).
+- **Per-area alignment** for the hero's `AlignmentRadar`: it needs themes grouped by policy area
+  and the alignment maths run per group (the same computation as `citizenAgentAlignments`, only
+  partitioned). Until then the radar's data is fictional and it stands as brand illustration —
+  see `docs/design.md` §4.
+- The two layouts the humanized study proposed but this pass did not apply: agent/party lists as
+  tables, and the theme detail page with the official record as a marginal column
+  (`docs/design.md` §7).

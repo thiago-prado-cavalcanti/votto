@@ -1,6 +1,10 @@
 /**
- * Admin login page — bold split layout with a dark brand panel and a confident
- * form. Rendered outside the guarded panel chrome.
+ * Admin login page — split layout with an ink brand panel and a plain form.
+ * Rendered outside the guarded panel chrome.
+ *
+ * The panel is flat ink: the blurred aurora orbs it used to carry belong to the
+ * old scheme, and the paper grain is the whole ornament budget now
+ * (docs/design.md).
  */
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/admin/LoginForm";
@@ -11,22 +15,15 @@ export default function AdminLoginPage() {
   return (
     <main className="grid min-h-screen lg:grid-cols-2">
       {/* Brand panel */}
-      <section className="relative hidden flex-col justify-between overflow-hidden bg-navy-900 p-12 text-white lg:flex">
-        <div
-          className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-accent-500/20 blur-3xl"
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-colonial-500/20 blur-3xl"
-          aria-hidden
-        />
-        <div className="relative">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-accent-300">
+      <section className="hidden flex-col justify-between bg-navy-900 p-12 text-navy-50 lg:flex">
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-[2px] border border-navy-50/15 px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-accent-300">
             Painel de controle
           </span>
         </div>
-        <div className="relative">
-          <h1 className="font-display text-5xl font-extrabold tracking-tight">
+        <div>
+          <hr className="mb-6 h-[3px] w-14 border-0 bg-navy-50/80" />
+          <h1 className="font-display text-5xl">
             Votto<span className="text-accent-500">.</span>
           </h1>
           <p className="mt-4 max-w-sm text-lg leading-relaxed text-navy-200">
@@ -34,7 +31,7 @@ export default function AdminLoginPage() {
             exige.
           </p>
         </div>
-        <div className="relative text-sm text-navy-300">
+        <div className="text-sm text-navy-300">
           © {new Date().getFullYear()} Votto · Painel administrativo
         </div>
       </section>
@@ -43,7 +40,7 @@ export default function AdminLoginPage() {
       <section className="flex items-center justify-center bg-canvas px-4 py-12 sm:px-6">
         <div className="w-full max-w-sm">
           <div className="mb-8 lg:hidden">
-            <div className="font-display text-3xl font-extrabold tracking-tight text-navy-900">
+            <div className="font-display text-3xl text-navy-900">
               Votto<span className="text-accent-500">.</span>
             </div>
             <p className="mt-1 text-sm text-[var(--color-muted)]">
@@ -52,7 +49,7 @@ export default function AdminLoginPage() {
           </div>
 
           <div className="mb-7 hidden lg:block">
-            <h2 className="font-display text-3xl font-extrabold tracking-tight text-navy-900">
+            <h2 className="font-display text-3xl text-navy-900">
               Entrar
             </h2>
             <p className="mt-1.5 text-sm text-[var(--color-muted)]">
@@ -60,7 +57,7 @@ export default function AdminLoginPage() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-line bg-surface p-6 shadow-[0_1px_2px_rgba(11,22,34,0.04),0_12px_32px_rgba(11,22,34,0.06)] sm:p-7">
+          <div className="rounded-card border border-line bg-surface p-6 sm:p-7">
             <LoginForm />
           </div>
         </div>

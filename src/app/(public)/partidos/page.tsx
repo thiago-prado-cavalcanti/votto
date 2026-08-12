@@ -3,7 +3,9 @@
  * agent count and (for logged-in citizens) their alignment meter. Sortable by
  * alignment (when logged in), number of agents, or name.
  */
-import { Container, Card, CardBody, Field, Select, Button } from "@/components/ui";
+import { Container, Field, Select } from "@/components/ui";
+import { PageIntro } from "@/components/public/Section";
+import { FilterBar } from "@/components/public/FilterBar";
 import { PartyCard } from "@/components/public/PartyCard";
 import { db } from "@/lib/db";
 import { toPublicParty } from "@/lib/dto";
@@ -72,40 +74,26 @@ export default async function PartiesPage({
 
   return (
     <Container className="py-10">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-navy-900">Partidos</h1>
-        <p className="mt-1 text-[var(--color-muted)]">
-          Posição no espectro político e, ao entrar, o seu alinhamento com cada partido.
-        </p>
-      </header>
+      <PageIntro
+        title="Partidos"
+        lead="Posição no espectro político e, ao entrar, o seu alinhamento com cada partido."
+      />
 
-      {/* Filters */}
-      <Card className="mb-8">
-        <CardBody>
-          <form method="get" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Ordenar por">
-              <Select name="sort" defaultValue={sort ?? ""}>
-                <option value="">Nome</option>
-                <option value="engagement">Alinhamento com eleitores</option>
-                <option value="agents">Nº de agentes</option>
-                {session ? <option value="alignment">Seu alinhamento</option> : null}
-              </Select>
-            </Field>
-            <div className="flex items-end">
-              <Button type="submit" variant="outline" className="w-full sm:w-auto">
-                Aplicar
-              </Button>
-            </div>
-          </form>
-        </CardBody>
-      </Card>
+      <FilterBar submitLabel="Aplicar">
+        <Field label="Ordenar por">
+          <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
+            <option value="">Nome</option>
+            <option value="engagement">Alinhamento com eleitores</option>
+            <option value="agents">Nº de agentes</option>
+            {session ? <option value="alignment">Seu alinhamento</option> : null}
+          </Select>
+        </Field>
+      </FilterBar>
 
       {rows.length === 0 ? (
-        <Card>
-          <CardBody>
-            <p className="text-sm text-[var(--color-muted)]">Nenhum partido cadastrado.</p>
-          </CardBody>
-        </Card>
+        <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">
+          Nenhum partido cadastrado.
+        </p>
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((row) => (

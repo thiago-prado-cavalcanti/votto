@@ -17,10 +17,10 @@ export function PageHeader({
     <div className="mb-6 flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="relative pl-4">
         <span
-          className="absolute left-0 top-1 h-7 w-1.5 rounded-full bg-accent-500"
+          className="absolute left-0 top-1 h-7 w-1 bg-accent-500"
           aria-hidden
         />
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-navy-900">
+        <h1 className="font-display text-3xl text-navy-900">
           {title}
         </h1>
         {description ? (

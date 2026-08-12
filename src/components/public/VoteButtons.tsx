@@ -80,7 +80,7 @@ export function VoteButtons({
               variant={active ? "primary" : "outline"}
               disabled={pending}
               onClick={() => handleVote(opt.value)}
-              className={cn(active && "text-white hover:opacity-90")}
+              className={cn(active && "text-navy-50 hover:opacity-90")}
               style={active ? { background: activeBg } : undefined}
               aria-pressed={active}
             >

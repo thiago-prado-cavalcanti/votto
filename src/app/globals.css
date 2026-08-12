@@ -1,88 +1,103 @@
 @import "tailwindcss";
 
 /*
- * Votto design tokens — bold, high-presence scheme.
- * Palette: vivid orange (accent), deep teal (brand), near-black ink (surfaces),
- * light gray (canvas). Color-blocked, confident typography.
+ * Votto design tokens — HUMANIZED scheme (papel & pigmento).
  *
- * Note: the `navy-*` scale is repurposed as a cool near-black INK ramp and the
- * `colonial-*` scale as the TEAL ramp, so existing utility classes adopt the new
- * look without a sweeping rename. `accent-*` is the orange brand ramp.
+ * Same variable names as the previous bold scheme, so every existing utility
+ * class adopts the new look without a rename:
+ *   navy-*      → warm INK ramp (was cool near-black)
+ *   colonial-*  → PINHO, the institutional green, one degree warmer than the old teal
+ *   accent-*    → TERRACOTA / OCRE, pigment instead of screen orange
+ *
+ * Display type is a newspaper serif at weight 500; the sans is used only for
+ * labels, buttons, table headers and microcopy. Shadows are gone: structure is
+ * carried by 1px ink rules on warm paper.
  */
 @theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-newsreader), Georgia, "Times New Roman", serif;
 
-  /* INK — cool near-black neutral (repurposed `navy-*`) */
-  --color-navy-50: #f3f5f7;
-  --color-navy-100: #e6eaee;
-  --color-navy-200: #d0d7dd;
-  --color-navy-300: #aeb8c2;
-  --color-navy-400: #8593a0;
-  --color-navy-500: #5d6e7c;
-  --color-navy-600: #475561;
-  --color-navy-700: #323d47;
-  --color-navy-800: #262e36;
-  --color-navy-900: #1b2026;
-  --color-navy-950: #0f1317;
+  /* INK — warm near-black neutral (repurposed `navy-*`) */
+  --color-navy-50: #faf7f0;
+  --color-navy-100: #f2eee3;
+  --color-navy-200: #e2ddd0;
+  --color-navy-300: #cbc4b1;
+  --color-navy-400: #a8a190;
+  --color-navy-500: #8b8574;
+  --color-navy-600: #6d6757;
+  --color-navy-700: #4a4539;
+  --color-navy-800: #302c25;
+  --color-navy-900: #17150f;
+  --color-navy-950: #0d0b06;
 
-  /* TEAL — deep brand green (repurposed `colonial-*`) */
-  --color-colonial-50: #e9f3f1;
-  --color-colonial-100: #c9e3df;
-  --color-colonial-200: #99c7bf;
-  --color-colonial-300: #5fa79c;
-  --color-colonial-400: #2f8377;
-  --color-colonial-500: #1f655c;
-  --color-colonial-600: #1a4d48;
-  --color-colonial-700: #133e39;
-  --color-colonial-800: #0f302d;
-  --color-colonial-900: #0a2320;
+  /* PINHO — institutional green (repurposed `colonial-*`) */
+  --color-colonial-50: #eef3f0;
+  --color-colonial-100: #dbe6e1;
+  --color-colonial-200: #b6ccc4;
+  --color-colonial-300: #8fb3a8;
+  --color-colonial-400: #58897c;
+  --color-colonial-500: #2f6357;
+  --color-colonial-600: #1f4a41;
+  --color-colonial-700: #183a33;
+  --color-colonial-800: #122c27;
+  --color-colonial-900: #0c1f1b;
 
-  /* ACCENT — vivid orange (brand) */
-  --color-accent-50: #fff4e6;
-  --color-accent-100: #ffe5c2;
-  --color-accent-200: #ffd199;
-  --color-accent-300: #ffba66;
-  --color-accent-400: #ffa845;
-  --color-accent-500: #ff9a2e;
-  --color-accent-600: #f2861a;
-  --color-accent-700: #cc6f12;
-  --color-accent-800: #9e560f;
-  --color-accent-900: #7a430c;
+  /* ACCENT — terracota (ação) e ocre (grifo) */
+  --color-accent-50: #fbf3e8;
+  --color-accent-100: #f4e3cc;
+  --color-accent-200: #e9cda6;
+  --color-accent-300: #dcae74;
+  --color-accent-400: #cf9445;
+  --color-accent-500: #b4552f;
+  --color-accent-600: #a24a27;
+  --color-accent-700: #8a3d1f;
+  --color-accent-800: #6d3019;
+  --color-accent-900: #522413;
+
+  /* OCRE — destaque, grifo, numerais em foco */
+  --color-ochre: #c07f2c;
+  --color-ochre-light: #f2e6cf;
+  /* Ocre queimado: o ocre puro não tem contraste sobre papel claro, então texto e
+     ícones em tom ocre usam este. */
+  --color-ochre-ink: #7d5218;
 
   /* Semantic surfaces */
-  --color-ink: #1b2026;
-  --color-muted: #5f6e6c;
-  --color-line: #e3e6e3;
+  --color-ink: #17150f;
+  --color-muted: #5b5648;
+  --color-line: #e2ddd0;
   --color-surface: #ffffff;
-  --color-canvas: #f0f0ee;
+  --color-canvas: #fcfaf6;
 
-  /* Refined so "Sim" (emerald) and "Não" (crimson) don't vibrate as pure
-     red/green complementaries; they differ in hue, lightness and saturation. */
-  --color-positive: #0e9d6a;
-  --color-negative: #ce3a4b;
-  --color-neutral: #e08a1e;
+  /* Pigmentos de status — terra, não semáforo */
+  --color-positive: #556b3d;
+  --color-negative: #a8452f;
+  --color-neutral: #c07f2c;
 
-  /* Vote colors — abstention is always neutral slate (never amber/green/red). */
-  --color-vote-yes: #0e9d6a;
-  --color-vote-no: #ff9a2e;
-  --color-vote-abstention: #64748b;
+  /* Vote colors — abstention is always neutral stone (never ochre/moss/brick). */
+  --color-vote-yes: #556b3d;
+  --color-vote-no: #a8452f;
+  --color-vote-abstention: #8a8578;
 
-  --radius-card: 20px;
+  /* Nada de cantos generosos: papel dobra, não arredonda. */
+  --radius-card: 4px;
 
-  --shadow-bold: 0 1px 2px rgba(27, 32, 38, 0.06), 0 18px 40px -16px rgba(27, 32, 38, 0.28);
+  --shadow-bold: 0 1px 2px rgba(23, 21, 15, 0.05), 0 14px 34px -18px rgba(23, 21, 15, 0.22);
 }
 
 :root {
   color-scheme: light;
 
-  /* Emitted as plain CSS vars (not only via @theme) so inline styles and
-     arbitrary var() references resolve reliably. */
-  --color-positive: #0e9d6a;
-  --color-negative: #ce3a4b;
-  --color-vote-yes: #0e9d6a;
-  --color-vote-no: #ff9a2e;
-  --color-vote-abstention: #64748b;
+  --color-positive: #556b3d;
+  --color-negative: #a8452f;
+  --color-vote-yes: #556b3d;
+  --color-vote-no: #a8452f;
+  --color-vote-abstention: #8a8578;
+  --color-ochre: #c07f2c;
+  --color-ochre-ink: #7d5218;
+
+  /* Grão de papel: a única decoração do sistema. Substitui as auroras
+     desfocadas e a grade de 56px das seções escuras. */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 html {
@@ -93,27 +108,66 @@ html {
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
+  position: relative;
 }
 
-/* Bold, high-presence display typography for headings. */
+/* Grão aplicado ao documento inteiro, a 3.5% em multiply. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: var(--paper-grain);
+  opacity: 0.035;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Serifa de jornal no display; peso 500, nunca 800. */
 h1,
 h2,
 h3,
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.025em;
-  font-weight: 800;
+  letter-spacing: -0.026em;
+  font-weight: 500;
 }
 
-/* Subtle focus ring consistent across interactive elements. */
+/* Numerais serifados e tabulares — índices, porcentagens, contagens. */
+.vt-num {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+/* Logotipo "Votto." — peso 700, a única exceção à regra de "nunca 700" do
+   sistema: um logotipo é desenhado, não composto. Precisa de regra própria
+   porque `.font-display` acima é CSS sem camada e, por isso, vence qualquer
+   utilitário do Tailwind (que vive em @layer utilities) — `font-bold` na classe
+   do componente era silenciosamente ignorado e a marca saía em 500. */
+.vt-wordmark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.038em;
+  line-height: 1;
+}
+
+/* Filete de abertura de seção: uma linha grossa, nunca filete duplo. */
+.vt-rule-ink {
+  height: 3px;
+  background: var(--color-navy-900);
+  border: 0;
+}
+
 :where(a, button, input, select, textarea):focus-visible {
   outline: 2px solid var(--color-accent-500);
   outline-offset: 2px;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 
 ::selection {
-  background: var(--color-accent-200);
+  background: var(--color-accent-100);
   color: var(--color-navy-900);
 }
 

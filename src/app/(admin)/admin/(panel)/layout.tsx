@@ -17,8 +17,8 @@ export default async function PanelLayout({ children }: { children: React.ReactN
       <div className="flex min-h-screen">
         {/* Sidebar */}
         <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-navy-950/40 bg-navy-900 lg:flex">
-          <div className="border-b border-white/5 px-5 py-5">
-            <div className="font-display text-2xl font-extrabold tracking-tight text-white">
+          <div className="border-b border-navy-50/5 px-5 py-5">
+            <div className="font-display text-2xl text-navy-50">
               Votto<span className="text-accent-500">.</span>
             </div>
             <div className="mt-0.5 text-xs font-medium uppercase tracking-widest text-navy-300">
@@ -26,20 +26,20 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             </div>
           </div>
           <div className="flex-1 overflow-y-auto px-3 py-5">
-            <div className="mb-2 px-3 text-[11px] font-bold uppercase tracking-widest text-navy-400">
+            <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-widest text-navy-400">
               Navegação
             </div>
             <Sidebar />
           </div>
-          <div className="border-t border-white/5 px-5 py-4 text-xs text-navy-400">
+          <div className="border-t border-navy-50/5 px-5 py-4 text-xs text-navy-400">
             Acesso restrito · Votto
           </div>
         </aside>
 
         {/* Main */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-surface/90 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
-            <div className="font-display text-lg font-extrabold tracking-tight text-navy-900 lg:hidden">
+          <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-canvas/85 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
+            <div className="font-display text-lg text-navy-900 lg:hidden">
               Votto<span className="text-accent-500">.</span>
             </div>
             <div className="ml-auto flex items-center gap-3">
@@ -48,7 +48,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
                 <div className="text-xs text-[var(--color-muted)]">{roleLabel(session.role)}</div>
               </div>
               <div
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-900 text-xs font-bold text-white"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-900 text-xs font-semibold text-navy-50"
                 aria-hidden
               >
                 {initials}

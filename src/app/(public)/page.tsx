@@ -2,9 +2,10 @@
  * Public home page: pitch for Votto, headline platform statistics and a
  * "Temas quentes" section with quick voting.
  */
-import { Container, Card, CardBody, ButtonLink } from "@/components/ui";
+import { Container, ButtonLink } from "@/components/ui";
 import { StatStrip } from "@/components/public/StatStrip";
-import { ThemeCard } from "@/components/public/ThemeCard";
+import { SectionHead } from "@/components/public/Section";
+import { ThemeRow, ThemeList } from "@/components/public/ThemeRow";
 import { RankingTabs, type RankingRow } from "@/components/public/RankingTabs";
 import { HeroB } from "@/components/public/HeroB";
 import { Reveal } from "@/components/public/Reveal";
@@ -132,23 +133,21 @@ export default async function HomePage() {
 
         {/* Alignment ranking */}
         <Reveal className="mt-16 block">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-navy-900">
-                Ranking de alinhamento
-              </h2>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
-                {isAuthenticated
-                  ? "Quem mais vota como você — do maior para o menor alinhamento pessoal."
-                  : "Alinhamento dos representantes com o eleitorado. Entre para ver seu alinhamento pessoal."}
-              </p>
-            </div>
-            {!isAuthenticated ? (
-              <ButtonLink href="/login" size="sm">
-                Entrar para ver meu alinhamento
-              </ButtonLink>
-            ) : null}
-          </div>
+          <SectionHead
+            title="Ranking de alinhamento"
+            lead={
+              isAuthenticated
+                ? "Quem mais vota como você — do maior para o menor alinhamento pessoal."
+                : "Alinhamento dos representantes com o eleitorado. Entre para ver seu alinhamento pessoal."
+            }
+            action={
+              !isAuthenticated ? (
+                <ButtonLink href="/login" size="sm">
+                  Entrar para ver meu alinhamento
+                </ButtonLink>
+              ) : null
+            }
+          />
 
           <div className="mt-6">
             <RankingTabs
@@ -178,37 +177,33 @@ export default async function HomePage() {
         </Reveal>
 
         {/* Hot themes */}
-        <Reveal className="mt-14 block">
-          <div className="flex items-end justify-between">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-navy-900">Temas quentes</h2>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
-                Os temas com maior participação dos cidadãos agora.
-              </p>
-            </div>
-            <ButtonLink href="/temas" variant="ghost" size="sm">
-              Ver todos
-            </ButtonLink>
-          </div>
+        <Reveal className="mt-16 block">
+          <SectionHead
+            title="Temas quentes"
+            lead="Os temas com maior participação dos cidadãos agora."
+            action={
+              <ButtonLink href="/temas" variant="ghost" size="sm">
+                Ver todos →
+              </ButtonLink>
+            }
+          />
 
           {hotThemes.length === 0 ? (
-            <Card className="mt-6">
-              <CardBody>
-                <p className="text-sm text-[var(--color-muted)]">
-                  Ainda não há temas disponíveis. Volte em breve.
-                </p>
-              </CardBody>
-            </Card>
+            <p className="mt-6 border-t border-line py-8 text-sm text-[var(--color-muted)]">
+              Ainda não há temas disponíveis. Volte em breve.
+            </p>
           ) : (
-            <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {hotThemes.map((theme) => (
-                <ThemeCard
-                  key={theme.kid}
-                  theme={theme}
-                  isAuthenticated={isAuthenticated}
-                  currentVote={currentVotes.get(theme.kid) ?? null}
-                />
-              ))}
+            <div className="mt-6">
+              <ThemeList>
+                {hotThemes.map((theme) => (
+                  <ThemeRow
+                    key={theme.kid}
+                    theme={theme}
+                    isAuthenticated={isAuthenticated}
+                    currentVote={currentVotes.get(theme.kid) ?? null}
+                  />
+                ))}
+              </ThemeList>
             </div>
           )}
         </Reveal>

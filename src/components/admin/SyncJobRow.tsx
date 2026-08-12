@@ -61,7 +61,7 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
       </div>
 
       {job.lastNote && !job.lastOk ? (
-        <p className="rounded-lg bg-[#fbeaeb] px-3 py-2 text-xs text-[var(--color-negative)]">
+        <p className="rounded-card bg-[#f7e9e4] px-3 py-2 text-xs text-[var(--color-negative)]">
           {job.lastNote}
         </p>
       ) : null}
@@ -70,8 +70,8 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
         <p
           className={
             feedback.ok
-              ? "rounded-lg bg-[#e8f3ec] px-3 py-2 text-xs text-[var(--color-positive)]"
-              : "rounded-lg bg-[#fbeaeb] px-3 py-2 text-xs text-[var(--color-negative)]"
+              ? "rounded-card bg-[#eef1e6] px-3 py-2 text-xs text-[var(--color-positive)]"
+              : "rounded-card bg-[#f7e9e4] px-3 py-2 text-xs text-[var(--color-negative)]"
           }
         >
           {feedback.message}

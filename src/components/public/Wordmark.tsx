@@ -1,67 +1,56 @@
 /**
- * Votto wordmark used in the header and footer.
+ * Votto wordmark — the logotype, and the whole logo.
  *
- * Pairs the geometric V/check mark (see {@link Logo}) with a heavy, tightly
- * tracked "Votto" wordmark rendered as inline SVG so it stays crisp at any
- * size and renders correctly even before the Sora webfont loads.
+ * There is no accompanying mark: the brand is the word, set in the display serif
+ * with a terracota italic period closing it. The period is the only pigment, and
+ * it is what makes the wordmark a logotype rather than a heading — so it is never
+ * dropped, and never restated in another colour.
  *
- * The `tone` prop adapts the wordmark for a light header (`"light"`) or a
- * dark ink/teal footer (`"dark"`).
+ * Set as live text (not SVG) so it inherits the loaded Newsreader and stays
+ * selectable and accessible. Weight 700 is the single exception to the "no 700
+ * in the system" rule (docs/design.md §3): a logotype is drawn, not composed, and
+ * at 700 the word holds its own against the 1px rule under the masthead.
+ *
+ * `tone` adapts it for the light masthead (`"light"`) or the dark ink footer
+ * (`"dark"`); the period keeps its terracota in both. `newTab` is for the embed
+ * widgets, which live in an iframe and must break out of it to reach the site.
  */
 import Link from "next/link";
 import { cn } from "@/lib/cn";
-import { Logo } from "./Logo";
 
 type Tone = "light" | "dark";
 
-const FONT_STACK =
-  "var(--font-sora), var(--font-display), ui-sans-serif, system-ui, sans-serif";
-
 const WORDMARK_COLOR: Record<Tone, string> = {
-  light: "var(--color-navy-900)",
-  dark: "#ffffff",
+  light: "text-navy-900",
+  dark: "text-navy-50",
 };
 
 export function Wordmark({
   className,
   tone = "light",
+  newTab = false,
 }: {
   className?: string;
   tone?: Tone;
+  newTab?: boolean;
 }) {
   return (
     <Link
       href="/"
       aria-label="Votto — início"
+      {...(newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
       className={cn(
-        "group inline-flex items-center gap-2.5 transition-opacity hover:opacity-90",
+        // `.vt-wordmark` (globals.css) owns the face, the 700 weight and the
+        // tracking. It cannot be expressed with Tailwind utilities here: the
+        // unlayered `.font-display` rule outranks any utility, so `font-bold`
+        // would be dropped and the logotype would render at 500.
+        "vt-wordmark inline-block text-[1.6rem] transition-opacity hover:opacity-80",
+        WORDMARK_COLOR[tone],
         className,
       )}
     >
-      <Logo
-        tone={tone}
-        className="h-8 w-8 shrink-0 transition-transform duration-200 ease-out group-hover:-translate-y-0.5"
-      />
-      <svg
-        viewBox="0 0 138 34"
-        height="26"
-        role="img"
-        aria-hidden="true"
-        className="block h-[26px] w-auto"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <text
-          x="0"
-          y="27"
-          fontFamily={FONT_STACK}
-          fontSize="32"
-          fontWeight={800}
-          letterSpacing="-1.4"
-          fill={WORDMARK_COLOR[tone]}
-        >
-          Votto
-        </text>
-      </svg>
+      Votto
+      <em className="text-accent-500">.</em>
     </Link>
   );
 }

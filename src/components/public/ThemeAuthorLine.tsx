@@ -46,7 +46,7 @@ export function ThemeAuthorLine({ author }: { author: ThemeAuthor | null }) {
         className="h-9 w-9 shrink-0 rounded-full object-cover"
         fallback={
           <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy-50 text-[11px] font-bold text-navy-700"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy-50 text-[11px] font-semibold text-navy-700"
             aria-hidden
           >
             {initials(author.name)}
@@ -64,13 +64,13 @@ export function ThemeAuthorLine({ author }: { author: ThemeAuthor | null }) {
 
   return (
     <div className="flex items-center gap-3 border-t border-line pt-3">
-      <span className="shrink-0 rounded-full bg-canvas px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+      <span className="shrink-0 rounded-[2px] border border-line bg-canvas px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
         {ROLE_LABEL[author.role]}
       </span>
       {agent ? (
         <Link
           href={`/agentes/${agent.kid}`}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg transition-colors hover:bg-navy-50/60"
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-card transition-colors hover:bg-navy-50/60"
         >
           {body}
         </Link>

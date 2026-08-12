@@ -1,7 +1,7 @@
 /**
  * Compact "Votação" breakdown for a theme: a stacked Sim / Não / Neutro bar
- * plus the per-option tallies. Colors use the dedicated vote tokens (emerald /
- * crimson / slate) so Sim and Não don't clash and abstention reads as neutral.
+ * plus the per-option tallies. Colors use the dedicated vote tokens (moss /
+ * brick / stone) so Sim and Não don't clash and abstention reads as neutral.
  */
 
 export function TemperatureBar({
@@ -17,13 +17,16 @@ export function TemperatureBar({
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
   return (
     <div>
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-semibold text-navy-800">Votação</span>
-        <span className="text-[var(--color-muted)]">
-          {total.toLocaleString("pt-BR")} {total === 1 ? "voto" : "votos"}
+      <div className="flex items-baseline justify-between">
+        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
+          Votação
+        </span>
+        <span className="text-xs text-[var(--color-muted)]">
+          <span className="vt-num text-sm text-navy-800">{total.toLocaleString("pt-BR")}</span>{" "}
+          {total === 1 ? "voto" : "votos"}
         </span>
       </div>
-      <div className="mt-1.5 flex h-2.5 w-full overflow-hidden rounded-full bg-[#e7eae8]">
+      <div className="mt-1.5 flex h-2 w-full overflow-hidden bg-navy-100">
         <div style={{ width: `${pct(yesCount)}%`, background: "var(--color-vote-yes)" }} />
         <div style={{ width: `${pct(noCount)}%`, background: "var(--color-vote-no)" }} />
         <div style={{ width: `${pct(absCount)}%`, background: "var(--color-vote-abstention)" }} />

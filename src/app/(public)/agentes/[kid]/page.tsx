@@ -105,15 +105,15 @@ export default async function AgentDetailPage({
               <ImageWithFallback
                 src={dto.imageUrl}
                 alt={fullName}
-                className="h-24 w-24 rounded-2xl bg-navy-50 object-cover"
+                className="h-24 w-24 rounded-card bg-navy-50 object-cover"
                 fallback={
-                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-navy-100 text-2xl font-semibold text-navy-700">
+                  <div className="flex h-24 w-24 items-center justify-center rounded-card bg-navy-100 text-2xl font-semibold text-navy-700">
                     {initials}
                   </div>
                 }
               />
               <div className="flex-1">
-                <h1 className="text-2xl font-bold tracking-tight text-navy-900">{fullName}</h1>
+                <h1 className="text-[1.9rem] leading-tight text-navy-900">{fullName}</h1>
                 <p className="mt-1 text-sm text-[var(--color-muted)]">
                   {agentTypeLabel[dto.type]}
                   {location ? ` · ${location}` : ""}
@@ -140,7 +140,7 @@ export default async function AgentDetailPage({
           {/* Recent votes */}
           <Card className="mt-6">
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Votos recentes</h2>
+              <h2 className="text-xl text-navy-900">Votos recentes</h2>
               {recentVotes.length === 0 ? (
                 <p className="mt-2 text-sm text-[var(--color-muted)]">
                   Este agente ainda não tem votos registrados.
@@ -177,7 +177,7 @@ export default async function AgentDetailPage({
         <div className="flex flex-col gap-6">
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Alinhamento</h2>
+              <h2 className="text-xl text-navy-900">Alinhamento</h2>
 
               {/* Global alignment (always shown) */}
               <div className="mt-3">
@@ -228,7 +228,7 @@ export default async function AgentDetailPage({
 
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Posicionamento</h2>
+              <h2 className="text-xl text-navy-900">Posicionamento</h2>
               <p className="mt-1 text-xs text-[var(--color-muted)]">
                 Posição:{" "}
                 <span className="font-medium text-navy-800">{position.profileLabel}</span>

@@ -3,7 +3,9 @@
  * profile and (for logged-in citizens) their alignment meter. Supports filtering
  * by type/state/party and sorting by alignment (when logged in) or name.
  */
-import { Container, Card, CardBody, Field, Select, Button } from "@/components/ui";
+import { Container, Field, Select } from "@/components/ui";
+import { PageIntro } from "@/components/public/Section";
+import { FilterBar } from "@/components/public/FilterBar";
 import { AgentCard } from "@/components/public/AgentCard";
 import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
@@ -89,71 +91,55 @@ export default async function AgentsPage({
 
   return (
     <Container className="py-10">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-navy-900">Agentes públicos</h1>
-        <p className="mt-1 text-[var(--color-muted)]">
-          Veja os representantes e, ao entrar, descubra o seu alinhamento com cada um.
-        </p>
-      </header>
+      <PageIntro
+        title="Agentes públicos"
+        lead="Veja os representantes e, ao entrar, descubra o seu alinhamento com cada um."
+      />
 
-      {/* Filters */}
-      <Card className="mb-8">
-        <CardBody>
-          <form method="get" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <Field label="Tipo">
-              <Select name="type" defaultValue={type ?? ""}>
-                <option value="">Todos</option>
-                {AGENT_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {agentTypeLabel[t]}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Estado">
-              <Select name="state" defaultValue={state ?? ""}>
-                <option value="">Todos</option>
-                {BR_STATES.map((uf) => (
-                  <option key={uf} value={uf}>
-                    {uf}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Partido">
-              <Select name="party" defaultValue={party ?? ""}>
-                <option value="">Todos</option>
-                {parties.map((p) => (
-                  <option key={p.kid} value={p.kid}>
-                    {p.acronym ?? p.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Ordenar por">
-              <Select name="sort" defaultValue={sort ?? ""}>
-                <option value="">Nome</option>
-                <option value="engagement">Alinhamento com eleitores</option>
-                {session ? <option value="alignment">Seu alinhamento</option> : null}
-              </Select>
-            </Field>
-            <div className="flex items-end">
-              <Button type="submit" variant="outline" className="w-full">
-                Filtrar
-              </Button>
-            </div>
-          </form>
-        </CardBody>
-      </Card>
+      <FilterBar>
+        <Field label="Tipo">
+          <Select variant="rule" name="type" defaultValue={type ?? ""}>
+            <option value="">Todos</option>
+            {AGENT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {agentTypeLabel[t]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Estado">
+          <Select variant="rule" name="state" defaultValue={state ?? ""}>
+            <option value="">Todos</option>
+            {BR_STATES.map((uf) => (
+              <option key={uf} value={uf}>
+                {uf}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Partido">
+          <Select variant="rule" name="party" defaultValue={party ?? ""}>
+            <option value="">Todos</option>
+            {parties.map((p) => (
+              <option key={p.kid} value={p.kid}>
+                {p.acronym ?? p.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Ordenar por">
+          <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
+            <option value="">Nome</option>
+            <option value="engagement">Alinhamento com eleitores</option>
+            {session ? <option value="alignment">Seu alinhamento</option> : null}
+          </Select>
+        </Field>
+      </FilterBar>
 
       {rows.length === 0 ? (
-        <Card>
-          <CardBody>
-            <p className="text-sm text-[var(--color-muted)]">
-              Nenhum agente encontrado para os filtros selecionados.
-            </p>
-          </CardBody>
-        </Card>
+        <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">
+          Nenhum agente encontrado para os filtros selecionados.
+        </p>
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((row) => (

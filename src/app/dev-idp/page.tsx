@@ -40,7 +40,7 @@ export default async function DevIdpPage({
     <div className="min-h-screen bg-canvas">
       <Container className="py-12">
         <div className="mx-auto max-w-lg">
-          <div className="mb-4 rounded-xl border border-[var(--color-neutral)] bg-[#f6f0db] px-4 py-3 text-sm text-[var(--color-neutral)]">
+          <div className="mb-4 rounded-card border border-[var(--color-neutral)] bg-[var(--color-ochre-light)] px-4 py-3 text-sm text-[var(--color-neutral)]">
             Ambiente de simulação — esta tela imita o consentimento do gov.br para
             desenvolvimento. Nenhuma conexão real com o gov.br é feita.
           </div>
@@ -48,14 +48,14 @@ export default async function DevIdpPage({
           <Card>
             <CardBody className="flex flex-col gap-6">
               <div>
-                <h1 className="text-xl font-bold text-navy-900">gov.br (simulado)</h1>
+                <h1 className="text-2xl text-navy-900">gov.br (simulado)</h1>
                 <p className="mt-1 text-sm text-[var(--color-muted)]">
                   Escolha uma identidade verificada para autorizar o acesso ao Votto.
                 </p>
               </div>
 
               {error === "cpf" ? (
-                <p className="rounded-lg bg-[#fbeaeb] px-3 py-2 text-sm text-[var(--color-negative)]">
+                <p className="rounded-card bg-[#f7e9e4] px-3 py-2 text-sm text-[var(--color-negative)]">
                   CPF inválido. Verifique os dados e tente novamente.
                 </p>
               ) : null}
@@ -74,7 +74,7 @@ export default async function DevIdpPage({
                       <input type="hidden" name="cpf" value={p.cpf} />
                       <button
                         type="submit"
-                        className="w-full rounded-xl border border-line bg-white p-3 text-left transition-colors hover:bg-navy-50"
+                        className="w-full rounded-card border border-line bg-surface p-3 text-left transition-colors hover:bg-navy-50"
                       >
                         <span className="block text-sm font-semibold text-navy-900">
                           {p.firstName} {p.lastName}

@@ -109,14 +109,14 @@ export default async function ThemeDetailPage({
                   {dto.identifier}
                 </p>
               ) : null}
-              <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight text-navy-900">
+              <h1 className="mt-1 text-[2.2rem] leading-[1.12] text-navy-900">
                 {dto.plainTitle ?? dto.name}
               </h1>
 
               {/* Plain-language layer, clearly attributed. The official text is
                   never replaced — it follows immediately below. */}
               {dto.plainSummary ? (
-                <div className="mt-4 rounded-xl border border-line bg-canvas p-4">
+                <div className="mt-4 rounded-card border border-line bg-canvas p-4">
                   <p className="text-base leading-relaxed text-navy-800">{dto.plainSummary}</p>
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
                     Resumo em linguagem simples, gerado por IA a partir do texto oficial
@@ -127,7 +127,7 @@ export default async function ThemeDetailPage({
 
               {dto.summary ? (
                 <div className="mt-5">
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                  <h2 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
                     Ementa oficial
                   </h2>
                   <p className="mt-1.5 text-base font-medium leading-relaxed text-navy-800">
@@ -150,7 +150,7 @@ export default async function ThemeDetailPage({
 
               {dto.viewpoints ? (
                 <div className="mt-7">
-                  <h2 className="text-sm font-semibold text-navy-900">
+                  <h2 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
                     Pontos de vista sobre o tema
                   </h2>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -165,7 +165,7 @@ export default async function ThemeDetailPage({
                       .map((v) => (
                         <div
                           key={v.label}
-                          className="rounded-xl border border-line bg-canvas p-3.5"
+                          className="rounded-card border border-line bg-canvas p-3.5"
                         >
                           <Badge tone={v.tone}>{v.label}</Badge>
                           <p className="mt-2 text-xs leading-relaxed text-ink">{v.text}</p>
@@ -179,7 +179,7 @@ export default async function ThemeDetailPage({
 
               {dto.articles && dto.articles.length > 0 ? (
                 <div className="mt-6">
-                  <h2 className="text-sm font-semibold text-navy-900">Documentos e fontes</h2>
+                  <h2 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">Documentos e fontes</h2>
                   <ul className="mt-2 space-y-1.5">
                     {dto.articles.map((article) => (
                       <li key={article.kid}>
@@ -204,7 +204,7 @@ export default async function ThemeDetailPage({
         <div className="flex flex-col gap-6">
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Resultado atual</h2>
+              <h2 className="text-xl text-navy-900">Resultado atual</h2>
               <div className="mt-3">
                 <TemperatureBar
                   yesCount={dto.yesCount}
@@ -217,7 +217,7 @@ export default async function ThemeDetailPage({
 
           <Card>
             <CardBody>
-              <h2 className="text-lg font-semibold text-navy-900">Seu voto</h2>
+              <h2 className="text-xl text-navy-900">Seu voto</h2>
               {!isAuthenticated ? (
                 <p className="mb-3 text-sm text-[var(--color-muted)]">
                   Entre para registrar o seu voto neste tema.

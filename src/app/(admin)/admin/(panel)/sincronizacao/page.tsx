@@ -77,7 +77,7 @@ export default async function SyncPage() {
       </p>
 
       <div className="mt-8">
-        <h2 className="mb-3 font-display text-xl font-bold tracking-tight text-navy-900">
+        <h2 className="mb-3 font-display text-xl text-navy-900">
           Execuções recentes
         </h2>
         <Card>

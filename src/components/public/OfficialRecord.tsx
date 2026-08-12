@@ -41,8 +41,12 @@ export function OfficialRecord({ theme }: { theme: PublicTheme }) {
   if (!hasRecord) return null;
 
   return (
-    <section className="mt-7 rounded-xl border border-line bg-canvas p-4">
-      <h2 className="text-sm font-semibold text-navy-900">Ficha oficial</h2>
+    <section className="mt-7 rounded-card border border-line bg-canvas p-4">
+      {/* A filing label, not a headline: sans small caps, like the stamp on a
+          government folder. */}
+      <h2 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+        Ficha oficial
+      </h2>
 
       <dl className="mt-3 flex flex-col gap-2.5">
         {theme.identifier ? <Row label="Identificação">{theme.identifier}</Row> : null}

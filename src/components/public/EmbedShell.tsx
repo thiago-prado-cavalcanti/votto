@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Logo } from "@/components/public/Logo";
+import { Wordmark } from "@/components/public/Wordmark";
 
 export function EmbedShell({
   eyebrow,
@@ -21,17 +21,12 @@ export function EmbedShell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col gap-3 rounded-2xl border border-line bg-surface p-5">
+    <div className="flex min-h-screen flex-col gap-3 rounded-card border border-line bg-surface p-5">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-accent-600">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-accent-600">
           {eyebrow}
         </span>
-        <Link href="/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5">
-          <Logo className="h-5 w-5" />
-          <span className="font-display text-sm font-extrabold tracking-tight text-navy-900">
-            Votto
-          </span>
-        </Link>
+        <Wordmark newTab className="text-base" />
       </div>
 
       <div className="flex flex-1 flex-col">{children}</div>
@@ -40,7 +35,7 @@ export function EmbedShell({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-accent-500 text-sm font-semibold tracking-tight text-navy-900 transition hover:bg-accent-600"
+        className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-card bg-accent-500 text-sm font-semibold tracking-tight text-navy-900 transition hover:bg-accent-600"
       >
         {cta}
         <span aria-hidden>→</span>

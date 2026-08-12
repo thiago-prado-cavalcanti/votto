@@ -14,21 +14,25 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
-// ─── Brand palette ───────────────────────────────────────────────────────────
-const TEAL = "#133e39";
-const TEAL_DEEP = "#0a2320";
-const WHITE = "#ffffff";
-const ACCENT = "#ff9a2e";
-const YES = "#0e9d6a";
-const NO = "#ff9a2e";
-const ABS = "#64748b";
-const MUTED = "rgba(255,255,255,0.62)";
-const SUBTLE = "rgba(255,255,255,0.10)";
+// ─── Brand palette — "papel & pigmento" (docs/design.md) ─────────────────────
+// The share card is a newspaper clipping, not a dark app screen: warm paper,
+// ink type, earth pigments, squared corners and 1px rules.
+const PAPER = "#fcfaf6";
+const INK = "#17150f";
+const MUTED = "#5b5648";
+const LINE = "#e2ddd0";
+const TRACK = "#f2eee3";
+const TERRACOTA = "#b4552f";
+const PINHO = "#183a33";
+const OCHRE = "#c07f2c";
+const YES = "#556b3d";
+const NO = "#a8452f";
+const ABS = "#8a8578";
 
 const SIZE = { width: 1200, height: 630 } as const;
 
 // ─── Fonts (loaded once) ─────────────────────────────────────────────────────
-let fontCache: Array<{ name: string; data: Buffer; weight: 400 | 600 | 800; style: "normal" }> | null =
+let fontCache: Array<{ name: string; data: Buffer; weight: 400 | 500 | 600; style: "normal" }> | null =
   null;
 
 async function loadFonts() {
@@ -37,30 +41,31 @@ async function loadFonts() {
   // both `next dev` and the standalone Docker image (see scripts/fetch-widget-fonts.mjs).
   const dir = join(process.cwd(), "public", "fonts");
   const read = (file: string) => readFile(join(dir, file));
-  const [inter, interSemi, sora] = await Promise.all([
-    read("Inter-Regular.ttf"),
-    read("Inter-SemiBold.ttf"),
-    read("Sora-ExtraBold.ttf"),
+  const [sans, sansSemi, serif] = await Promise.all([
+    read("InstrumentSans-Regular.ttf"),
+    read("InstrumentSans-SemiBold.ttf"),
+    read("Newsreader-Medium.ttf"),
   ]);
   fontCache = [
-    { name: "Inter", data: inter, weight: 400, style: "normal" },
-    { name: "Inter", data: interSemi, weight: 600, style: "normal" },
-    { name: "Sora", data: sora, weight: 800, style: "normal" },
+    { name: "Instrument", data: sans, weight: 400, style: "normal" },
+    { name: "Instrument", data: sansSemi, weight: 600, style: "normal" },
+    // The display serif exists in one weight here, as in the site itself.
+    { name: "Newsreader", data: serif, weight: 500, style: "normal" },
   ];
   return fontCache;
 }
 
 // ─── Shared primitives ───────────────────────────────────────────────────────
 
-/** The Votto "V" mark on a translucent tile, sized in px (SVG scales via viewBox). */
+/** The Votto "V" mark on a tinted tile, sized in px (SVG scales via viewBox). */
 function Mark({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
-      <rect x={0} y={0} width={40} height={40} rx={9} fill={SUBTLE} />
-      <path d="M10.8 10.6 L20 28.6" stroke={WHITE} strokeWidth={5.8} strokeLinecap="round" strokeLinejoin="round" />
+      <rect x={0} y={0} width={40} height={40} rx={4} fill="#eef3f0" />
+      <path d="M10.8 10.6 L20 28.6" stroke={PINHO} strokeWidth={5.8} strokeLinecap="round" strokeLinejoin="round" />
       <path
         d="M20 28.6 L29.2 10.6"
-        stroke={ACCENT}
+        stroke={TERRACOTA}
         strokeWidth={5.8}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -78,50 +83,54 @@ function Stars({ value, size = 56 }: { value: number; size?: number }) {
     <div style={{ display: "flex", flexDirection: "row", gap: 6 }}>
       {[0, 1, 2, 3, 4].map((i) => (
         <svg key={i} width={size} height={size} viewBox="0 0 24 24">
-          <path d={STAR_PATH} fill={i < value ? ACCENT : "rgba(255,255,255,0.22)"} />
+          <path d={STAR_PATH} fill={i < value ? OCHRE : LINE} />
         </svg>
       ))}
     </div>
   );
 }
 
-/** Brand footer row: mark + wordmark + CTA. */
+/** Brand footer row: a hairline, then mark + wordmark + CTA. */
 function Footer({ cta }: { cta: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 16 }}>
-        <Mark size={56} />
-        <span style={{ fontFamily: "Sora", fontWeight: 800, fontSize: 40, color: WHITE }}>
-          Votto
-        </span>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", width: "100%", height: 1, background: LINE }} />
       <div
         style={{
           display: "flex",
+          flexDirection: "row",
           alignItems: "center",
-          background: ACCENT,
-          color: TEAL_DEEP,
-          fontFamily: "Inter",
-          fontWeight: 600,
-          fontSize: 30,
-          padding: "16px 32px",
-          borderRadius: 9999,
+          justifyContent: "space-between",
+          paddingTop: 28,
         }}
       >
-        {cta}
+        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 16 }}>
+          <Mark size={56} />
+          <span style={{ fontFamily: "Newsreader", fontWeight: 500, fontSize: 44, color: INK }}>
+            Votto
+          </span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            background: TERRACOTA,
+            color: PAPER,
+            fontFamily: "Instrument",
+            fontWeight: 600,
+            fontSize: 30,
+            padding: "16px 32px",
+            borderRadius: 4,
+          }}
+        >
+          {cta}
+        </div>
       </div>
     </div>
   );
 }
 
-/** Full-bleed gradient frame with consistent padding. */
+/** Paper frame: warm ground, a 3px ink opener, consistent padding. */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -132,11 +141,12 @@ function Shell({ children }: { children: React.ReactNode }) {
         width: "100%",
         height: "100%",
         padding: 72,
-        backgroundImage: `linear-gradient(135deg, ${TEAL} 0%, ${TEAL_DEEP} 100%)`,
-        color: WHITE,
-        fontFamily: "Inter",
+        background: PAPER,
+        color: INK,
+        fontFamily: "Instrument",
       }}
     >
+      <div style={{ display: "flex", width: 120, height: 3, background: INK }} />
       {children}
     </div>
   );
@@ -185,18 +195,27 @@ export async function themeCardImage(data: {
   ];
   return render(
     <Shell>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span style={{ fontFamily: "Inter", fontWeight: 600, fontSize: 28, color: ACCENT }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <span
+          style={{
+            fontFamily: "Instrument",
+            fontWeight: 600,
+            fontSize: 26,
+            letterSpacing: 3,
+            color: TERRACOTA,
+          }}
+        >
           TEMA EM VOTAÇÃO
         </span>
         <span
           style={{
-            fontFamily: "Sora",
-            fontWeight: 800,
+            fontFamily: "Newsreader",
+            fontWeight: 500,
             // smaller type for long headlines so they fit without satori clamps
-            fontSize: data.name.length > 80 ? 44 : data.name.length > 48 ? 52 : 58,
-            lineHeight: 1.1,
-            color: WHITE,
+            fontSize: data.name.length > 80 ? 48 : data.name.length > 48 ? 56 : 64,
+            lineHeight: 1.12,
+            letterSpacing: -1.2,
+            color: INK,
           }}
         >
           {data.name}
@@ -205,20 +224,28 @@ export async function themeCardImage(data: {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 28, fontWeight: 600, color: WHITE }}>Votação</span>
-          <span style={{ fontSize: 28, color: MUTED }}>
-            {total.toLocaleString("pt-BR")} {total === 1 ? "voto" : "votos"}
+          <span style={{ fontSize: 24, fontWeight: 600, letterSpacing: 3, color: MUTED }}>
+            VOTAÇÃO
           </span>
+          {/* Siblings in a flex row, never text mixed with an element: satori
+              needs an explicit display on any box with more than one child. */}
+          <div style={{ display: "flex", flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontFamily: "Newsreader", fontWeight: 500, fontSize: 30, color: INK }}>
+              {total.toLocaleString("pt-BR")}
+            </span>
+            <span style={{ fontSize: 28, color: MUTED }}>
+              {total === 1 ? "voto" : "votos"}
+            </span>
+          </div>
         </div>
         <div
           style={{
             display: "flex",
             flexDirection: "row",
             width: "100%",
-            height: 26,
-            borderRadius: 9999,
+            height: 20,
             overflow: "hidden",
-            background: "rgba(255,255,255,0.12)",
+            background: TRACK,
           }}
         >
           {segs.map((s, i) => (
@@ -228,9 +255,10 @@ export async function themeCardImage(data: {
         <div style={{ display: "flex", flexDirection: "row", gap: 36 }}>
           {segs.map((s, i) => (
             <div key={i} style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <div style={{ display: "flex", width: 18, height: 18, borderRadius: 9999, background: s.c }} />
-              <span style={{ fontSize: 26, color: WHITE }}>
-                {s.label} {pct(s.v, total)}%
+              <div style={{ display: "flex", width: 14, height: 14, background: s.c }} />
+              <span style={{ fontSize: 26, color: MUTED }}>{s.label}</span>
+              <span style={{ fontFamily: "Newsreader", fontWeight: 500, fontSize: 28, color: INK }}>
+                {pct(s.v, total)}%
               </span>
             </div>
           ))}
@@ -265,7 +293,7 @@ function RatingCard(data: {
             src={data.image}
             width={156}
             height={156}
-            style={{ width: 156, height: 156, borderRadius: 28, objectFit: "cover", background: SUBTLE }}
+            style={{ width: 156, height: 156, borderRadius: 4, objectFit: "cover", background: TRACK }}
           />
         ) : (
           <div
@@ -273,25 +301,40 @@ function RatingCard(data: {
               display: "flex",
               width: 156,
               height: 156,
-              borderRadius: 28,
-              background: SUBTLE,
+              borderRadius: 4,
+              background: TRACK,
               alignItems: "center",
               justifyContent: "center",
-              fontFamily: "Sora",
-              fontWeight: 800,
-              fontSize: 52,
-              color: WHITE,
+              fontFamily: "Newsreader",
+              fontWeight: 500,
+              fontSize: 56,
+              color: INK,
             }}
           >
             {data.fallback}
           </div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 }}>
-          <span style={{ fontFamily: "Inter", fontWeight: 600, fontSize: 26, color: ACCENT }}>
+          <span
+            style={{
+              fontFamily: "Instrument",
+              fontWeight: 600,
+              fontSize: 24,
+              letterSpacing: 3,
+              color: TERRACOTA,
+            }}
+          >
             {data.eyebrow}
           </span>
           <span
-            style={{ fontFamily: "Sora", fontWeight: 800, fontSize: titleSize, lineHeight: 1.05, color: WHITE }}
+            style={{
+              fontFamily: "Newsreader",
+              fontWeight: 500,
+              fontSize: titleSize,
+              lineHeight: 1.06,
+              letterSpacing: -1,
+              color: INK,
+            }}
           >
             {data.title}
           </span>
@@ -299,11 +342,13 @@ function RatingCard(data: {
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <span style={{ fontSize: 28, fontWeight: 600, color: WHITE }}>Alinhamento com eleitores</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <span style={{ fontSize: 24, fontWeight: 600, letterSpacing: 3, color: MUTED }}>
+          ALINHAMENTO COM ELEITORES
+        </span>
         <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 28 }}>
           <Stars value={stars} size={64} />
-          <span style={{ fontFamily: "Sora", fontWeight: 800, fontSize: 88, color: WHITE }}>
+          <span style={{ fontFamily: "Newsreader", fontWeight: 500, fontSize: 92, color: INK }}>
             {data.alignment === null ? "—" : `${data.alignment}%`}
           </span>
           {data.band ? (
@@ -311,12 +356,13 @@ function RatingCard(data: {
               style={{
                 display: "flex",
                 alignItems: "center",
-                background: "rgba(255,255,255,0.12)",
-                color: WHITE,
+                border: `1px solid ${LINE}`,
+                background: TRACK,
+                color: MUTED,
                 fontWeight: 600,
-                fontSize: 28,
-                padding: "12px 24px",
-                borderRadius: 9999,
+                fontSize: 26,
+                padding: "10px 20px",
+                borderRadius: 2,
               }}
             >
               {data.band}

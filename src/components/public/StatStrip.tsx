@@ -1,7 +1,11 @@
 /**
  * Responsive strip of headline statistics (themes, agents, parties, votes).
+ *
+ * No boxes: the figures sit between two rules and are separated by vertical
+ * hairlines, the figure first and its label underneath in small caps — a masthead
+ * of numbers rather than four cards (docs/design.md).
  */
-import { Stat } from "@/components/ui";
+import { cn } from "@/lib/cn";
 
 export function StatStrip({
   items,
@@ -9,9 +13,17 @@ export function StatStrip({
   items: Array<{ label: string; value: React.ReactNode; hint?: string }>;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-      {items.map((item) => (
-        <Stat key={item.label} label={item.label} value={item.value} hint={item.hint} />
+    <div className="grid grid-cols-2 gap-y-7 border-y border-line py-7 sm:grid-cols-4 sm:divide-x sm:divide-[var(--color-line)]">
+      {items.map((item, i) => (
+        <div key={item.label} className={cn("sm:px-7", i === 0 && "sm:pl-0")}>
+          <div className="vt-num text-[2.1rem] leading-none text-navy-900">{item.value}</div>
+          <div className="mt-2 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+            {item.label}
+          </div>
+          {item.hint ? (
+            <div className="mt-1 text-xs text-[var(--color-muted)]">{item.hint}</div>
+          ) : null}
+        </div>
       ))}
     </div>
   );

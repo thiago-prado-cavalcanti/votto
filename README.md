@@ -109,6 +109,7 @@ src/
   components/         # ui (design system), public, admin
 prisma/              # schema.prisma, seed.ts
 scripts/             # sync.ts (CLI), worker.ts (agendador), check-sources.ts
+docs/design.md       # design system ("papel & pigmento"): tokens, tipografia, padrões
 docs/integracao.md   # integração com as fontes oficiais + gov.br
 docs/migrations/     # SQL do schema (execução manual)
 ```

@@ -142,7 +142,7 @@ export function AgentForm({
           </Field>
 
           {error ? (
-            <p className="rounded-xl bg-[#fbeaeb] px-3.5 py-2.5 text-sm text-[var(--color-negative)]">{error}</p>
+            <p className="rounded-card bg-[#f7e9e4] px-3.5 py-2.5 text-sm text-[var(--color-negative)]">{error}</p>
           ) : null}
 
           <div className="flex items-center gap-2">

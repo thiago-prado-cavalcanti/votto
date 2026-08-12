@@ -35,18 +35,16 @@ export function PartyCard({
           <ImageWithFallback
             src={party.logoUrl}
             alt={acronym}
-            className="h-12 w-12 rounded-xl bg-navy-50 object-contain p-1"
+            className="h-12 w-12 rounded-card bg-navy-100 object-contain p-1"
             fallback={
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-navy-100 bg-navy-50 px-1 text-center text-[10px] font-extrabold leading-none text-navy-700">
+              <div className="flex h-12 w-12 items-center justify-center rounded-card border border-line bg-navy-100 px-1 text-center text-[10px] font-semibold leading-none text-navy-700">
                 {acronym}
               </div>
             }
           />
           <div className="min-w-0">
             <Link href={`/partidos/${party.kid}`} className="group">
-              <h3 className="truncate text-base font-semibold text-navy-900 group-hover:text-navy-600">
-                {party.name}
-              </h3>
+              <h3 className="truncate text-lg text-navy-900 group-hover:underline">{party.name}</h3>
             </Link>
             <p className="text-xs text-[var(--color-muted)]">
               {acronym} · {party.agentCount}{" "}

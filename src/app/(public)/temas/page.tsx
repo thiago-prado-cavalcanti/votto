@@ -1,14 +1,16 @@
 /**
- * Themes list: active themes with temperature/tallies, house and priority badges
- * and a quick-vote control. Supports search, scope/state/house filters and three
- * orderings.
+ * Themes list, set as an order paper: one hairline-separated entry per active
+ * theme, with tallies and the quick-vote panel on the right. Supports search,
+ * scope/state/house filters and three orderings.
  *
  * The default ordering is legislative priority, not citizen engagement: once the
  * official importers are running, most themes have no citizen votes yet, so
  * ranking by engagement would bury exactly the bills that are about to be voted.
  */
-import { Container, Card, CardBody, Field, Select, Input, Button } from "@/components/ui";
-import { ThemeCard } from "@/components/public/ThemeCard";
+import { Container, Field, Select, Input } from "@/components/ui";
+import { PageIntro } from "@/components/public/Section";
+import { FilterBar } from "@/components/public/FilterBar";
+import { ThemeRow, ThemeList } from "@/components/public/ThemeRow";
 import { db } from "@/lib/db";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -102,94 +104,82 @@ export default async function ThemesPage({
 
   return (
     <Container className="py-10">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-navy-900">Temas</h1>
-        <p className="mt-1 text-[var(--color-muted)]">
-          Vote nos temas em pauta. Cada voto ajuda a medir o alinhamento com seus
-          representantes.
-        </p>
-      </header>
+      <PageIntro
+        title="Temas em pauta"
+        lead="Vote nos temas que a Câmara e o Senado colocaram em votação. Cada voto ajuda a medir o alinhamento com seus representantes."
+      />
 
-      {/* Filters */}
-      <Card className="mb-8">
-        <CardBody>
-          <form method="get" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Buscar">
-              <Input name="q" defaultValue={q ?? ""} placeholder="Nome, ementa ou PL 3085/2026" />
-            </Field>
-            <Field label="Ordenar por">
-              <Select name="order" defaultValue={ordering}>
-                {(Object.keys(ORDERINGS) as Ordering[]).map((key) => (
-                  <option key={key} value={key}>
-                    {ORDERINGS[key].label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Casa legislativa">
-              <Select name="house" defaultValue={house ?? ""}>
-                <option value="">Todas</option>
-                {HOUSES.map((h) => (
-                  <option key={h} value={h}>
-                    {houseLabel[h]}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Abrangência">
-              <Select name="scope" defaultValue={scope ?? ""}>
-                <option value="">Todas</option>
-                {SCOPES.map((s) => (
-                  <option key={s} value={s}>
-                    {scopeLabel[s]}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Estado">
-              <Select name="state" defaultValue={state ?? ""}>
-                <option value="">Todos</option>
-                {BR_STATES.map((uf) => (
-                  <option key={uf} value={uf}>
-                    {uf}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Situação">
-              <Select name="open" defaultValue={onlyOpen ? "1" : "0"}>
-                <option value="1">Somente em tramitação</option>
-                <option value="0">Incluir encerrados</option>
-              </Select>
-            </Field>
-            <div className="flex items-end sm:col-span-2 lg:col-span-3">
-              <Button type="submit" variant="outline" className="w-full sm:w-auto">
-                Filtrar
-              </Button>
-            </div>
-          </form>
-        </CardBody>
-      </Card>
+      <FilterBar>
+        <Field label="Buscar">
+          <Input
+            variant="rule"
+            name="q"
+            defaultValue={q ?? ""}
+            placeholder="Nome, ementa ou PL 3085/2026"
+          />
+        </Field>
+        <Field label="Ordenar por">
+          <Select variant="rule" name="order" defaultValue={ordering}>
+            {(Object.keys(ORDERINGS) as Ordering[]).map((key) => (
+              <option key={key} value={key}>
+                {ORDERINGS[key].label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Casa legislativa">
+          <Select variant="rule" name="house" defaultValue={house ?? ""}>
+            <option value="">Todas</option>
+            {HOUSES.map((h) => (
+              <option key={h} value={h}>
+                {houseLabel[h]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Abrangência">
+          <Select variant="rule" name="scope" defaultValue={scope ?? ""}>
+            <option value="">Todas</option>
+            {SCOPES.map((s) => (
+              <option key={s} value={s}>
+                {scopeLabel[s]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Estado">
+          <Select variant="rule" name="state" defaultValue={state ?? ""}>
+            <option value="">Todos</option>
+            {BR_STATES.map((uf) => (
+              <option key={uf} value={uf}>
+                {uf}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Situação">
+          <Select variant="rule" name="open" defaultValue={onlyOpen ? "1" : "0"}>
+            <option value="1">Somente em tramitação</option>
+            <option value="0">Incluir encerrados</option>
+          </Select>
+        </Field>
+      </FilterBar>
 
       {themes.length === 0 ? (
-        <Card>
-          <CardBody>
-            <p className="text-sm text-[var(--color-muted)]">
-              Nenhum tema encontrado para os filtros selecionados.
-            </p>
-          </CardBody>
-        </Card>
+        <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">
+          Nenhum tema encontrado para os filtros selecionados.
+        </p>
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <ThemeList>
           {themes.map((theme) => (
-            <ThemeCard
+            <ThemeRow
               key={theme.kid}
               theme={theme}
               isAuthenticated={isAuthenticated}
               currentVote={currentVotes.get(theme.kid) ?? null}
             />
           ))}
-        </div>
+        </ThemeList>
       )}
     </Container>
   );

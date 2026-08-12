@@ -78,25 +78,25 @@ export function ShareDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Compartilhar"
     >
       <div
-        className="w-full max-w-md rounded-t-2xl bg-surface p-5 shadow-bold sm:rounded-2xl sm:p-6"
+        className="w-full max-w-md rounded-card bg-surface p-5 sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-navy-900">Compartilhar</h2>
+            <h2 className="text-xl text-navy-900">Compartilhar</h2>
             <p className="mt-0.5 line-clamp-1 text-sm text-[var(--color-muted)]">{title}</p>
           </div>
           <button
             onClick={onClose}
             aria-label="Fechar"
-            className="rounded-full p-1.5 text-navy-500 hover:bg-navy-100"
+            className="rounded-card p-1.5 text-navy-500 hover:bg-navy-100"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
@@ -106,7 +106,7 @@ export function ShareDialog({
 
         {/* Live preview of the embeddable widget */}
         {origin ? (
-          <div className="mt-4 overflow-hidden rounded-xl border border-line bg-canvas">
+          <div className="mt-4 overflow-hidden rounded-card border border-line bg-canvas">
             <iframe
               src={embedSrc}
               width="100%"
@@ -171,7 +171,7 @@ function ChannelButton({
   onClick?: () => void;
 }) {
   const cls =
-    "flex flex-col items-center justify-center gap-1.5 rounded-xl border border-line bg-canvas px-2 py-3 text-center text-xs font-medium text-navy-800 transition hover:border-navy-300 hover:bg-navy-50";
+    "flex flex-col items-center justify-center gap-1.5 rounded-card border border-line bg-canvas px-2 py-3 text-center text-xs font-medium text-navy-800 transition hover:border-navy-300 hover:bg-navy-50";
   const inner = (
     <>
       <span className="text-navy-700">
@@ -217,12 +217,12 @@ function CopyRow({
     <div className="mt-4">
       <div className="mb-1.5 text-xs font-medium text-navy-800">{label}</div>
       <div className="flex items-stretch gap-2">
-        <div className="min-w-0 flex-1 truncate rounded-xl border border-line bg-canvas px-3 py-2 text-xs text-[var(--color-muted)]">
+        <div className="min-w-0 flex-1 truncate rounded-card border border-line bg-canvas px-3 py-2 text-xs text-[var(--color-muted)]">
           {multiline ? <code className="block truncate">{value}</code> : value}
         </div>
         <button
           onClick={onCopy}
-          className="shrink-0 rounded-xl bg-navy-900 px-3.5 text-xs font-semibold text-white transition hover:bg-navy-800"
+          className="shrink-0 rounded-card bg-navy-900 px-3.5 text-xs font-semibold text-navy-50 transition hover:bg-navy-800"
         >
           {copied ? "Copiado!" : "Copiar"}
         </button>

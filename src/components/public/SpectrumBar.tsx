@@ -1,18 +1,33 @@
 /**
- * Delightful left↔right spectrum gauge (SVG). A smooth multi-stop gradient track
- * with five soft band ticks, a glowing marker and a floating label bubble placed
- * at the person's `spectrum` score (−100 = Esquerda … +100 = Direita).
+ * Left↔right spectrum scale (SVG), printed rather than lit.
+ *
+ * The five bands are five blocks of pigment: the person's own band is inked
+ * solid, the other four stay as tinted paper, so the reading is legible before
+ * the marker is even found. The marker itself is a 2px ink rule with the band
+ * name set above it in the display serif — no gradient, no glow, no bubble
+ * (docs/design.md).
+ *
  * Server-component friendly (no client hooks).
  */
 import { deriveBand } from "@/lib/indexes/positioning";
 
+/** Pigment per band, left to right: tijolo · ocre · pedra · pinho · tinta. */
 const BAND_COLOR: Record<string, string> = {
   esquerda: "var(--color-negative)",
-  "centro-esquerda": "var(--color-neutral)",
-  centro: "#7d8a88",
+  "centro-esquerda": "var(--color-ochre)",
+  centro: "var(--color-vote-abstention)",
   "centro-direita": "var(--color-colonial-500)",
   direita: "var(--color-navy-900)",
 };
+
+/** Band boundaries on the −100..100 scale, in reading order. */
+const BANDS = [
+  { key: "esquerda", from: -100, to: -50 },
+  { key: "centro-esquerda", from: -50, to: -15 },
+  { key: "centro", from: -15, to: 15 },
+  { key: "centro-direita", from: 15, to: 50 },
+  { key: "direita", from: 50, to: 100 },
+];
 
 export function SpectrumBar({
   spectrum,
@@ -32,25 +47,21 @@ export function SpectrumBar({
   }
 
   const W = 320;
-  const H = 84;
-  const pad = 18;
-  const trackY = 52;
-  const trackH = 14;
+  const H = 82;
+  const pad = 4;
+  const trackY = 44;
+  const trackH = 12;
   const span = W - pad * 2;
 
   const clamped = Math.max(-100, Math.min(100, spectrum));
-  const pct = (clamped + 100) / 200;
-  const x = pad + pct * span;
+  const at = (s: number) => pad + ((s + 100) / 200) * span;
+  const x = at(clamped);
 
   const band = deriveBand(clamped);
-  const color = BAND_COLOR[band.key] ?? "#7d8a88";
+  const color = BAND_COLOR[band.key] ?? "var(--color-vote-abstention)";
 
-  // Floating label bubble, clamped so it stays inside the viewBox.
-  const bubbleW = Math.max(74, band.label.length * 7.2 + 24);
-  const bubbleX = Math.max(pad, Math.min(W - pad - bubbleW, x - bubbleW / 2));
-
-  // Band boundaries at spectrum −50, −15, 15, 50 → x positions for subtle ticks.
-  const ticks = [-50, -15, 15, 50].map((s) => pad + ((s + 100) / 200) * span);
+  // Keep the label inside the viewBox at both extremes.
+  const labelX = Math.max(pad + 34, Math.min(W - pad - 34, x));
 
   return (
     <svg
@@ -59,88 +70,75 @@ export function SpectrumBar({
       role="img"
       aria-label={`Posicionamento: ${band.label}`}
     >
-      <defs>
-        <linearGradient id="vt-spectrum" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="var(--color-negative)" />
-          <stop offset="27%" stopColor="var(--color-neutral)" />
-          <stop offset="50%" stopColor="#9aa3a1" />
-          <stop offset="73%" stopColor="var(--color-colonial-500)" />
-          <stop offset="100%" stopColor="var(--color-navy-900)" />
-        </linearGradient>
-        <filter id="vt-glow" x="-60%" y="-60%" width="220%" height="220%">
-          <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor={color} floodOpacity="0.55" />
-        </filter>
-      </defs>
-
-      {/* Track */}
-      <rect
-        x={pad}
-        y={trackY}
-        width={span}
-        height={trackH}
-        rx={trackH / 2}
-        fill="url(#vt-spectrum)"
-      />
-      {/* Soft band dividers */}
-      {ticks.map((tx, i) => (
+      {/* The five bands: the person's own is inked, the rest are tinted paper. */}
+      {BANDS.map((b) => {
+        const active = b.key === band.key;
+        return (
+          <rect
+            key={b.key}
+            x={at(b.from)}
+            y={trackY}
+            width={at(b.to) - at(b.from)}
+            height={trackH}
+            fill={BAND_COLOR[b.key]}
+            fillOpacity={active ? 1 : 0.16}
+          />
+        );
+      })}
+      {/* Hairline between bands, in paper so it reads as a fold. */}
+      {BANDS.slice(1).map((b) => (
         <line
-          key={i}
-          x1={tx}
-          y1={trackY + 2}
-          x2={tx}
-          y2={trackY + trackH - 2}
-          stroke="white"
-          strokeOpacity="0.35"
-          strokeWidth="1.5"
+          key={b.key}
+          x1={at(b.from)}
+          y1={trackY}
+          x2={at(b.from)}
+          y2={trackY + trackH}
+          stroke="var(--color-canvas)"
+          strokeWidth="1"
         />
       ))}
 
-      {/* Marker */}
-      <g filter="url(#vt-glow)">
-        <circle cx={x} cy={trackY + trackH / 2} r="11" fill="white" />
-        <circle cx={x} cy={trackY + trackH / 2} r="7.5" fill={color} />
-      </g>
+      {/* Marker: an ink rule through the track. */}
+      <line
+        x1={x}
+        y1={trackY - 7}
+        x2={x}
+        y2={trackY + trackH + 7}
+        stroke="var(--color-navy-900)"
+        strokeWidth="2"
+      />
 
-      {/* Floating label bubble */}
-      <g>
-        <rect x={bubbleX} y={16} width={bubbleW} height={24} rx={12} fill={color} />
-        <text
-          x={bubbleX + bubbleW / 2}
-          y={32}
-          textAnchor="middle"
-          fontSize="12.5"
-          fontWeight="700"
-          fill="white"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          {band.label}
-        </text>
-      </g>
+      {/* Band name, in the display serif. */}
+      <text
+        x={labelX}
+        y={26}
+        textAnchor="middle"
+        fontSize="14"
+        fontWeight="500"
+        fill={color}
+        style={{ fontFamily: "var(--font-display)" }}
+      >
+        {band.label}
+      </text>
 
       {/* Endpoint labels */}
-      <text x={pad} y={H - 6} fontSize="10.5" fontWeight="600" fill="var(--color-muted)">
-        Esquerda
-      </text>
-      <text
-        x={W / 2}
-        y={H - 6}
-        fontSize="10.5"
+      <g
+        fontSize="9.5"
         fontWeight="600"
         fill="var(--color-muted)"
-        textAnchor="middle"
+        letterSpacing="1"
+        style={{ fontFamily: "var(--font-sans)", textTransform: "uppercase" }}
       >
-        Centro
-      </text>
-      <text
-        x={W - pad}
-        y={H - 6}
-        fontSize="10.5"
-        fontWeight="600"
-        fill="var(--color-muted)"
-        textAnchor="end"
-      >
-        Direita
-      </text>
+        <text x={pad} y={H - 8}>
+          ESQUERDA
+        </text>
+        <text x={W / 2} y={H - 8} textAnchor="middle">
+          CENTRO
+        </text>
+        <text x={W - pad} y={H - 8} textAnchor="end">
+          DIREITA
+        </text>
+      </g>
     </svg>
   );
 }

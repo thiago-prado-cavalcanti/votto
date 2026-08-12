@@ -1,8 +1,13 @@
 /**
- * Delightful two-axis positioning chart (SVG). Plots a single point on the
- * Estado↔Mercado (x) and Comunidade↔Indivíduo (y) axes (−100..100), over a soft
- * tinted-quadrant radar with concentric rings, a vector from the center and a
- * glowing accent marker. Server-component friendly (no client hooks).
+ * Two-axis positioning chart (SVG).
+ *
+ * Plots a single point on the Estado↔Mercado (x) and Comunidade↔Indivíduo (y)
+ * axes (−100..100). Drawn as a printed plot: squared plate with a 1px rule,
+ * quadrants barely tinted, hairline rings, and the position marked by an ink
+ * vector ending in a terracota dot ringed in paper — no glow, no drop shadow
+ * (docs/design.md).
+ *
+ * Server-component friendly (no client hooks).
  */
 import { POSITIONING_AXES } from "@/lib/indexes/positioning";
 
@@ -32,15 +37,8 @@ export function PositioningChart({
       aria-label="Gráfico de posicionamento em dois eixos"
     >
       <defs>
-        <radialGradient id="vt-pt-glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="var(--color-accent-500)" stopOpacity="0.55" />
-          <stop offset="100%" stopColor="var(--color-accent-500)" stopOpacity="0" />
-        </radialGradient>
-        <filter id="vt-pt-shadow" x="-60%" y="-60%" width="220%" height="220%">
-          <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#1b2026" floodOpacity="0.28" />
-        </filter>
         <clipPath id="vt-plot">
-          <rect x={pad} y={pad} width={span} height={span} rx="18" />
+          <rect x={pad} y={pad} width={span} height={span} />
         </clipPath>
       </defs>
 
@@ -50,17 +48,16 @@ export function PositioningChart({
         y={pad}
         width={span}
         height={span}
-        rx="18"
-        fill="#fbfbfa"
+        fill="var(--color-surface)"
         stroke="var(--color-line)"
       />
 
-      {/* Quadrant tints */}
-      <g clipPath="url(#vt-plot)" opacity="0.1">
+      {/* Quadrant tints — just enough to orient, never enough to decorate. */}
+      <g clipPath="url(#vt-plot)" opacity="0.07">
         <rect x={mid} y={pad} width={span / 2} height={span / 2} fill="var(--color-accent-500)" />
         <rect x={pad} y={pad} width={span / 2} height={span / 2} fill="var(--color-colonial-500)" />
         <rect x={pad} y={mid} width={span / 2} height={span / 2} fill="var(--color-navy-700)" />
-        <rect x={mid} y={mid} width={span / 2} height={span / 2} fill="var(--color-neutral)" />
+        <rect x={mid} y={mid} width={span / 2} height={span / 2} fill="var(--color-ochre)" />
       </g>
 
       {/* Concentric rings */}
@@ -71,8 +68,8 @@ export function PositioningChart({
       </g>
 
       {/* Axes */}
-      <line x1={mid} y1={pad} x2={mid} y2={S - pad} stroke="var(--color-navy-200)" strokeWidth="1.5" />
-      <line x1={pad} y1={mid} x2={S - pad} y2={mid} stroke="var(--color-navy-200)" strokeWidth="1.5" />
+      <line x1={mid} y1={pad} x2={mid} y2={S - pad} stroke="var(--color-navy-300)" strokeWidth="1" />
+      <line x1={pad} y1={mid} x2={S - pad} y2={mid} stroke="var(--color-navy-300)" strokeWidth="1" />
 
       {/* Vector + point */}
       {basis > 0 ? (
@@ -82,41 +79,44 @@ export function PositioningChart({
             y1={mid}
             x2={cx}
             y2={cy}
-            stroke="var(--color-accent-500)"
-            strokeWidth="2.5"
+            stroke="var(--color-navy-700)"
+            strokeWidth="1.5"
             strokeLinecap="round"
-            opacity="0.6"
           />
-          <circle cx={cx} cy={cy} r="26" fill="url(#vt-pt-glow)" />
-          <g filter="url(#vt-pt-shadow)">
-            <circle cx={cx} cy={cy} r="9" fill="white" />
-            <circle cx={cx} cy={cy} r="6" fill="var(--color-accent-500)" />
-          </g>
+          <circle
+            cx={cx}
+            cy={cy}
+            r="6"
+            fill="var(--color-accent-500)"
+            stroke="var(--color-surface)"
+            strokeWidth="2"
+          />
         </>
       ) : (
-        <circle cx={mid} cy={mid} r="4" fill="var(--color-navy-300)" />
+        <circle cx={mid} cy={mid} r="3.5" fill="var(--color-navy-300)" />
       )}
 
       {/* Axis pole labels */}
-      <text x={pad + 2} y={mid - 7} fontSize="10.5" fontWeight="700" fill="var(--color-muted)">
-        {POSITIONING_AXES.economic.negative}
-      </text>
-      <text
-        x={S - pad - 2}
-        y={mid - 7}
-        fontSize="10.5"
-        fontWeight="700"
+      <g
+        fontSize="9.5"
+        fontWeight="600"
         fill="var(--color-muted)"
-        textAnchor="end"
+        letterSpacing="0.8"
+        style={{ fontFamily: "var(--font-sans)" }}
       >
-        {POSITIONING_AXES.economic.positive}
-      </text>
-      <text x={mid + 7} y={pad + 14} fontSize="10.5" fontWeight="700" fill="var(--color-muted)">
-        {POSITIONING_AXES.social.positive}
-      </text>
-      <text x={mid + 7} y={S - pad - 6} fontSize="10.5" fontWeight="700" fill="var(--color-muted)">
-        {POSITIONING_AXES.social.negative}
-      </text>
+        <text x={pad + 2} y={mid - 8}>
+          {POSITIONING_AXES.economic.negative}
+        </text>
+        <text x={S - pad - 2} y={mid - 8} textAnchor="end">
+          {POSITIONING_AXES.economic.positive}
+        </text>
+        <text x={mid + 8} y={pad + 14}>
+          {POSITIONING_AXES.social.positive}
+        </text>
+        <text x={mid + 8} y={S - pad - 6}>
+          {POSITIONING_AXES.social.negative}
+        </text>
+      </g>
 
       {basis === 0 ? (
         <text x={mid} y={mid + 22} fontSize="10.5" fill="var(--color-muted)" textAnchor="middle">

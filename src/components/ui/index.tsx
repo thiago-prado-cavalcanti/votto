@@ -1,9 +1,16 @@
 /**
  * Votto base UI kit — small, dependency-free primitives shared across the public
- * site and the admin backend. Clean, fintech-grade look (CLAUDE.md §9).
+ * site and the admin backend.
+ *
+ * Visual system: "papel & pigmento" (docs/design.md). Structure is carried by 1px
+ * ink rules on warm paper, never by shadow; corners are 4px (`rounded-card`)
+ * because paper folds, it does not round; display type is the newspaper serif at
+ * weight 500, and the sans is reserved for labels, buttons, table headers and
+ * microcopy.
  */
 import * as React from "react";
 import Link from "next/link";
+import { alignmentInk, alignmentTone } from "@/lib/domain/tone";
 import { cn } from "@/lib/cn";
 
 // ─── Container ───────────────────────────────────────────────────────────────
@@ -30,19 +37,20 @@ type ButtonVariant =
   | "inverse";
 type ButtonSize = "sm" | "md" | "lg";
 
+// Sans, 600, no shadow, 4px corners. Pigment blocks or a 1px ink rule — nothing
+// floats above the paper.
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold tracking-tight transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-card font-semibold tracking-tight transition-colors active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
 
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary:
-    "bg-accent-500 text-navy-900 shadow-[0_8px_20px_-8px_rgba(255,154,46,0.7)] hover:bg-accent-600",
-  secondary: "bg-colonial-600 text-white hover:bg-colonial-700",
-  dark: "bg-navy-900 text-white hover:bg-navy-800",
-  outline: "border-2 border-navy-200 bg-white text-navy-900 hover:border-navy-900 hover:bg-navy-50",
+  primary: "bg-accent-500 text-accent-50 hover:bg-accent-600",
+  secondary: "bg-colonial-600 text-colonial-50 hover:bg-colonial-700",
+  dark: "bg-navy-900 text-navy-50 hover:bg-navy-800",
+  outline: "border border-navy-300 bg-transparent text-navy-900 hover:border-navy-900 hover:bg-navy-100",
   ghost: "text-navy-800 hover:bg-navy-100",
-  danger: "bg-[var(--color-negative)] text-white hover:opacity-90",
-  // For dark backgrounds (e.g. the hero): transparent with a light border.
-  inverse: "border-2 border-white/30 text-white hover:border-white hover:bg-white/10",
+  danger: "bg-[var(--color-negative)] text-accent-50 hover:opacity-90",
+  // For ink backgrounds (footer, dark bands): a light hairline on nothing.
+  inverse: "border border-navy-50/35 text-navy-50 hover:border-navy-50 hover:bg-navy-50/10",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
@@ -97,14 +105,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "rounded-2xl border border-line bg-surface shadow-[0_1px_2px_rgba(11,22,34,0.04),0_8px_24px_rgba(11,22,34,0.04)]",
-        className,
-      )}
-    >
-      {children}
-    </div>
+    <div className={cn("rounded-card border border-line bg-surface", className)}>{children}</div>
   );
 }
 
@@ -122,14 +123,15 @@ export function CardBody({
 
 type BadgeTone = "navy" | "colonial" | "accent" | "positive" | "negative" | "neutral" | "gray";
 
+// A badge is a printed tag: squared corners, 1px rule, tinted paper, sans 600.
 const badgeTones: Record<BadgeTone, string> = {
-  navy: "bg-navy-100 text-navy-800",
-  colonial: "bg-colonial-50 text-colonial-700",
-  accent: "bg-accent-100 text-accent-800",
-  positive: "bg-[#e3f3ed] text-[var(--color-positive)]",
-  negative: "bg-[#fbe9e5] text-[var(--color-negative)]",
-  neutral: "bg-[#fbeed5] text-[var(--color-neutral)]",
-  gray: "bg-[#eaeeec] text-[var(--color-muted)]",
+  navy: "border-navy-200 bg-navy-100 text-navy-800",
+  colonial: "border-colonial-100 bg-colonial-50 text-colonial-700",
+  accent: "border-accent-100 bg-accent-50 text-accent-700",
+  positive: "border-[#dde3ce] bg-[#eef1e6] text-[var(--color-positive)]",
+  negative: "border-[#eed7cf] bg-[#f7e9e4] text-[var(--color-negative)]",
+  neutral: "border-[#e6d3ac] bg-[var(--color-ochre-light)] text-[var(--color-ochre-ink)]",
+  gray: "border-line bg-navy-100 text-[var(--color-muted)]",
 };
 
 export function Badge({
@@ -144,7 +146,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
+        "inline-flex items-center rounded-[2px] border px-2 py-0.5 text-[0.7rem] font-semibold leading-5",
         badgeTones[tone],
         className,
       )}
@@ -168,12 +170,10 @@ export function Stat({
   return (
     <Card>
       <CardBody>
-        <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <div className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
           {label}
         </div>
-        <div className="mt-1.5 font-display text-4xl font-extrabold tracking-tight text-navy-900">
-          {value}
-        </div>
+        <div className="vt-num mt-2 text-4xl text-navy-900">{value}</div>
         {hint ? <div className="mt-1 text-xs text-[var(--color-muted)]">{hint}</div> : null}
       </CardBody>
     </Card>
@@ -195,44 +195,82 @@ export function Field({
 }) {
   return (
     <label htmlFor={htmlFor} className="block">
-      <span className="mb-1.5 block text-sm font-medium text-navy-800">{label}</span>
+      <span className="mb-1.5 block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
+        {label}
+      </span>
       {children}
       {hint ? <span className="mt-1 block text-xs text-[var(--color-muted)]">{hint}</span> : null}
     </label>
   );
 }
 
+/**
+ * Two field treatments, both hairline:
+ *
+ * - `box` (default) — a 1px rule around the field, 4px corners. Used in the admin
+ *   forms, where density and an obvious hit area matter.
+ * - `rule` — no box at all, just a rule underneath, the way a form is printed.
+ *   Used for the public filters (docs/design.md).
+ */
+type ControlVariant = "box" | "rule";
+
 const controlBase =
-  "w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-[var(--color-muted)] focus:border-navy-400";
+  "w-full text-sm text-ink placeholder:text-[var(--color-muted)] transition-colors";
 
-export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cn(controlBase, props.className)} />;
+const controlVariants: Record<ControlVariant, string> = {
+  box: "rounded-card border border-line bg-surface px-3 py-2.5 focus:border-navy-400",
+  rule: "border-0 border-b border-navy-300 bg-transparent px-0 py-2 focus:border-navy-900 focus-visible:outline-none",
+};
+
+const control = (variant: ControlVariant = "box", className?: string) =>
+  cn(controlBase, controlVariants[variant], className);
+
+export function Input({
+  variant = "box",
+  className,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & { variant?: ControlVariant }) {
+  return <input {...props} className={control(variant, className)} />;
 }
 
-export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn(controlBase, "min-h-24", props.className)} />;
+export function Textarea({
+  variant = "box",
+  className,
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { variant?: ControlVariant }) {
+  return <textarea {...props} className={control(variant, cn("min-h-24", className))} />;
 }
 
-export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cn(controlBase, "appearance-none", props.className)} />;
+export function Select({
+  variant = "box",
+  className,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & { variant?: ControlVariant }) {
+  return <select {...props} className={control(variant, cn("appearance-none", className))} />;
 }
 
 // ─── Index meters ────────────────────────────────────────────────────────────
 
-/** Horizontal 0–100 meter used for the alignment / engagement indexes. */
+/**
+ * Horizontal 0–100 meter used for the alignment / engagement indexes.
+ *
+ * A bar of pigment on a paper track — squared, no pill, no gradient; the reading
+ * itself is set in the serif tabular numerals of `.vt-num`.
+ */
 export function AlignmentMeter({ value, label = "Alinhamento" }: { value: number; label?: string }) {
   const pct = Math.max(0, Math.min(100, Math.round(value)));
-  const tone = pct >= 66 ? "var(--color-positive)" : pct >= 33 ? "var(--color-neutral)" : "var(--color-negative)";
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-[var(--color-muted)]">{label}</span>
-        <span className="font-bold tabular-nums" style={{ color: tone }}>
+      <div className="flex items-baseline justify-between">
+        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
+          {label}
+        </span>
+        <span className="vt-num text-sm" style={{ color: alignmentInk(pct) }}>
           {pct}%
         </span>
       </div>
-      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#e7eae8]">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone }} />
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-navy-100">
+        <div className="h-full" style={{ width: `${pct}%`, background: alignmentTone(pct) }} />
       </div>
     </div>
   );

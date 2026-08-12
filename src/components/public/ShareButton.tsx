@@ -46,7 +46,7 @@ export function ShareButton({
           aria-label="Compartilhar"
           title="Compartilhar"
           className={cn(
-            "inline-flex h-7 w-7 items-center justify-center rounded-full border border-line text-navy-600 transition hover:border-navy-300 hover:bg-navy-50 hover:text-navy-900",
+            "inline-flex h-7 w-7 items-center justify-center rounded-card border border-line text-navy-600 transition-colors hover:border-navy-300 hover:bg-navy-100 hover:text-navy-900",
             className,
           )}
         >
@@ -57,7 +57,7 @@ export function ShareButton({
           type="button"
           onClick={() => setOpen(true)}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg border border-navy-200 bg-white px-3 py-1.5 text-xs font-semibold text-navy-900 transition hover:border-navy-900 hover:bg-navy-50",
+            "inline-flex items-center gap-1.5 rounded-card border border-navy-300 bg-surface px-3 py-1.5 text-xs font-semibold text-navy-900 transition-colors hover:border-navy-900 hover:bg-navy-100",
             className,
           )}
         >

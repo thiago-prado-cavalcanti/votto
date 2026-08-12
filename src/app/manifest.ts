@@ -12,8 +12,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Voto popular direto e medição de alinhamento político entre cidadãos e agentes públicos.",
     start_url: "/",
     display: "standalone",
-    background_color: "#0a2320",
-    theme_color: "#133e39",
+    background_color: "#0c1f1b",
+    theme_color: "#183a33",
     lang: "pt-BR",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

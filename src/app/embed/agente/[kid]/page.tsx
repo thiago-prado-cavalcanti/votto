@@ -46,7 +46,7 @@ export default async function AgentEmbed({ params }: { params: Promise<{ kid: st
           }
         />
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold text-navy-900">{fullName}</h1>
+          <h1 className="truncate text-lg text-navy-900">{fullName}</h1>
           <p className="truncate text-xs text-[var(--color-muted)]">{subtitle}</p>
         </div>
       </div>
@@ -63,12 +63,12 @@ function RatingBlock({ alignment, band }: { alignment: number | null; band: stri
     <div>
       <div className="text-xs font-medium text-[var(--color-muted)]">Alinhamento com eleitores</div>
       <div className="mt-1 flex items-center gap-3">
-        <span className="font-display text-3xl font-extrabold tracking-tight text-navy-900">
+        <span className="vt-num text-3xl text-navy-900">
           {alignment === null ? "—" : `${alignment}%`}
         </span>
         {alignment !== null ? <StarRating value={alignment} size={18} /> : null}
         {band ? (
-          <span className="ml-auto rounded-full bg-navy-100 px-2.5 py-1 text-xs font-semibold text-navy-800">
+          <span className="ml-auto rounded-[2px] bg-navy-100 px-2 py-0.5 text-xs font-semibold text-navy-800">
             {band}
           </span>
         ) : null}

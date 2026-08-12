@@ -1,8 +1,9 @@
-<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- solid brand tile so the mark stands out on a browser tab -->
-  <rect width="40" height="40" rx="11" fill="#133e39" />
-  <!-- left arm — institutional anchor -->
-  <path d="M10.8 10.6 L20 28.6" stroke="#ffffff" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" />
-  <!-- right arm, mirrored — brand orange accent -->
-  <path d="M20 28.6 L29.2 10.6" stroke="#ff9a2e" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" />
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- Solid pinho tile so the mark holds against any browser-tab background. -->
+  <rect width="40" height="40" rx="9" fill="#183a33" />
+  <!-- The serif V of the "Votto." logotype (Newsreader Bold), with its terracota period. -->
+  <g transform="translate(5.57 30.51) scale(31.60)">
+    <path d="M0.065 -0.618L-0.012 -0.6475L-0.012 -0.676L0.3275 -0.676L0.3275 -0.6475L0.243 -0.62L0.444 -0.1115L0.421 -0.1115L0.6005 -0.6195L0.5205 -0.6475L0.5205 -0.676L0.7535 -0.676L0.7535 -0.6475L0.6785 -0.62L0.4455 0.0035L0.3215 0.0035L0.065 -0.618Z" fill="#fcfaf6" />
+    <path d="M0.838 -0.1605Q0.8765 -0.1605 0.901 -0.136Q0.9255 -0.1115 0.9255 -0.075Q0.9255 -0.0385 0.901 -0.014Q0.8765 0.0105 0.838 0.0105Q0.7995 0.0105 0.775 -0.014Q0.7505 -0.0385 0.7505 -0.075Q0.7505 -0.1115 0.775 -0.136Q0.7995 -0.1605 0.838 -0.1605Z" fill="#b4552f" />
+  </g>
 </svg>

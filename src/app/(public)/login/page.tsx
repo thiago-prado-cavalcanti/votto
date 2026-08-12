@@ -44,7 +44,7 @@ export default async function LoginPage({
         <Card>
           <CardBody className="flex flex-col gap-5">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-navy-900">
+              <h1 className="text-[1.9rem] leading-tight text-navy-900">
                 Entrar no Votto
               </h1>
               <p className="mt-2 text-sm text-[var(--color-muted)]">
@@ -57,7 +57,7 @@ export default async function LoginPage({
             {message ? (
               <p
                 role="alert"
-                className="rounded-lg bg-[#fbeaeb] px-3 py-2 text-sm text-[var(--color-negative)]"
+                className="rounded-card bg-[#f7e9e4] px-3 py-2 text-sm text-[var(--color-negative)]"
               >
                 {message}
               </p>
@@ -68,7 +68,7 @@ export default async function LoginPage({
                 Entrar com gov.br
               </ButtonLink>
             ) : (
-              <div className="rounded-xl border border-line bg-canvas px-4 py-3.5">
+              <div className="rounded-card border border-line bg-canvas px-4 py-3.5">
                 <p className="text-sm font-semibold text-navy-900">
                   A entrada pelo gov.br ainda não está aberta.
                 </p>

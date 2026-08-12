@@ -20,10 +20,9 @@ export function StarRating({
     <div className={className} style={{ display: "inline-flex", gap: 2 }} aria-hidden>
       {[0, 1, 2, 3, 4].map((i) => (
         <svg key={i} width={size} height={size} viewBox="0 0 24 24">
-          <path
-            d={STAR_PATH}
-            fill={i < filled ? "var(--color-accent-500)" : "var(--color-navy-200)"}
-          />
+          {/* Ochre is the system's highlight pigment; terracota is reserved for
+              action, so the stars are gilded, not clickable-looking. */}
+          <path d={STAR_PATH} fill={i < filled ? "var(--color-ochre)" : "var(--color-navy-200)"} />
         </svg>
       ))}
     </div>

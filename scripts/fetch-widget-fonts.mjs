@@ -15,18 +15,21 @@ import { mkdir, writeFile } from "node:fs/promises";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, "..", "public", "fonts");
 
+// The pair from the design system (docs/design.md): Instrument Sans for labels
+// and microcopy, Newsreader at 500 for every display size. No 800 weight exists
+// in this system, so none is downloaded.
 const FONTS = [
   {
-    out: "Inter-Regular.ttf",
-    url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/inter/Inter_400Regular.ttf",
+    out: "InstrumentSans-Regular.ttf",
+    url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/instrument-sans/400Regular/InstrumentSans_400Regular.ttf",
   },
   {
-    out: "Inter-SemiBold.ttf",
-    url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/inter/Inter_600SemiBold.ttf",
+    out: "InstrumentSans-SemiBold.ttf",
+    url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/instrument-sans/600SemiBold/InstrumentSans_600SemiBold.ttf",
   },
   {
-    out: "Sora-ExtraBold.ttf",
-    url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/sora/Sora_800ExtraBold.ttf",
+    out: "Newsreader-Medium.ttf",
+    url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/newsreader/Newsreader_500Medium.ttf",
   },
 ];
 
