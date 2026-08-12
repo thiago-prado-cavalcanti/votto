@@ -22,6 +22,16 @@ type GovbrMode = "mock" | "real";
 /** Default gov.br scopes. `govbr_confiabilidades` exposes the account's seals. */
 const DEFAULT_GOVBR_SCOPES = "openid email profile govbr_confiabilidades";
 
+/**
+ * Registry backing CPF validation.
+ *
+ * `serpro` is the official Receita Federal channel (contract + e-CNPJ);
+ * `infosimples` automates the same public portal per request, cheaper and with
+ * no contract, but with no availability guarantee; `mock` accepts any
+ * well-formed CPF and is development-only.
+ */
+type CpfValidationProvider = "mock" | "serpro" | "infosimples";
+
 export const env = {
   databaseUrl: required("DATABASE_URL"),
   redisUrl: process.env.REDIS_URL ?? "",
@@ -64,6 +74,25 @@ export const env = {
      * validation, so this is also the knob that enforces bank-grade identity.
      */
     minTrust: (process.env.GOVBR_MIN_TRUST ?? "").toLowerCase(),
+  },
+  /**
+   * Official CPF registry used to validate a citizen's CPF + birth date.
+   * `mock` keeps local development and `next build` free of credentials.
+   */
+  cpfValidation: {
+    provider: (process.env.CPF_VALIDATION_PROVIDER ?? "mock") as CpfValidationProvider,
+    serpro: {
+      consumerKey: process.env.SERPRO_CPF_CONSUMER_KEY ?? "",
+      consumerSecret: process.env.SERPRO_CPF_CONSUMER_SECRET ?? "",
+      /**
+       * The trial dataset answers only for fictitious CPFs, so it is the right
+       * target until the Loja Serpro contract (which requires an e-CNPJ) exists.
+       */
+      useTrial: (process.env.SERPRO_CPF_TRIAL ?? "true").toLowerCase() !== "false",
+    },
+    infosimples: {
+      token: process.env.INFOSIMPLES_TOKEN ?? "",
+    },
   },
   appUrl: process.env.APP_URL ?? "http://localhost:3000",
 } as const;
