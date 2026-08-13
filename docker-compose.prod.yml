@@ -36,6 +36,11 @@ services:
       # Point the app at the bundled services (override any host values).
       DATABASE_URL: postgresql://${POSTGRES_USER:-votto}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-votto}?schema=public
       REDIS_URL: redis://redis:6379
+      # Google Analytics 4. Lives here, in git, rather than in .env.production:
+      # a measurement id is public (it ships in the HTML of every page), so
+      # keeping it out of the untracked secrets file means turning analytics on,
+      # off or over to another property is a commit + push, never an SSH session.
+      GA_MEASUREMENT_ID: ${GA_MEASUREMENT_ID:-G-Q6LJDXVZJQ}
     depends_on:
       db:
         condition: service_healthy
