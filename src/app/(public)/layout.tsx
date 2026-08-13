@@ -8,6 +8,8 @@ import { Wordmark } from "@/components/public/Wordmark";
 import { NavLinks } from "@/components/public/NavLinks";
 import { LogoutButton } from "@/components/public/LogoutButton";
 import { Analytics } from "@/components/public/Analytics";
+import { SiteHeader } from "@/components/public/SiteHeader";
+import { Reveal } from "@/components/public/motion";
 import { getCitizenSession } from "@/lib/auth/session";
 
 /** One labelled column of the footer grid: quiet eyebrow over a stack of links. */
@@ -69,9 +71,11 @@ export default async function PublicLayout({
     <div className="flex min-h-screen flex-col">
       <Analytics />
       {/* Warm paper, not white, so the header dissolves into the page instead of
-          floating over it; the only edge is a 1px rule. */}
-      <header className="sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur">
-        <Container className="flex h-16 items-center justify-between gap-4">
+          floating over it; the only edge is a 1px rule — which `SiteHeader` inks
+          in as the reader advances, and which condenses once the page has left
+          its first screen. */}
+      <SiteHeader>
+        <Container className="vt-masthead flex h-16 items-center justify-between gap-4">
           <div className="flex items-center gap-6">
             <Wordmark />
             <div className="hidden sm:block">
@@ -99,7 +103,7 @@ export default async function PublicLayout({
         <Container className="block pb-2 sm:hidden">
           <NavLinks />
         </Container>
-      </header>
+      </SiteHeader>
 
       <main className="flex-1">{children}</main>
 
@@ -109,14 +113,19 @@ export default async function PublicLayout({
           block, which is what made the old footer read as misaligned. */}
       <footer className="mt-20 bg-navy-900 text-navy-300">
         <Container className="py-13">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+          <Reveal variant="fade" className="flex flex-wrap items-center justify-between gap-4">
             <Wordmark tone="dark" />
             <span className="font-mono text-xs text-navy-500">
               Dados oficiais · votto.online
             </span>
-          </div>
+          </Reveal>
 
-          <div className="mt-9 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
+          <Reveal
+            variant="fade"
+            stagger
+            step={110}
+            className="mt-9 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]"
+          >
             <p className="max-w-sm text-base leading-[1.65] text-navy-300">
               Plataforma de escolhas e alinhamentos, construída sobre dados públicos da
               Câmara dos Deputados e do Senado Federal.
@@ -136,7 +145,7 @@ export default async function PublicLayout({
                 Senado Federal
               </FooterLink>
             </FooterColumn>
-          </div>
+          </Reveal>
         </Container>
       </footer>
     </div>

@@ -103,6 +103,15 @@ Position users, public agents and parties on the classic left↔right political 
   maps to one of the five bands. Implementation: `src/lib/indexes/positioning.ts`.
 - The two axes are retained for a supporting two-axis positioning chart.
 
+> **The five-band verdict is NOT displayed anywhere today.** The maths is only as good as the
+> themes' axis tags, and those are not filled in yet (§11) — running on near-empty weights it was
+> placing PL at the centre. A wrong band stated in confident type is worse than no band at all, so
+> `PositionBadge` and `SpectrumBar` are unmounted (both files kept, with a note) and the band is
+> gone from the cards, the detail pages, the embeds and the OG cards. What remains is the two-axis
+> **figure**, which shows a shape rather than pronouncing a sentence. Put the band back only once
+> theme tagging exists and the output has been checked against parties whose position is not in
+> dispute.
+
 > The data architecture is **not rigid**. Propose improvements where pertinent — especially around
 > how themes map to positioning dimensions.
 
@@ -198,9 +207,14 @@ Position users, public agents and parties on the classic left↔right political 
 
 ### Database operations (global rule)
 
-- **Never** execute SQL or run migrations against any database from this environment. Document
-  required DDL/DML in the plan or in `docs/migrations/*.sql` and hand it to the user for manual
-  execution.
+- **Never** execute SQL or run migrations against any database from this environment.
+- Deliver the change instead as a **Prisma migration** under `prisma/migrations/<timestamp>_name/
+  migration.sql`, with a readable mirror in `docs/migrations/`. The deploy workflow runs
+  `prisma migrate deploy` before the new image serves traffic, so a plain `git push` applies it —
+  **that is the only update procedure**, and it holds for data fixes (backfills, corrections) just
+  as much as for DDL. Write them idempotent, so a re-run is a no-op.
+- A statement that cannot be a migration goes in the plan for the user to run. Never leave a change
+  that requires them to open a database console as the normal path.
 
 ---
 
@@ -292,6 +306,14 @@ Verified against the live APIs; `npm run check:sources` re-checks them.
 - Official roll-call vote → **Vote** cast by a **PublicAgent** (yes / no / abstention), mapped to our
   `+1 / -1 / 0` model.
 - Official legislators/parties → **PublicAgent** / **Party** records.
+- **Party logos are curated, not imported.** The Câmara's `{SIGLA}.gif` is the acronym in plain
+  type for most parties and the Senado publishes none, so `src/lib/integration/party-logos.ts`
+  maps acronym → SVG in `public/logos/partidos/` and `upsertParty` applies it, which is what keeps
+  the marks correct across re-imports. Those SVGs are **built**, not collected: `npm run
+  assets:party-logos` crops the party name off each official lockup and normalizes every mark onto
+  one 2.5:1 canvas at constant area, so a 1:1 mark and a 7:1 mark carry the same optical weight —
+  UI slots must be cut to that ratio. Pipeline and provenance:
+  [`docs/logos-partidos.md`](docs/logos-partidos.md).
 
 ### Urgency & classification
 
@@ -362,8 +384,36 @@ be), but the reference is a printed record, not a fintech app.
 - **One decoration:** a 3.5% paper grain in multiply over the document. No auroras, no grids.
 - Lists are documents: themes are an order paper with a voting panel, rankings are tables with an
   index column, filters are labelled rules with no box.
+- **Every page opens on a masthead, not on a heading.** `PageIntro` (index pages) and `RecordIntro`
+  (one agent, one party) are a full-bleed band on a deeper paper stock, closed by a hairline:
+  eyebrow, display type one step under the home hero's, lead, action — and, on the right, a **plate
+  of that page's own figures** (`IndexPlate` for a cut of one total, `ReadingPlate` for an index
+  reading at full size). A masthead always carries a figure that exists: where alignment cannot be
+  computed yet, the roll-call record stands in for it.
+- **The party is a mark, not a tag.** The curated logos carry the acronym in the party's own
+  lettering, so the acronym is never printed beside the mark — it is the fallback for a party with
+  no curated mark. Marks always sit in a box bounded on both sides (proportions run from 6.5:1 to
+  taller than wide).
+- **Voting is the loudest thing on the page,** because it is the platform's action and its
+  reading. The panel leads with the winning share in the serif numerals over a keyed tally
+  (`TemperatureBar`), and the ballot is three equal columns filled solid with the vote pigments
+  (`VoteButtons`), under a terracota prompt — the one place a card opens with a terracota rule.
+- **Forms are ours, including the parts browsers usually keep.** One surface for every control
+  (`src/components/ui/control.ts`) in two treatments — boxed in the admin, a printed rule in the
+  public filters. `Select` replaces the OS dropdown with a paper listbox while the native
+  `<select>` stays the field, so filtering still works without JavaScript; radio and checkbox are
+  ink ballot marks. Never reach for a bare `<input>`, `<select>` or `type="radio"`.
 - The **animated `AlignmentRadar`** is the brand made visible — and, until per-area alignment is
-  computed, it is illustration, not a chart (see §11).
+  computed, it is illustration, not a chart (see §11). `PositioningChart` is its **still form**:
+  the same mass, hairlines and hand-drawn petal (geometry shared in `src/lib/viz/figure.ts`),
+  leaning toward the quadrant a voting record points at.
+- **A page is composed, not animated.** Blocks arrive with the scroll as ink settling on paper:
+  the opener's rule draws itself, index bars enter from the left, the masthead rule fills with
+  terracota as the document is read. One vocabulary (`src/components/public/motion.tsx` + the
+  motion block in `globals.css`) covers every public screen. Two invariants: resting states live
+  only inside `@media (scripting: enabled) and (prefers-reduced-motion: no-preference)`, so the
+  page is never blank without JavaScript; and first-screen blocks play from CSS keyframes
+  (`autoplay`) rather than waiting for hydration, so motion never costs LCP.
 - Fully **responsive**; all motion honours `prefers-reduced-motion`.
 
 ---
@@ -382,8 +432,10 @@ be), but the reference is a printed record, not a fintech app.
 
 ## 11. Open Questions / To Validate
 
-- Tune the economic/social weighting and band thresholds of the **Political Positioning Index**
-  (currently 5-point left↔right: Esquerda · Centro-esquerda · Centro · Centro-direita · Direita).
+- **Make the Political Positioning Index trustworthy before showing its band again** (§3.2). Order
+  of work: tag themes on the two axes, then re-tune the economic/social weighting and the band
+  thresholds, then validate against parties whose position is not in dispute — PL reading as
+  "Centro" is the regression test.
 - Exact similarity formula and theme weighting for the **Alignment Index**.
 - Theme → positioning-dimension tagging model. The official classification now imported
   (`Theme.classifications`) is the obvious input to automate this — currently unused by the

@@ -8,6 +8,7 @@
  */
 import type { Metadata } from "next";
 import { Container, Card, CardBody, ButtonLink } from "@/components/ui";
+import { Reveal } from "@/components/public/motion";
 import { env, isGovbrConfigured } from "@/lib/env";
 
 export const metadata: Metadata = {
@@ -40,7 +41,7 @@ export default async function LoginPage({
 
   return (
     <Container className="py-16">
-      <div className="mx-auto max-w-md">
+      <Reveal className="mx-auto max-w-md">
         <Card>
           <CardBody className="flex flex-col gap-5">
             <div>
@@ -92,7 +93,7 @@ export default async function LoginPage({
             </p>
           </CardBody>
         </Card>
-      </div>
+      </Reveal>
     </Container>
   );
 }

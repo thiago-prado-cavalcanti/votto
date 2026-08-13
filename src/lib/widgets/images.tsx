@@ -11,8 +11,9 @@
  */
 import type * as React from "react";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { ImageResponse } from "next/og";
+import { partyLogoRaster } from "@/lib/integration/party-logos";
 
 // ─── Brand palette — "papel & pigmento" (docs/design.md) ─────────────────────
 // The share card is a newspaper clipping, not a dark app screen: warm paper,
@@ -161,12 +162,17 @@ async function render(node: React.ReactElement) {
 }
 
 /**
- * Fetch a remote avatar/logo and inline it as a data URL, but only if it is a
- * raster image satori can draw (png/jpg/webp/gif). Returns null on any failure
- * or non-raster (e.g. SVG) so the caller falls back to initials/acronym.
+ * Inline an avatar/logo as a data URL, but only if it is a raster image satori
+ * can draw (png/jpg/webp/gif). Returns null on any failure or non-raster (e.g.
+ * SVG) so the caller falls back to initials/acronym.
+ *
+ * A root-relative path is one of our own files under `public/`, read from disk:
+ * `fetch` has no origin to resolve it against, and going back out over HTTP to
+ * our own server to read a file we already have would be silly.
  */
 async function toImageData(url: string | null): Promise<string | null> {
   if (!url) return null;
+  if (url.startsWith("/")) return toLocalImageData(url);
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
@@ -177,6 +183,41 @@ async function toImageData(url: string | null): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Read a file under `public/` and inline it, for the paths we serve ourselves. */
+async function toLocalImageData(path: string): Promise<string | null> {
+  const type = path.endsWith(".png")
+    ? "image/png"
+    : /\.jpe?g$/.test(path)
+      ? "image/jpeg"
+      : path.endsWith(".webp")
+        ? "image/webp"
+        : null;
+  if (!type) return null;
+  try {
+    const root = join(process.cwd(), "public");
+    // normalize() before join() so a `..` segment cannot climb out of public/.
+    const file = join(root, normalize(path));
+    if (!file.startsWith(root)) return null;
+    const buf = await readFile(file);
+    return `data:${type};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Intrinsic size of a PNG data URI, read from its IHDR chunk (bytes 16..24).
+ * Used to size a mark by height without a layout engine to do it for us.
+ */
+function pngSize(dataUrl: string | null): { w: number; h: number } | null {
+  if (!dataUrl?.startsWith("data:image/png;base64,")) return null;
+  const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
+  if (buf.length < 24) return null;
+  const w = buf.readUInt32BE(16);
+  const h = buf.readUInt32BE(20);
+  return w > 0 && h > 0 ? { w, h } : null;
 }
 
 // ─── Theme card ──────────────────────────────────────────────────────────────
@@ -279,9 +320,26 @@ function RatingCard(data: {
   image: string | null;
   fallback: string;
   alignment: number | null;
-  band: string | null;
+  /**
+   * A portrait fills its square ("cover", the default); a party logo must be
+   * shown whole ("contain"), free on the paper — cropping a mark disfigures it.
+   */
+  imageFit?: "cover" | "contain";
 }) {
   const stars = data.alignment === null ? 0 : Math.round(data.alignment / 20);
+  const fit = data.imageFit ?? "cover";
+  // A portrait is cropped into its square. A party mark is not: it is sized by
+  // HEIGHT with the width following its own intrinsic ratio, because the marks
+  // are built tight-width on a shared canvas height — that height is what holds
+  // their normalized optical weight. Fixing both sides would let `contain` scale
+  // each mark by its own aspect and hand back the very unevenness the build
+  // exists to remove. Satori has no `width: auto`, so the ratio is read off the
+  // PNG itself.
+  const intrinsic = fit === "contain" ? pngSize(data.image) : null;
+  const box =
+    fit === "cover" || !intrinsic
+      ? { w: 156, h: 156 }
+      : { w: Math.min(240, Math.round(88 * (intrinsic.w / intrinsic.h))), h: 88 };
   // Scale the name down for long titles so it fits the column without clamping.
   const titleSize = data.title.length > 28 ? 40 : data.title.length > 20 ? 46 : 54;
   return (
@@ -291,9 +349,15 @@ function RatingCard(data: {
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={data.image}
-            width={156}
-            height={156}
-            style={{ width: 156, height: 156, borderRadius: 4, objectFit: "cover", background: TRACK }}
+            width={box.w}
+            height={box.h}
+            style={{
+              width: box.w,
+              height: box.h,
+              borderRadius: 4,
+              objectFit: fit,
+              background: fit === "cover" ? TRACK : "transparent",
+            }}
           />
         ) : (
           <div
@@ -351,23 +415,6 @@ function RatingCard(data: {
           <span style={{ fontFamily: "Newsreader", fontWeight: 500, fontSize: 92, color: INK }}>
             {data.alignment === null ? "—" : `${data.alignment}%`}
           </span>
-          {data.band ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                border: `1px solid ${LINE}`,
-                background: TRACK,
-                color: MUTED,
-                fontWeight: 600,
-                fontSize: 26,
-                padding: "10px 20px",
-                borderRadius: 2,
-              }}
-            >
-              {data.band}
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -381,7 +428,6 @@ export async function agentCardImage(data: {
   subtitle: string;
   imageUrl: string | null;
   alignment: number | null;
-  band: string | null;
 }) {
   const initials = data.name
     .split(" ")
@@ -398,7 +444,6 @@ export async function agentCardImage(data: {
       image: await toImageData(data.imageUrl),
       fallback: initials,
       alignment: data.alignment,
-      band: data.band,
     }),
   );
 }
@@ -409,17 +454,17 @@ export async function partyCardImage(data: {
   subtitle: string;
   logoUrl: string | null;
   alignment: number | null;
-  band: string | null;
 }) {
   return render(
     RatingCard({
       eyebrow: "PARTIDO",
       title: data.name,
       subtitle: data.subtitle,
-      image: await toImageData(data.logoUrl),
+      // Curated logos are SVG, which satori cannot draw — swap in the raster twin.
+      image: await toImageData(partyLogoRaster(data.logoUrl)),
       fallback: data.acronym,
       alignment: data.alignment,
-      band: data.band,
+      imageFit: "contain",
     }),
   );
 }

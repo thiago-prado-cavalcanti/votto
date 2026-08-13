@@ -8,6 +8,10 @@
  * (docs/design.md). The value shown is the global "alinhamento com eleitores"
  * when logged out, or the citizen's personal alignment when logged in (the parent
  * decides which).
+ *
+ * Switching tabs re-keys the body, so the new standings deal in from the top
+ * rather than swapping in place — the one moment on the page where motion is
+ * triggered by a click instead of the scroll (`.vt-rows`, globals.css).
  */
 import * as React from "react";
 import Link from "next/link";
@@ -30,7 +34,9 @@ export interface RankingTab {
   label: string;
   rows: RankingRow[];
   hrefAll?: string;
-  avatarShape?: "round" | "square";
+  /** `portrait` crops an agent photo into a circle; `logo` fits a party mark
+   *  whole, unclipped and uncut. */
+  avatarShape?: "portrait" | "logo";
 }
 
 function initialsOf(name: string): string {
@@ -47,9 +53,12 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
   const [active, setActive] = React.useState(tabs[0]?.key ?? "");
   const current = tabs.find((t) => t.key === active) ?? tabs[0];
   if (!current) return null;
-  const square = current.avatarShape === "square";
-  const avatarClass = square
-    ? "bg-navy-100 object-contain p-0.5"
+  const logo = current.avatarShape === "logo";
+  // A party mark gets no plate of its own — it fits whole inside its square and
+  // `multiply` dissolves the white one some of them are exported on. A portrait
+  // keeps the tinted square it is cropped into.
+  const avatarClass = logo
+    ? "object-contain mix-blend-multiply"
     : "rounded-full bg-navy-100 object-cover";
 
   return (
@@ -103,17 +112,17 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
                   #
                 </th>
                 <th scope="col" className="py-2.5 font-semibold">
-                  {square ? "Partido" : "Agente público"}
+                  {logo ? "Partido" : "Agente público"}
                 </th>
                 <th scope="col" className="hidden py-2.5 font-semibold sm:table-cell">
-                  {square ? "Sigla" : "Partido · UF"}
+                  {logo ? "Sigla" : "Partido · UF"}
                 </th>
                 <th scope="col" className="py-2.5 pl-2 text-right font-semibold">
                   Alinhamento
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody key={current.key} className="vt-rows">
               {current.rows.map((row, i) => (
                 <tr
                   key={row.kid}
@@ -134,12 +143,12 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
                       <ImageWithFallback
                         src={row.imageUrl}
                         alt={row.name}
-                        className={cn("h-9 w-9 shrink-0", avatarClass)}
+                        className={cn("shrink-0", logo ? "h-8 w-auto max-w-24" : "h-9 w-9", avatarClass)}
                         fallback={
                           <div
                             className={cn(
-                              "flex h-9 w-9 shrink-0 items-center justify-center bg-navy-100 text-[0.7rem] font-semibold text-navy-700",
-                              square ? "" : "rounded-full",
+                              "flex shrink-0 items-center justify-center text-[0.7rem] font-semibold text-navy-700",
+                              logo ? "h-8" : "h-9 w-9 rounded-full bg-navy-100",
                             )}
                           >
                             {initialsOf(row.name)}

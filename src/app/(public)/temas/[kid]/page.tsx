@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { PriorityBadge } from "@/components/public/PriorityBadge";
 import { OfficialRecord } from "@/components/public/OfficialRecord";
 import { ThemeAuthorLine } from "@/components/public/ThemeAuthorLine";
+import { Reveal } from "@/components/public/motion";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { scopeLabel, houseLabel } from "@/lib/labels";
@@ -80,15 +81,15 @@ export default async function ThemeDetailPage({
 
   return (
     <Container className="py-10">
-      <div className="flex items-center justify-between gap-3">
+      <Reveal variant="fade" className="flex items-center justify-between gap-3">
         <Link href="/temas" className="text-sm text-navy-600 hover:text-navy-800">
           ← Voltar para temas
         </Link>
         <ShareButton kind="tema" kid={dto.kid} title={dto.name} variant="button" />
-      </div>
+      </Reveal>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <Reveal className="lg:col-span-2" delay={80}>
           <Card>
             <CardBody>
               <div className="flex flex-wrap items-center gap-2">
@@ -198,40 +199,48 @@ export default async function ThemeDetailPage({
               ) : null}
             </CardBody>
           </Card>
-        </div>
+        </Reveal>
 
-        {/* Sidebar: tallies + vote */}
+        {/* Sidebar: the ballot first, then the result it feeds. */}
         <div className="flex flex-col gap-6">
-          <Card>
-            <CardBody>
-              <h2 className="text-xl text-navy-900">Resultado atual</h2>
-              <div className="mt-3">
-                <TemperatureBar
-                  yesCount={dto.yesCount}
-                  noCount={dto.noCount}
-                  absCount={dto.absCount}
-                />
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardBody>
-              <h2 className="text-xl text-navy-900">Seu voto</h2>
-              {!isAuthenticated ? (
-                <p className="mb-3 text-sm text-[var(--color-muted)]">
-                  Entre para registrar o seu voto neste tema.
+          <Reveal delay={160}>
+            {/* The one card in the system that opens with terracota: on this page
+                the ballot is the action, and terracota is what marks an action. */}
+            <Card className="overflow-hidden">
+              <div className="h-[3px] bg-accent-500" />
+              <CardBody>
+                <h2 className="text-xl text-navy-900">
+                  {currentVote ? "Seu voto" : "Vote neste tema"}
+                </h2>
+                <p className="mt-1 text-sm leading-snug text-[var(--color-muted)]">
+                  {isAuthenticated
+                    ? "Sua escolha entra no cálculo do seu alinhamento com agentes e partidos."
+                    : "Entre com o gov.br para registrar o seu voto neste tema."}
                 </p>
-              ) : null}
-              <div className="mt-2">
                 <VoteButtons
+                  className="mt-4"
                   themeKid={dto.kid}
                   isAuthenticated={isAuthenticated}
                   currentValue={currentVote}
                 />
-              </div>
-            </CardBody>
-          </Card>
+              </CardBody>
+            </Card>
+          </Reveal>
+
+          <Reveal delay={240}>
+            <Card>
+              <CardBody>
+                <h2 className="text-xl text-navy-900">Resultado atual</h2>
+                <div className="mt-3">
+                  <TemperatureBar
+                    yesCount={dto.yesCount}
+                    noCount={dto.noCount}
+                    absCount={dto.absCount}
+                  />
+                </div>
+              </CardBody>
+            </Card>
+          </Reveal>
         </div>
       </div>
     </Container>

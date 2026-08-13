@@ -7,8 +7,12 @@
  *
  * Plain `<form method="get">`, so filtering keeps working without JavaScript and
  * the URL stays the state.
+ *
+ * The fields arrive left to right behind the page opener, so the bar reads as
+ * part of the same masthead rather than as a second thing that appeared.
  */
 import * as React from "react";
+import { Reveal } from "@/components/public/motion";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
@@ -24,7 +28,11 @@ export function FilterBar({
   // The track list is auto-fit, so the same bar holds four filters or seven
   // without each page deciding its own column count.
   return (
-    <form
+    <Reveal
+      as="form"
+      variant="fade"
+      stagger
+      step={70}
       method="get"
       className={cn(
         "mb-10 grid items-end gap-x-8 gap-y-5 border-y border-line py-5 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))]",
@@ -37,6 +45,6 @@ export function FilterBar({
           {submitLabel}
         </Button>
       </div>
-    </form>
+    </Reveal>
   );
 }

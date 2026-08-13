@@ -10,10 +10,20 @@
  *
  * The three steps moved out of the dark card into a plain three-column band
  * separated by hairlines.
+ *
+ * Being the first screen, the hero is also the site's opening beat: the eyebrow,
+ * the three headline lines, the lead and the actions settle in sequence, the
+ * handwritten grifo draws itself once the word it marks has landed, and the radar
+ * comes forward as a figure. Everything is one `.vt-reveal` block per column, so
+ * the whole sequence costs two observers.
  */
+import * as React from "react";
 import { ButtonLink } from "@/components/ui";
 import { AlignmentRadar } from "@/components/public/AlignmentRadar";
-import { Reveal } from "@/components/public/Reveal";
+import { Reveal } from "@/components/public/motion";
+
+/** Delay of a part inside the revealed column (see the motion block in globals.css). */
+const beat = (ms: number) => ({ "--vt-d": `${ms}ms` }) as React.CSSProperties;
 
 const STEPS = [
   {
@@ -42,19 +52,29 @@ export function HeroB() {
             costing the headline its line breaks. */}
         <div className="grid items-center gap-14 lg:grid-cols-[0.985fr_1fr]">
           {/* ── Left: editorial column ─────────────────────────────── */}
-          <Reveal>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-navy-400">
+          {/* `autoplay`: this headline is the page's largest paint. It opens from
+              CSS as the markup is parsed rather than waiting to be hydrated. */}
+          <Reveal variant="fade" autoplay>
+            <p
+              className="vt-lift text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-navy-400"
+              style={beat(60)}
+            >
               Democracia direta
             </p>
 
             <h1 className="mt-5 font-display text-[2.9rem] font-medium leading-[0.99] tracking-[-0.026em] sm:text-6xl lg:text-[4.2rem]">
-              <span className="block">Sua voz</span>
-              <span className="block">transformando</span>
-              <span className="block">
+              <span className="vt-lift block" style={beat(180)}>
+                Sua voz
+              </span>
+              <span className="vt-lift block" style={beat(300)}>
+                transformando
+              </span>
+              <span className="vt-lift block" style={beat(420)}>
                 a{" "}
                 <span className="relative inline-block">
                   democracia
-                  {/* Grifo à mão, no lugar do sublinhado geométrico. */}
+                  {/* Grifo à mão, no lugar do sublinhado geométrico. Traçado
+                      depois que a palavra assenta, como quem volta para grifar. */}
                   <svg
                     aria-hidden
                     viewBox="0 0 320 14"
@@ -62,6 +82,9 @@ export function HeroB() {
                     className="absolute -bottom-0.5 left-0 h-3 w-full"
                   >
                     <path
+                      className="vt-draw"
+                      style={beat(900)}
+                      pathLength={1}
                       d="M2 9 C 60 3, 130 12, 200 6 S 300 4, 318 8"
                       fill="none"
                       stroke="var(--color-accent-500)"
@@ -74,12 +97,18 @@ export function HeroB() {
               </span>
             </h1>
 
-            <p className="mt-8 max-w-xl text-base leading-relaxed text-navy-700 sm:text-lg">
+            <p
+              className="vt-lift mt-8 max-w-xl text-base leading-relaxed text-navy-700 sm:text-lg"
+              style={beat(560)}
+            >
               O Votto é um complemento à democracia representativa. Você vota nos temas em pauta;
               comparamos suas escolhas com os votos registrados de cada agente público e partido.
             </p>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div
+              className="vt-lift mt-8 flex flex-col gap-3 sm:flex-row sm:items-center"
+              style={beat(680)}
+            >
               <ButtonLink href="/temas" size="lg">
                 Votar nos temas
               </ButtonLink>
@@ -90,13 +119,19 @@ export function HeroB() {
           </Reveal>
 
           {/* ── Right: the living mark ─────────────────────────────── */}
-          <Reveal>
+          <Reveal variant="figure" delay={260} autoplay>
             <AlignmentRadar className="mx-auto block h-auto w-full max-w-[33rem]" />
           </Reveal>
         </div>
 
         {/* ── Steps band ───────────────────────────────────────────── */}
-        <ol className="mt-16 grid gap-10 sm:grid-cols-3 sm:gap-0">
+        <Reveal
+          as="ol"
+          variant="fade"
+          stagger
+          step={130}
+          className="mt-16 grid gap-10 sm:grid-cols-3 sm:gap-0"
+        >
           {STEPS.map((s, i) => (
             <li
               key={s.n}
@@ -111,7 +146,7 @@ export function HeroB() {
               <p className="mt-2 text-sm leading-relaxed text-navy-600">{s.body}</p>
             </li>
           ))}
-        </ol>
+        </Reveal>
       </div>
     </section>
   );

@@ -1,8 +1,33 @@
 /**
- * Compact "Votação" breakdown for a theme: a stacked Sim / Não / Neutro bar
- * plus the per-option tallies. Colors use the dedicated vote tokens (moss /
- * brick / stone) so Sim and Não don't clash and abstention reads as neutral.
+ * The result of a theme's popular vote, as a voting panel.
+ *
+ * Voting is the platform's main action and the tally is its main reading, so the
+ * panel leads with the figure that answers the question — the winning option's
+ * share, set large in the serif tabular numerals.
+ *
+ * Under it the split stays a **rectangle**, and deliberately so: this bar is the
+ * measurement, and a drawn, organic edge would blur exactly the boundary the
+ * reader is trying to see. It softens only at its two ends. The panel's
+ * conversation with the hero's radar is carried by everything around it — the
+ * warm ground it sits on, the vertex dots that key the tally, the pigment-tinted
+ * ballot — never by the bar.
+ *
+ * Colors are the vote tokens (moss / brick / stone) so Sim and Não never clash
+ * and abstention always reads as neutral. With no votes cast the panel says so
+ * and invites the first one, rather than printing three zeroes.
+ *
+ * Inside a revealed block the whole bar wipes in from the left as one object —
+ * scaling the shares individually would open gaps between them mid-flight — and
+ * the reading and tally arrive behind it. Outside one (the embed widgets) it
+ * renders finished.
  */
+import type { CSSProperties } from "react";
+
+const OPTIONS = [
+  { key: "yes", label: "Sim", color: "var(--color-vote-yes)" },
+  { key: "no", label: "Não", color: "var(--color-vote-no)" },
+  { key: "abs", label: "Neutro", color: "var(--color-vote-abstention)" },
+] as const;
 
 export function TemperatureBar({
   yesCount,
@@ -14,10 +39,17 @@ export function TemperatureBar({
   absCount: number;
 }) {
   const total = yesCount + noCount + absCount;
+  const counts = { yes: yesCount, no: noCount, abs: absCount };
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+
+  // The reading: the option ahead, or a tie when the top two are level.
+  const ranked = [...OPTIONS].sort((a, b) => counts[b.key] - counts[a.key]);
+  const leader = ranked[0];
+  const tied = total > 0 && counts[ranked[1].key] === counts[leader.key];
+
   return (
     <div>
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-3">
         <span className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
           Votação
         </span>
@@ -26,25 +58,75 @@ export function TemperatureBar({
           {total === 1 ? "voto" : "votos"}
         </span>
       </div>
-      <div className="mt-1.5 flex h-2 w-full overflow-hidden bg-navy-100">
-        <div style={{ width: `${pct(yesCount)}%`, background: "var(--color-vote-yes)" }} />
-        <div style={{ width: `${pct(noCount)}%`, background: "var(--color-vote-no)" }} />
-        <div style={{ width: `${pct(absCount)}%`, background: "var(--color-vote-abstention)" }} />
+
+      {total === 0 ? (
+        <p className="vt-fade mt-2 text-sm leading-snug text-[var(--color-muted)]">
+          Ainda sem votos.{" "}
+          <span className="text-[var(--color-accent-600)]">Seja o primeiro a se posicionar.</span>
+        </p>
+      ) : (
+        <div
+          className="vt-fade mt-1.5 flex items-baseline gap-2"
+          style={{ "--vt-d": "300ms" } as CSSProperties}
+        >
+          <span
+            className="vt-num text-[2.4rem] leading-none"
+            style={{ color: tied ? "var(--color-vote-abstention)" : leader.color }}
+          >
+            {pct(counts[leader.key])}%
+          </span>
+          <span
+            className="text-sm font-semibold"
+            style={{ color: tied ? "var(--color-muted)" : leader.color }}
+          >
+            {tied ? "empate" : leader.label}
+          </span>
+        </div>
+      )}
+
+      {/* The measurement: solid pigment, square joins, a paper fold between the
+          shares. A thin rule of a bar, with the tag's 2px corner — barely off
+          square, because a measurement should not look like a pill. */}
+      <div className="mt-2.5 h-2 w-full overflow-hidden rounded-[2px] bg-[var(--color-line)]">
+        <div className="vt-grow flex h-full w-full gap-px">
+          {OPTIONS.map((o) => (
+            <div key={o.key} style={{ width: `${pct(counts[o.key])}%`, background: o.color }} />
+          ))}
+        </div>
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
-        <span>
-          <span className="font-semibold text-[var(--color-vote-yes)]">Sim</span> {yesCount} (
-          {pct(yesCount)}%)
-        </span>
-        <span>
-          <span className="font-semibold text-[var(--color-vote-no)]">Não</span> {noCount} (
-          {pct(noCount)}%)
-        </span>
-        <span>
-          <span className="font-semibold text-[var(--color-vote-abstention)]">Neutro</span>{" "}
-          {absCount} ({pct(absCount)}%)
-        </span>
-      </div>
+
+      {/* The tally: three columns keyed by the radar's vertex dot. Three zeroes
+          say nothing the invitation above has not already said, so an untouched
+          theme skips it. */}
+      {total > 0 ? (
+        <div
+          className="vt-fade mt-3 grid grid-cols-3 gap-x-3"
+          style={{ "--vt-d": "420ms" } as CSSProperties}
+        >
+          {OPTIONS.map((o) => (
+            <div key={o.key}>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="size-[5px] shrink-0 rounded-full"
+                  style={{ background: o.color }}
+                  aria-hidden="true"
+                />
+                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[var(--color-muted)]">
+                  {o.label}
+                </span>
+              </div>
+              <div className="mt-0.5 flex items-baseline gap-1.5">
+                <span className="vt-num text-base text-navy-900">
+                  {counts[o.key].toLocaleString("pt-BR")}
+                </span>
+                <span className="text-[0.68rem] text-[var(--color-muted)]">
+                  {pct(counts[o.key])}%
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -4,7 +4,7 @@
  * Each person (citizen or agent) is placed on the classic left↔right political
  * spectrum using a 5-point scale:
  *
- *   Esquerda · Centro-esquerda · Centro · Centro-direita · Direita
+ *   Esquerda · Centro esquerda · Centro · Centro direita · Direita
  *
  * The placement is derived from how they voted on themes tagged with dimension
  * weights on two underlying axes:
@@ -35,7 +35,7 @@ export interface Position {
   basis: number;
   /** band key, e.g. "centro-direita" */
   profileKey: string;
-  /** band label, e.g. "Centro-direita" */
+  /** band label, e.g. "Centro direita" */
   profileLabel: string;
 }
 
@@ -55,18 +55,18 @@ function voteScore(v: VoteValue): number {
 /** The five spectrum bands, ordered left → right (for legends/filters). */
 export const SPECTRUM_BANDS = [
   { key: "esquerda", label: "Esquerda" },
-  { key: "centro-esquerda", label: "Centro-esquerda" },
+  { key: "centro-esquerda", label: "Centro esquerda" },
   { key: "centro", label: "Centro" },
-  { key: "centro-direita", label: "Centro-direita" },
+  { key: "centro-direita", label: "Centro direita" },
   { key: "direita", label: "Direita" },
 ] as const;
 
 /** Map a −100..100 spectrum score to one of the five left↔right bands. */
 export function deriveBand(spectrum: number): { key: string; label: string } {
   if (spectrum >= 50) return { key: "direita", label: "Direita" };
-  if (spectrum >= 15) return { key: "centro-direita", label: "Centro-direita" };
+  if (spectrum >= 15) return { key: "centro-direita", label: "Centro direita" };
   if (spectrum > -15) return { key: "centro", label: "Centro" };
-  if (spectrum > -50) return { key: "centro-esquerda", label: "Centro-esquerda" };
+  if (spectrum > -50) return { key: "centro-esquerda", label: "Centro esquerda" };
   return { key: "esquerda", label: "Esquerda" };
 }
 

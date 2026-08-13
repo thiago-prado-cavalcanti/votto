@@ -21,7 +21,7 @@ const newsreader = Newsreader({
   display: "swap",
 });
 
-const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+const appUrl = process.env.APP_URL ?? "http://localhost:3100";
 
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),

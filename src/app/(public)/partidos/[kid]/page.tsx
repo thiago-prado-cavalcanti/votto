@@ -7,16 +7,16 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Container, Card, CardBody, AlignmentMeter } from "@/components/ui";
-import { PositionBadge } from "@/components/public/PositionBadge";
 import { PositioningChart } from "@/components/public/PositioningChart";
-import { SpectrumBar } from "@/components/public/SpectrumBar";
 import { AgentCard } from "@/components/public/AgentCard";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
+import { Reveal } from "@/components/public/motion";
 import { db } from "@/lib/db";
 import { toPublicParty, toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import { getPartyPosition, getAgentPosition } from "@/lib/domain/positions";
+import { getPartyPosition } from "@/lib/domain/positions";
+import { POSITIONING_AXES } from "@/lib/indexes/positioning";
 import {
   citizenAgentAlignments,
   citizenPartyAlignments,
@@ -67,7 +67,6 @@ export default async function PartyDetailPage({
     orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     include: { party: true },
   });
-  const agentPositions = await Promise.all(agents.map((a) => getAgentPosition(a.id)));
 
   // Alignment (party-level + per agent) for logged-in citizens.
   let partyAlignment: number | null = null;
@@ -93,24 +92,28 @@ export default async function PartyDetailPage({
 
   return (
     <Container className="py-10">
-      <div className="flex items-center justify-between gap-3">
+      <Reveal variant="fade" className="flex items-center justify-between gap-3">
         <Link href="/partidos" className="text-sm text-navy-600 hover:text-navy-800">
           ← Voltar para partidos
         </Link>
         <ShareButton kind="partido" kid={dto.kid} title={dto.name} variant="button" />
-      </div>
+      </Reveal>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
-        {/* Identity + agents */}
-        <div className="lg:col-span-2">
+        {/* Identity + agents. Each column arrives as a stack: the cards inside it
+            settle one after the other, and the meters and charts they hold are
+            armed by the same reveal (see the motion block in globals.css). */}
+        <Reveal variant="fade" stagger step={130} delay={80} className="lg:col-span-2">
           <Card>
             <CardBody className="flex flex-col gap-5 sm:flex-row sm:items-start">
+              {/* Same free-standing treatment as the list card, one size up:
+                  height only, width left to the mark. */}
               <ImageWithFallback
                 src={dto.logoUrl}
                 alt={acronym}
-                className="h-20 w-20 rounded-card bg-navy-50 object-contain p-1.5"
+                className="h-16 w-auto max-w-52 shrink-0 object-contain mix-blend-multiply"
                 fallback={
-                  <div className="flex h-20 w-20 items-center justify-center rounded-card border border-navy-100 bg-navy-50 px-2 text-center text-base font-semibold leading-tight text-navy-700">
+                  <div className="flex h-16 shrink-0 items-center font-display text-2xl leading-none text-navy-700">
                     {acronym}
                   </div>
                 }
@@ -120,13 +123,6 @@ export default async function PartyDetailPage({
                 <p className="mt-1 text-sm text-[var(--color-muted)]">
                   {acronym} · {dto.agentCount} {dto.agentCount === 1 ? "agente" : "agentes"}
                 </p>
-                <div className="mt-3">
-                  <PositionBadge
-                    profileLabel={position.profileLabel}
-                    profileKey={position.profileKey}
-                    basis={position.basis}
-                  />
-                </div>
                 {dto.description ? (
                   <p className="mt-4 text-sm leading-relaxed text-ink">{dto.description}</p>
                 ) : null}
@@ -149,20 +145,18 @@ export default async function PartyDetailPage({
                     <AgentCard
                       key={a.kid}
                       agent={toPublicAgent(a)}
-                      profileLabel={agentPositions[i].profileLabel}
-                      profileKey={agentPositions[i].profileKey}
-                      profileBasis={agentPositions[i].basis}
                       alignment={session ? agentAlignments?.get(a.kid)?.alignment ?? null : null}
+                      delay={(i % 2) * 80}
                     />
                   ))}
                 </div>
               )}
             </CardBody>
           </Card>
-        </div>
+        </Reveal>
 
         {/* Sidebar: alignment + positioning */}
-        <div className="flex flex-col gap-6">
+        <Reveal variant="fade" stagger step={130} delay={200} className="flex flex-col gap-6">
           <Card>
             <CardBody>
               <h2 className="text-xl text-navy-900">Alinhamento</h2>
@@ -212,28 +206,35 @@ export default async function PartyDetailPage({
             </CardBody>
           </Card>
 
-          <Card>
-            <CardBody>
-              <h2 className="text-xl text-navy-900">Posicionamento</h2>
-              <p className="mt-1 text-xs text-[var(--color-muted)]">
-                Posição:{" "}
-                <span className="font-medium text-navy-800">{position.profileLabel}</span>
-              </p>
-              {position.basis > 0 ? (
-                <div className="mt-3">
-                  <SpectrumBar spectrum={position.spectrum} basis={position.basis} />
+          {/* Same as the agent page: figure on the paper, no card and no band —
+              see the note there. */}
+          <div>
+            <h2 className="text-xl text-navy-900">Posicionamento</h2>
+            <div className="mt-4">
+              <PositioningChart
+                economic={position.economic}
+                social={position.social}
+                basis={position.basis}
+              />
+            </div>
+            {position.basis > 0 ? (
+              <dl className="mt-3 space-y-1 text-xs text-[var(--color-muted)]">
+                <div className="flex justify-between">
+                  <dt>
+                    {POSITIONING_AXES.economic.negative} ↔ {POSITIONING_AXES.economic.positive}
+                  </dt>
+                  <dd className="font-medium text-navy-800">{position.economic}</dd>
                 </div>
-              ) : null}
-              <div className="mt-4">
-                <PositioningChart
-                  economic={position.economic}
-                  social={position.social}
-                  basis={position.basis}
-                />
-              </div>
-            </CardBody>
-          </Card>
-        </div>
+                <div className="flex justify-between">
+                  <dt>
+                    {POSITIONING_AXES.social.negative} ↔ {POSITIONING_AXES.social.positive}
+                  </dt>
+                  <dd className="font-medium text-navy-800">{position.social}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
+        </Reveal>
       </div>
     </Container>
   );

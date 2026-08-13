@@ -12,6 +12,10 @@ import * as React from "react";
 import Link from "next/link";
 import { alignmentInk, alignmentTone } from "@/lib/domain/tone";
 import { cn } from "@/lib/cn";
+import { control, controlHeights, type ControlVariant } from "./control";
+
+export { Select, type SelectProps } from "./select";
+export { type ControlVariant } from "./control";
 
 // ─── Container ───────────────────────────────────────────────────────────────
 
@@ -182,6 +186,10 @@ export function Stat({
 
 // ─── Form fields ─────────────────────────────────────────────────────────────
 
+/** Small caps over the field — the one way anything in a form is labelled. */
+const fieldLabel =
+  "block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]";
+
 export function Field({
   label,
   htmlFor,
@@ -195,9 +203,7 @@ export function Field({
 }) {
   return (
     <label htmlFor={htmlFor} className="block">
-      <span className="mb-1.5 block text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
-        {label}
-      </span>
+      <span className={cn(fieldLabel, "mb-1.5")}>{label}</span>
       {children}
       {hint ? <span className="mt-1 block text-xs text-[var(--color-muted)]">{hint}</span> : null}
     </label>
@@ -205,32 +211,17 @@ export function Field({
 }
 
 /**
- * Two field treatments, both hairline:
- *
- * - `box` (default) — a 1px rule around the field, 4px corners. Used in the admin
- *   forms, where density and an obvious hit area matter.
- * - `rule` — no box at all, just a rule underneath, the way a form is printed.
- *   Used for the public filters (docs/design.md).
+ * `Input`, `Textarea` and `Select` share one surface, described in
+ * `./control.ts`: `variant="box"` for the admin forms, `variant="rule"` for the
+ * public filters. `Select` lives in its own client module because it replaces
+ * the browser's dropdown with one of ours.
  */
-type ControlVariant = "box" | "rule";
-
-const controlBase =
-  "w-full text-sm text-ink placeholder:text-[var(--color-muted)] transition-colors";
-
-const controlVariants: Record<ControlVariant, string> = {
-  box: "rounded-card border border-line bg-surface px-3 py-2.5 focus:border-navy-400",
-  rule: "border-0 border-b border-navy-300 bg-transparent px-0 py-2 focus:border-navy-900 focus-visible:outline-none",
-};
-
-const control = (variant: ControlVariant = "box", className?: string) =>
-  cn(controlBase, controlVariants[variant], className);
-
 export function Input({
   variant = "box",
   className,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { variant?: ControlVariant }) {
-  return <input {...props} className={control(variant, className)} />;
+  return <input {...props} className={control(variant, controlHeights[variant], className)} />;
 }
 
 export function Textarea({
@@ -238,15 +229,149 @@ export function Textarea({
   className,
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { variant?: ControlVariant }) {
-  return <textarea {...props} className={control(variant, cn("min-h-24", className))} />;
+  return <textarea {...props} className={control(variant, "min-h-24 py-2.5", className)} />;
 }
 
-export function Select({
-  variant = "box",
+// ─── Choices: radio and checkbox ─────────────────────────────────────────────
+
+/**
+ * A ballot mark, not a widget.
+ *
+ * The native control is kept for the semantics, the keyboard and the form value,
+ * and hidden (`sr-only`) behind a mark we draw: a 2px square for a checkbox, a
+ * circle for a radio — the one shape that is genuinely round, so `rounded-full`
+ * is allowed. Checked is **ink**, like a paper form filled in with a pen, which
+ * is also how the rest of the system shows a choice (an ink underline on the
+ * ranking tabs); terracota stays reserved for action.
+ *
+ * The glyph inside the mark is coloured by `currentColor`, so a single
+ * `peer-checked:text-*` on the mark reveals it — a descendant cannot be reached
+ * by the sibling selector Tailwind's `peer-*` compiles to.
+ */
+const choiceMark = cn(
+  "grid shrink-0 place-items-center border border-navy-400 bg-surface text-transparent transition-colors",
+  "size-[1.125rem] mt-px",
+  "peer-hover:border-navy-600 peer-checked:border-navy-900",
+  "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent-500",
+  "peer-disabled:border-line peer-disabled:bg-navy-50",
+);
+
+const choiceRow = cn(
+  "flex cursor-pointer items-start gap-2.5 text-sm leading-5 text-ink",
+  "has-[:disabled]:cursor-not-allowed has-[:disabled]:text-[var(--color-muted)]",
+);
+
+export interface ChoiceProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> {
+  label: React.ReactNode;
+  hint?: string;
+}
+
+function ChoiceLabel({ label, hint }: { label: React.ReactNode; hint?: string }) {
+  return (
+    <span className="min-w-0">
+      <span className="block">{label}</span>
+      {hint ? <span className="mt-0.5 block text-xs text-[var(--color-muted)]">{hint}</span> : null}
+    </span>
+  );
+}
+
+export function Radio({ label, hint, className, ...props }: ChoiceProps) {
+  return (
+    <label className={cn(choiceRow, className)}>
+      <input type="radio" className="peer sr-only" {...props} />
+      <span className={cn(choiceMark, "rounded-full peer-checked:text-navy-900")} aria-hidden="true">
+        <span className="size-2 rounded-full bg-current" />
+      </span>
+      <ChoiceLabel label={label} hint={hint} />
+    </label>
+  );
+}
+
+export function Checkbox({ label, hint, className, ...props }: ChoiceProps) {
+  return (
+    <label className={cn(choiceRow, className)}>
+      <input type="checkbox" className="peer sr-only" {...props} />
+      <span
+        className={cn(choiceMark, "rounded-[2px] peer-checked:bg-navy-900 peer-checked:text-navy-50")}
+        aria-hidden="true"
+      >
+        <svg viewBox="0 0 14 14" className="size-3">
+          <path
+            d="M2.5 7.4 5.6 10.4 11.5 3.6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+      <ChoiceLabel label={label} hint={hint} />
+    </label>
+  );
+}
+
+export interface RadioOption {
+  value: string;
+  label: React.ReactNode;
+  hint?: string;
+  disabled?: boolean;
+}
+
+/**
+ * A set of radios under one small-caps legend — the `Field` of the choice
+ * family. It is a `<fieldset>` rather than a `<label>` on purpose: a group of
+ * controls is named by its legend, and wrapping radios in a label would make
+ * every one of them answer to the same click.
+ */
+export function RadioGroup({
+  label,
+  name,
+  options,
+  value,
+  defaultValue,
+  onChange,
+  hint,
+  orientation = "vertical",
   className,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement> & { variant?: ControlVariant }) {
-  return <select {...props} className={control(variant, cn("appearance-none", className))} />;
+}: {
+  label: string;
+  name: string;
+  options: RadioOption[];
+  value?: string;
+  defaultValue?: string;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
+  hint?: string;
+  orientation?: "vertical" | "horizontal";
+  className?: string;
+}) {
+  return (
+    <fieldset className={cn("min-w-0", className)}>
+      <legend className={cn(fieldLabel, "mb-2")}>{label}</legend>
+      <div
+        className={cn(
+          "flex gap-x-6 gap-y-2.5",
+          orientation === "horizontal" ? "flex-wrap items-start" : "flex-col",
+        )}
+      >
+        {options.map((option) => (
+          <Radio
+            key={option.value}
+            name={name}
+            value={option.value}
+            label={option.label}
+            hint={option.hint}
+            disabled={option.disabled}
+            checked={value === undefined ? undefined : value === option.value}
+            defaultChecked={defaultValue === undefined ? undefined : defaultValue === option.value}
+            onChange={onChange}
+          />
+        ))}
+      </div>
+      {hint ? <p className="mt-1.5 text-xs text-[var(--color-muted)]">{hint}</p> : null}
+    </fieldset>
+  );
 }
 
 // ─── Index meters ────────────────────────────────────────────────────────────
@@ -256,6 +381,11 @@ export function Select({
  *
  * A bar of pigment on a paper track — squared, no pill, no gradient; the reading
  * itself is set in the serif tabular numerals of `.vt-num`.
+ *
+ * Inside a revealed block the pigment wipes in from the left and the reading
+ * arrives as it lands (`.vt-grow` / `.vt-fade`, globals.css). Outside one — the
+ * embed widgets, the admin — the same markup renders finished, so no caller has
+ * to know about the motion system.
  */
 export function AlignmentMeter({ value, label = "Alinhamento" }: { value: number; label?: string }) {
   const pct = Math.max(0, Math.min(100, Math.round(value)));
@@ -265,12 +395,18 @@ export function AlignmentMeter({ value, label = "Alinhamento" }: { value: number
         <span className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
           {label}
         </span>
-        <span className="vt-num text-sm" style={{ color: alignmentInk(pct) }}>
+        <span
+          className="vt-num vt-fade text-sm"
+          style={{ color: alignmentInk(pct), "--vt-d": "420ms" } as React.CSSProperties}
+        >
           {pct}%
         </span>
       </div>
       <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-navy-100">
-        <div className="h-full" style={{ width: `${pct}%`, background: alignmentTone(pct) }} />
+        <div
+          className="vt-grow h-full"
+          style={{ width: `${pct}%`, background: alignmentTone(pct) }}
+        />
       </div>
     </div>
   );

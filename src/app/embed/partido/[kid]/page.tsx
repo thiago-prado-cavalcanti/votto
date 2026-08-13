@@ -1,6 +1,6 @@
 /**
  * Embeddable party widget: identity + the "Alinhamento com eleitores" rating
- * (stars + %) with the aggregate positioning band as a secondary chip. Dynamic
+ * (stars + %). Dynamic
  * so the rating stays live inside the iframe.
  */
 import { notFound } from "next/navigation";
@@ -9,7 +9,6 @@ import { EmbedShell } from "@/components/public/EmbedShell";
 import { StarRating } from "@/components/public/StarRating";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { partyElectorateAlignments } from "@/lib/indexes/alignment";
-import { getPartyPosition } from "@/lib/domain/positions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,24 +17,22 @@ export default async function PartyEmbed({ params }: { params: Promise<{ kid: st
   const party = await db.party.findUnique({ where: { kid } });
   if (!party || party.status !== "ACTIVE") notFound();
 
-  const [engagement, position] = await Promise.all([
-    partyElectorateAlignments(),
-    getPartyPosition(party.id),
-  ]);
+  const engagement = await partyElectorateAlignments();
   const alignment = engagement.get(party.kid)?.alignment ?? null;
-  const band = position.basis > 0 ? position.profileLabel : null;
 
   const acronym = party.acronym ?? party.name.slice(0, 3).toUpperCase();
 
   return (
     <EmbedShell eyebrow="Partido" href={`/partidos/${party.kid}`} cta="Ver no Votto">
       <div className="flex items-center gap-3">
+        {/* Same treatment as the parties page: the mark fits whole inside a
+            square, with no plate of its own. */}
         <ImageWithFallback
           src={party.logoUrl}
           alt={acronym}
-          className="h-12 w-12 rounded-card bg-navy-50 object-contain p-1"
+          className="h-10 w-auto max-w-32 shrink-0 object-contain mix-blend-multiply"
           fallback={
-            <div className="flex h-12 w-12 items-center justify-center rounded-card border border-navy-100 bg-navy-50 px-1 text-center text-[10px] font-semibold leading-none text-navy-700">
+            <div className="flex h-10 shrink-0 items-center font-display text-base leading-none text-navy-700">
               {acronym}
             </div>
           }
@@ -57,11 +54,6 @@ export default async function PartyEmbed({ params }: { params: Promise<{ kid: st
             {alignment === null ? "—" : `${alignment}%`}
           </span>
           {alignment !== null ? <StarRating value={alignment} size={18} /> : null}
-          {band ? (
-            <span className="ml-auto rounded-[2px] bg-navy-100 px-2 py-0.5 text-xs font-semibold text-navy-800">
-              {band}
-            </span>
-          ) : null}
         </div>
       </div>
     </EmbedShell>

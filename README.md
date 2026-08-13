@@ -38,7 +38,7 @@ npm run db:migrate        # cria/aplica o schema (Prisma migrate dev)
 npm run db:seed           # dados de demonstração (só desenvolvimento)
 
 # 5) App
-npm run dev               # http://localhost:3000
+npm run dev               # http://localhost:3100
 ```
 
 > **Migration manual:** se preferir não usar `prisma migrate`, o SQL completo do schema está em
@@ -46,8 +46,8 @@ npm run dev               # http://localhost:3000
 
 ## Acessos
 
-- **Site público:** http://localhost:3000
-- **Backend admin:** http://localhost:3000/admin
+- **Site público:** http://localhost:3100
+- **Backend admin:** http://localhost:3100/admin
   - Login (do seed): `admin@votto.gov.br` / `Votto@2026`
 - **Login de cidadão (gov.br):** em produção, OIDC real (`GOVBR_MODE=real`). Em desenvolvimento, clique em *Entrar* → *Entrar com gov.br*. No ambiente de
   simulação (`/dev-idp`) escolha uma identidade de teste ou informe nome + um CPF válido.

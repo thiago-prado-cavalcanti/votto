@@ -4,7 +4,7 @@
   "private": true,
   "description": "Votto — direct-democracy platform measuring alignment between citizens and public agents.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3100",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
@@ -17,6 +17,7 @@
     "db:seed:purge-demo": "tsx prisma/seed.ts --mode=purge-demo",
     "assets:brand": "node scripts/generate-brand-assets.mjs",
     "assets:fonts": "node scripts/fetch-widget-fonts.mjs",
+    "assets:party-logos": "node scripts/build-party-logos.mjs",
     "check:sources": "tsx scripts/check-sources.ts",
     "backfill": "tsx scripts/backfill.ts",
     "reprioritize": "tsx scripts/reprioritize.ts",

@@ -7,8 +7,19 @@
  * name set above it in the display serif — no gradient, no glow, no bubble
  * (docs/design.md).
  *
+ * Inside a revealed block the five bands wipe in, the marker rule then draws
+ * itself down through the track and the band name arrives last — the reading
+ * assembles in the order it is meant to be read. Outside one it renders finished.
+ *
  * Server-component friendly (no client hooks).
+ *
+ * NOT CURRENTLY MOUNTED. The left↔right band it draws is computed from theme
+ * axis tags that are not filled in yet (CLAUDE.md §11), so it was placing PL at
+ * the centre — a wrong verdict stated with confidence. Kept, unrendered, until
+ * the tagging exists; the two-axis figure (`PositioningChart`) stays live
+ * because it shows a shape rather than a sentence.
  */
+import type { CSSProperties } from "react";
 import { deriveBand } from "@/lib/indexes/positioning";
 
 /** Pigment per band, left to right: tijolo · ocre · pedra · pinho · tinta. */
@@ -70,36 +81,42 @@ export function SpectrumBar({
       role="img"
       aria-label={`Posicionamento: ${band.label}`}
     >
-      {/* The five bands: the person's own is inked, the rest are tinted paper. */}
-      {BANDS.map((b) => {
-        const active = b.key === band.key;
-        return (
-          <rect
+      {/* The five bands: the person's own is inked, the rest are tinted paper.
+          Wiped in as one group so the joins never open mid-flight. */}
+      <g className="vt-grow">
+        {BANDS.map((b) => {
+          const active = b.key === band.key;
+          return (
+            <rect
+              key={b.key}
+              x={at(b.from)}
+              y={trackY}
+              width={at(b.to) - at(b.from)}
+              height={trackH}
+              fill={BAND_COLOR[b.key]}
+              fillOpacity={active ? 1 : 0.16}
+            />
+          );
+        })}
+        {/* Hairline between bands, in paper so it reads as a fold. */}
+        {BANDS.slice(1).map((b) => (
+          <line
             key={b.key}
-            x={at(b.from)}
-            y={trackY}
-            width={at(b.to) - at(b.from)}
-            height={trackH}
-            fill={BAND_COLOR[b.key]}
-            fillOpacity={active ? 1 : 0.16}
+            x1={at(b.from)}
+            y1={trackY}
+            x2={at(b.from)}
+            y2={trackY + trackH}
+            stroke="var(--color-canvas)"
+            strokeWidth="1"
           />
-        );
-      })}
-      {/* Hairline between bands, in paper so it reads as a fold. */}
-      {BANDS.slice(1).map((b) => (
-        <line
-          key={b.key}
-          x1={at(b.from)}
-          y1={trackY}
-          x2={at(b.from)}
-          y2={trackY + trackH}
-          stroke="var(--color-canvas)"
-          strokeWidth="1"
-        />
-      ))}
+        ))}
+      </g>
 
       {/* Marker: an ink rule through the track. */}
       <line
+        className="vt-draw"
+        style={{ "--vt-d": "520ms" } as CSSProperties}
+        pathLength={1}
         x1={x}
         y1={trackY - 7}
         x2={x}
@@ -110,13 +127,14 @@ export function SpectrumBar({
 
       {/* Band name, in the display serif. */}
       <text
+        className="vt-fade"
+        style={{ fontFamily: "var(--font-display)", "--vt-d": "820ms" } as CSSProperties}
         x={labelX}
         y={26}
         textAnchor="middle"
         fontSize="14"
         fontWeight="500"
         fill={color}
-        style={{ fontFamily: "var(--font-display)" }}
       >
         {band.label}
       </text>

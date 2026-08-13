@@ -199,6 +199,18 @@ export function priorityBand(priority: number): PriorityBand {
   return "LOW";
 }
 
+/**
+ * The same bands as numeric ranges, in reading order, for callers that have to
+ * count by band in SQL instead of classifying a row in memory (`min` inclusive,
+ * `max` exclusive). Kept here beside `priorityBand` so the cut points exist once.
+ */
+export const PRIORITY_BAND_RANGES: Array<{ band: PriorityBand; min: number; max?: number }> = [
+  { band: "URGENT", min: 80 },
+  { band: "HIGH", min: 60, max: 80 },
+  { band: "NORMAL", min: 30, max: 60 },
+  { band: "LOW", min: 0, max: 30 },
+];
+
 /** PT-BR labels for the priority bands (presentation only). */
 export const priorityBandLabel: Record<PriorityBand, string> = {
   URGENT: "Urgente",

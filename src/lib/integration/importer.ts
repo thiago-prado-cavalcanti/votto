@@ -12,6 +12,7 @@
  */
 import { db } from "@/lib/db";
 import { kid } from "@/lib/ids";
+import { partyLogoPath } from "@/lib/integration/party-logos";
 import {
   AgentType,
   House,
@@ -247,11 +248,17 @@ export async function upsertParty(input: PartyInput): Promise<string> {
     memberCount,
   } = input;
 
+  // The curated mark wins over whatever the house published: the Câmara's GIF is
+  // the acronym in plain type for most parties, and the Senado publishes none.
+  // Applied here, at the one choke point every importer goes through, so a
+  // re-import cannot quietly reinstate the source's version.
+  const curatedLogo = partyLogoPath(acronym);
+
   const data = {
     name,
     acronym: acronym ?? undefined,
     description: description ?? undefined,
-    logoUrl: logoUrl ?? undefined,
+    logoUrl: curatedLogo ?? logoUrl ?? undefined,
     leaderName: leaderName ?? undefined,
     websiteUrl: websiteUrl ?? undefined,
     memberCount: memberCount ?? undefined,

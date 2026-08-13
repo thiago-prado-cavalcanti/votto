@@ -8,7 +8,6 @@ import { SectionHead } from "@/components/public/Section";
 import { ThemeRow, ThemeList } from "@/components/public/ThemeRow";
 import { RankingTabs, type RankingRow } from "@/components/public/RankingTabs";
 import { HeroB } from "@/components/public/HeroB";
-import { Reveal } from "@/components/public/Reveal";
 import { db } from "@/lib/db";
 import { toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -119,20 +118,20 @@ export default async function HomePage() {
       <HeroB />
 
       <Container className="py-12">
-        {/* Stats */}
-        <Reveal>
-          <StatStrip
-            items={[
-              { label: "Temas", value: themeCount.toLocaleString("pt-BR") },
-              { label: "Agentes públicos", value: agentCount.toLocaleString("pt-BR") },
-              { label: "Partidos", value: partyCount.toLocaleString("pt-BR") },
-              { label: "Votos de cidadãos", value: voteCount.toLocaleString("pt-BR") },
-            ]}
-          />
-        </Reveal>
+        {/* Stats — passed as raw numbers so the strip can tally them up. */}
+        <StatStrip
+          items={[
+            { label: "Temas", value: themeCount },
+            { label: "Agentes públicos", value: agentCount },
+            { label: "Partidos", value: partyCount },
+            { label: "Votos de cidadãos", value: voteCount },
+          ]}
+        />
 
-        {/* Alignment ranking */}
-        <Reveal className="mt-16 block">
+        {/* Alignment ranking. Each block below reveals itself — `SectionHead`,
+            the ranking rows and each theme row own their own arrival, so nothing
+            here wraps them in a second one. */}
+        <section className="mt-16">
           <SectionHead
             title="Ranking de alinhamento"
             lead={
@@ -169,15 +168,15 @@ export default async function HomePage() {
                   label: "Partidos",
                   rows: topParties,
                   hrefAll: "/partidos",
-                  avatarShape: "square",
+                  avatarShape: "logo",
                 },
               ]}
             />
           </div>
-        </Reveal>
+        </section>
 
         {/* Hot themes */}
-        <Reveal className="mt-16 block">
+        <section className="mt-16">
           <SectionHead
             title="Temas quentes"
             lead="Os temas com maior participação dos cidadãos agora."
@@ -195,18 +194,19 @@ export default async function HomePage() {
           ) : (
             <div className="mt-6">
               <ThemeList>
-                {hotThemes.map((theme) => (
+                {hotThemes.map((theme, i) => (
                   <ThemeRow
                     key={theme.kid}
                     theme={theme}
                     isAuthenticated={isAuthenticated}
                     currentVote={currentVotes.get(theme.kid) ?? null}
+                    delay={Math.min(i, 3) * 80}
                   />
                 ))}
               </ThemeList>
             </div>
           )}
-        </Reveal>
+        </section>
       </Container>
     </>
   );

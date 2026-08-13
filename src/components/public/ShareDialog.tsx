@@ -18,9 +18,10 @@ const DETAIL_PATH: Record<ShareKind, string> = {
   partido: "partidos",
 };
 
-// iframe dimensions per widget type.
+// iframe dimensions per widget type. The theme widget is the tall one: it
+// carries the full voting panel — the winning share, the bar and the tally.
 const EMBED_DIMS: Record<ShareKind, { w: number; h: number }> = {
-  tema: { w: 500, h: 280 },
+  tema: { w: 500, h: 360 },
   agente: { w: 380, h: 230 },
   partido: { w: 380, h: 230 },
 };

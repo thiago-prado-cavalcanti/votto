@@ -3,16 +3,16 @@
  * profile and (for logged-in citizens) their alignment meter. Supports filtering
  * by type/state/party and sorting by alignment (when logged in) or name.
  */
-import { Container, Field, Select } from "@/components/ui";
+import { Container, Field, Select, ButtonLink } from "@/components/ui";
 import { PageIntro } from "@/components/public/Section";
+import { IndexPlate } from "@/components/public/IndexPlate";
 import { FilterBar } from "@/components/public/FilterBar";
 import { AgentCard } from "@/components/public/AgentCard";
 import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import { getAgentPosition } from "@/lib/domain/positions";
 import { citizenAgentAlignments, agentElectorateAlignments } from "@/lib/indexes/alignment";
-import { agentTypeLabel, BR_STATES } from "@/lib/labels";
+import { agentTypeLabel, agentTypePluralLabel, BR_STATES } from "@/lib/labels";
 import type { AgentType, Prisma } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +48,6 @@ export default async function AgentsPage({
   ]);
 
   // Positioning per agent (uses internal id; never exposed).
-  const positions = await Promise.all(agents.map((a) => getAgentPosition(a.id)));
 
   // Electorate engagement (always available, login-independent).
   const engagement = await agentElectorateAlignments();
@@ -67,18 +66,12 @@ export default async function AgentsPage({
 
   type Row = {
     agent: ReturnType<typeof toPublicAgent>;
-    profileLabel: string;
-    profileKey: string;
-    profileBasis: number;
     alignment: number | null;
     engagement: number | null;
   };
 
-  let rows: Row[] = agents.map((a, i) => ({
+  let rows: Row[] = agents.map((a) => ({
     agent: toPublicAgent(a),
-    profileLabel: positions[i].profileLabel,
-    profileKey: positions[i].profileKey,
-    profileBasis: positions[i].basis,
     alignment: alignments?.get(a.kid)?.alignment ?? null,
     engagement: engagement.get(a.kid)?.alignment ?? null,
   }));
@@ -89,72 +82,102 @@ export default async function AgentsPage({
     rows = [...rows].sort((a, b) => (b.engagement ?? -1) - (a.engagement ?? -1));
   }
 
+  // Masthead plate: the bench by office. Counted over the agents already in hand
+  // (the query has no `take`, so this is the whole filtered set) rather than in a
+  // second round trip, and it follows the filters for the same reason the plate
+  // on the themes page does — it describes what is on the screen.
+  const byType = new Map<AgentType, number>();
+  for (const agent of agents) byType.set(agent.type, (byType.get(agent.type) ?? 0) + 1);
+  const officeRows = [...byType.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => ({
+      label: agentTypePluralLabel[type],
+      value: count,
+      color: "var(--color-colonial-500)",
+    }));
+
   return (
-    <Container className="py-10">
+    <>
       <PageIntro
+        eyebrow="Índice de alinhamento"
         title="Agentes públicos"
         lead="Veja os representantes e, ao entrar, descubra o seu alinhamento com cada um."
-      />
-
-      <FilterBar>
-        <Field label="Tipo">
-          <Select variant="rule" name="type" defaultValue={type ?? ""}>
-            <option value="">Todos</option>
-            {AGENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {agentTypeLabel[t]}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Estado">
-          <Select variant="rule" name="state" defaultValue={state ?? ""}>
-            <option value="">Todos</option>
-            {BR_STATES.map((uf) => (
-              <option key={uf} value={uf}>
-                {uf}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Partido">
-          <Select variant="rule" name="party" defaultValue={party ?? ""}>
-            <option value="">Todos</option>
-            {parties.map((p) => (
-              <option key={p.kid} value={p.kid}>
-                {p.acronym ?? p.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Ordenar por">
-          <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
-            <option value="">Nome</option>
-            <option value="engagement">Alinhamento com eleitores</option>
-            {session ? <option value="alignment">Seu alinhamento</option> : null}
-          </Select>
-        </Field>
-      </FilterBar>
-
-      {rows.length === 0 ? (
-        <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">
-          Nenhum agente encontrado para os filtros selecionados.
-        </p>
-      ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map((row) => (
-            <AgentCard
-              key={row.agent.kid}
-              agent={row.agent}
-              profileLabel={row.profileLabel}
-              profileKey={row.profileKey}
-              profileBasis={row.profileBasis}
-              alignment={session ? row.alignment : null}
-              engagement={row.engagement}
+        figure={
+          officeRows.length > 0 ? (
+            <IndexPlate
+              caption="Por cargo"
+              note={`${agents.length.toLocaleString("pt-BR")} ${agents.length === 1 ? "agente" : "agentes"}`}
+              rows={officeRows}
             />
-          ))}
-        </div>
-      )}
-    </Container>
+          ) : null
+        }
+      >
+        {!session ? (
+          <ButtonLink href="/login">Entrar para ver meu alinhamento</ButtonLink>
+        ) : null}
+      </PageIntro>
+
+      <Container className="py-10">
+        <FilterBar>
+          <Field label="Tipo">
+            <Select variant="rule" name="type" defaultValue={type ?? ""}>
+              <option value="">Todos</option>
+              {AGENT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {agentTypeLabel[t]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Estado">
+            <Select variant="rule" name="state" defaultValue={state ?? ""}>
+              <option value="">Todos</option>
+              {BR_STATES.map((uf) => (
+                <option key={uf} value={uf}>
+                  {uf}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Partido">
+            <Select variant="rule" name="party" defaultValue={party ?? ""}>
+              <option value="">Todos</option>
+              {parties.map((p) => (
+                <option key={p.kid} value={p.kid}>
+                  {p.acronym ?? p.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Ordenar por">
+            <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
+              <option value="">Nome</option>
+              <option value="engagement">Alinhamento com eleitores</option>
+              {session ? <option value="alignment">Seu alinhamento</option> : null}
+            </Select>
+          </Field>
+        </FilterBar>
+
+        {rows.length === 0 ? (
+          <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">
+            Nenhum agente encontrado para os filtros selecionados.
+          </p>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {rows.map((row, i) => (
+              <AgentCard
+                key={row.agent.kid}
+                agent={row.agent}
+                alignment={session ? row.alignment : null}
+                engagement={row.engagement}
+                // Cards sharing a row arrive left to right; each row of the grid
+                // still waits for its own scroll position.
+                delay={(i % 3) * 80}
+              />
+            ))}
+          </div>
+        )}
+      </Container>
+    </>
   );
 }

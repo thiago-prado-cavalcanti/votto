@@ -7,6 +7,8 @@
  * (converted to cubic béziers) with a small jitter on the control points, so the
  * outline reads as a hand-drawn petal instead of a spider web. The dark organic
  * mass behind it is the same construction at a larger radius with nine vertices.
+ * The geometry itself lives in `@/lib/viz/figure`, shared with the still
+ * positioning figure so the two cannot drift apart.
  *
  * The illustration cycles through four datasets and the three closed colourways
  * (escuro → claro → terracota), tweening ground, hairlines, both petals and the
@@ -19,16 +21,33 @@
  * No dependencies. Honours `prefers-reduced-motion` by rendering a single frame.
  */
 import { useEffect, useRef } from "react";
+import {
+  blobPath,
+  vertexAngle,
+  vertexPoint,
+  GROUND_VALUES,
+  INK_FIGURE,
+  type Field,
+} from "@/lib/viz/figure";
 
 const C = 250;
 const R = 147;
 const N = 6;
+const FIELD: Field = { cx: C, cy: C, radius: R };
 
 const LABELS = ["Sustentabilidade", "Saúde", "Educação", "Economia", "Segurança", "Direitos"];
 
 /** The three closed colourways, verbatim from the colour study. */
 const PALETTES = [
-  { ground: "#1c1a16", you: "#efe9dc", youFill: 0.13, ag: "#d98b3f", agFill: 0.17, hair: "#efe9dc", hairOp: 0.16 },
+  {
+    ground: INK_FIGURE.ground,
+    you: INK_FIGURE.light,
+    youFill: 0.13,
+    ag: INK_FIGURE.pigment,
+    agFill: 0.17,
+    hair: INK_FIGURE.hair,
+    hairOp: INK_FIGURE.hairOpacity,
+  },
   { ground: "#efe7d6", you: "#1f4a41", youFill: 0.10, ag: "#b4552f", agFill: 0.13, hair: "#211f1b", hairOp: 0.16 },
   { ground: "#a8452f", you: "#f7ece0", youFill: 0.16, ag: "#2e2a22", agFill: 0.20, hair: "#f7ece0", hairOp: 0.22 },
 ];
@@ -45,32 +64,11 @@ const HOLD = 2600;
 const TWEEN = 2000;
 const STEP = HOLD + TWEEN;
 
-const angle = (i: number, n: number) => ((-90 + (i * 360) / n) * Math.PI) / 180;
-const point = (i: number, v: number, n: number): [number, number] => [
-  C + R * v * Math.cos(angle(i, n)),
-  C + R * v * Math.sin(angle(i, n)),
-];
-/** Deterministic pseudo-random, so the "hand" is identical on server and client. */
-const wobble = (k: number) => (Math.sin(k * 12.9898) * 43758.5453) % 1;
+const blob = (values: number[], jitter: number) => blobPath(values, FIELD, jitter);
+const point = (i: number, v: number, n: number) => vertexPoint(FIELD, i, v, n);
 
-function blob(values: number[], jitter: number, n = values.length) {
-  const P = values.map((v, i) => point(i, v, n));
-  const m = P.length;
-  let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
-  for (let i = 0; i < m; i++) {
-    const p0 = P[(i - 1 + m) % m];
-    const p1 = P[i];
-    const p2 = P[(i + 1) % m];
-    const p3 = P[(i + 2) % m];
-    const c1 = [p1[0] + (p2[0] - p0[0]) / 5.4 + wobble(i + 1) * jitter, p1[1] + (p2[1] - p0[1]) / 5.4 + wobble(i + 2) * jitter];
-    const c2 = [p2[0] - (p3[0] - p1[0]) / 5.4 + wobble(i + 3) * jitter, p2[1] - (p3[1] - p1[1]) / 5.4 + wobble(i + 4) * jitter];
-    d += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)}, ${c2[0].toFixed(1)} ${c2[1].toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
-  }
-  return `${d} Z`;
-}
-
-const GROUND_D = blob([1.24, 1.19, 1.26, 1.20, 1.23, 1.18, 1.27, 1.20, 1.22], 4, 9);
-const RING_D = blob([0.6, 0.6, 0.6, 0.6, 0.6, 0.6], 5, N);
+const GROUND_D = blob(GROUND_VALUES, 4);
+const RING_D = blob([0.6, 0.6, 0.6, 0.6, 0.6, 0.6], 5);
 const AXES = Array.from({ length: N }, (_, i) => point(i, 1.04, N));
 
 const hex = (h: string) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -122,12 +120,12 @@ export function AlignmentRadar({ className }: { className?: string }) {
         el?.setAttribute("opacity", oHair);
       });
 
-      youPath.current?.setAttribute("d", blob(you, 4, N));
+      youPath.current?.setAttribute("d", blob(you, 4));
       youPath.current?.setAttribute("stroke", cYou);
       youPath.current?.setAttribute("fill", cYou);
       youPath.current?.setAttribute("fill-opacity", String(pa.youFill + (pb.youFill - pa.youFill) * t));
 
-      agPath.current?.setAttribute("d", blob(ag, 4, N));
+      agPath.current?.setAttribute("d", blob(ag, 4));
       agPath.current?.setAttribute("stroke", cAg);
       agPath.current?.setAttribute("fill", cAg);
       agPath.current?.setAttribute("fill-opacity", String(pa.agFill + (pb.agFill - pa.agFill) * t));
@@ -187,7 +185,7 @@ export function AlignmentRadar({ className }: { className?: string }) {
         />
       ))}
       {LABELS.map((label, i) => {
-        const mid = Math.abs(Math.cos(angle(i, N))) < 0.2;
+        const mid = Math.abs(Math.cos(vertexAngle(i, N))) < 0.2;
         const [x, y] = point(i, mid ? 1.5 : 1.58, N);
         return (
           <text

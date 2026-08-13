@@ -14,6 +14,21 @@ export const agentTypeLabel: Record<AgentType, string> = {
   PRESIDENT: "Presidente",
 };
 
+/**
+ * Plural of each office, for counts ("512 deputados federais"). The singular
+ * labels carry the "(a)" that a person's own card needs; a headcount is a group,
+ * so it takes the plain masculine plural Portuguese uses for mixed sets.
+ */
+export const agentTypePluralLabel: Record<AgentType, string> = {
+  FEDERAL_DEPUTY: "Deputados federais",
+  STATE_DEPUTY: "Deputados estaduais",
+  COUNCILLOR: "Vereadores",
+  SENATOR: "Senadores",
+  GOVERNOR: "Governadores",
+  MAYOR: "Prefeitos",
+  PRESIDENT: "Presidência",
+};
+
 /** Originating legislative house of an imported theme. */
 export const houseLabel: Record<House, string> = {
   CAMARA: "Câmara dos Deputados",

@@ -3,16 +3,24 @@
  *
  * Replaces the card grid in the theme lists (docs/design.md): the bill reads as an
  * agenda entry — official identifier, headline, summary, subject tags, author —
- * with the voting panel set apart on the right behind a vertical hairline. Rows
- * are separated by 1px rules, so a list of forty bills reads as one document
- * instead of forty floating objects.
+ * with the voting panel set apart on the right as a plate of paper. Rows are
+ * separated by 1px rules, so a list of forty bills reads as one document instead
+ * of forty floating objects, while the one thing the citizen is here to do keeps
+ * an edge of its own.
+ *
+ * Each entry arrives on its own scroll position rather than the list arriving as
+ * a block: an order paper is read one line at a time, and a sixty-row list that
+ * animated as a unit would either fire entirely off-screen or lurch. `delay`
+ * offsets rows that share a screen so they don't land in perfect unison.
  */
 import Link from "next/link";
+import { Reveal } from "@/components/public/motion";
 import { TemperatureBar } from "@/components/public/TemperatureBar";
 import { VoteButtons } from "@/components/public/VoteButtons";
 import { ShareButton } from "@/components/public/ShareButton";
 import { PriorityBadge } from "@/components/public/PriorityBadge";
 import { ThemeAuthorLine } from "@/components/public/ThemeAuthorLine";
+import { cn } from "@/lib/cn";
 import { houseShortLabel, scopeLabel } from "@/lib/labels";
 import type { PublicTheme } from "@/lib/dto";
 import type { VoteValue } from "@/generated/prisma";
@@ -21,15 +29,22 @@ export function ThemeRow({
   theme,
   isAuthenticated,
   currentVote = null,
+  delay = 0,
 }: {
   theme: PublicTheme;
   isAuthenticated: boolean;
   currentVote?: VoteValue | null;
+  /** Offset for rows that arrive on the same screen, in ms. */
+  delay?: number;
 }) {
   const location = [theme.municipality, theme.state].filter(Boolean).join(" · ");
 
   return (
-    <article className="grid gap-6 py-7 lg:grid-cols-[1fr_17rem] lg:gap-10">
+    <Reveal
+      as="article"
+      delay={delay}
+      className="grid gap-6 py-7 lg:grid-cols-[1fr_17rem] lg:gap-10"
+    >
       {/* ── The entry ──────────────────────────────────────────────── */}
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -80,15 +95,31 @@ export function ThemeRow({
         </div>
       </div>
 
-      {/* ── The voting panel ───────────────────────────────────────── */}
+      {/* ── The voting panel ───────────────────────────────────────────
+          No plate: the panel sits on the paper like the rest of the entry, and
+          the column is separated by a single hairline. The result and the
+          ballot carry their own weight — the share set large in pigment, the
+          ballot in its vote colours under a terracota prompt — so a box around
+          them only added furniture. */}
       <div className="lg:border-l lg:border-line lg:pl-8">
         <TemperatureBar
           yesCount={theme.yesCount}
           noCount={theme.noCount}
           absCount={theme.absCount}
         />
-        <div className="mt-4">
+        <div className="mt-4 border-t border-line pt-3.5">
+          <span
+            className={cn(
+              "text-[0.7rem] font-semibold uppercase tracking-[0.12em]",
+              currentVote
+                ? "text-[var(--color-muted)]"
+                : "text-[var(--color-accent-600)]",
+            )}
+          >
+            {currentVote ? "Seu voto" : "Vote neste tema"}
+          </span>
           <VoteButtons
+            className="mt-2"
             themeKid={theme.kid}
             isAuthenticated={isAuthenticated}
             currentValue={currentVote}
@@ -96,7 +127,7 @@ export function ThemeRow({
           />
         </div>
       </div>
-    </article>
+    </Reveal>
   );
 }
 

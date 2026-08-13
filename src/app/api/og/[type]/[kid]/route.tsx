@@ -71,7 +71,6 @@ async function buildImage(type: string, kid: string): Promise<Response | null> {
       subtitle: subtitleParts.join(" · "),
       imageUrl: agent.imageUrl,
       alignment: engagement.get(agent.kid)?.alignment ?? null,
-      band: position.basis > 0 ? position.profileLabel : null,
     });
   }
 
@@ -89,6 +88,5 @@ async function buildImage(type: string, kid: string): Promise<Response | null> {
     subtitle: `${acronym} · ${party.agentCount} ${party.agentCount === 1 ? "agente" : "agentes"}`,
     logoUrl: party.logoUrl,
     alignment: engagement.get(party.kid)?.alignment ?? null,
-    band: position.basis > 0 ? position.profileLabel : null,
   });
 }

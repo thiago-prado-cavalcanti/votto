@@ -12,8 +12,12 @@ Docker Compose. Cheapest path for the MVP; easy to split into managed services
 Estimated cost: **~US$10–20/month** (one Lightsail/EC2 instance). No extra
 managed-service fees.
 
-> **Database rule:** migrations and seed are run by **you** (documented below),
-> never automatically.
+> **Database rule:** everything the database needs travels as a migration under
+> `prisma/migrations/`, and the deploy workflow applies it (`prisma migrate
+> deploy`) before the new image serves traffic — a `git push` is the whole
+> procedure, for schema *and* for data fixes. What is never automatic is the
+> **seed** (§5) and any statement typed straight into a console: those are yours
+> to run, and no agent runs them for you.
 
 ---
 

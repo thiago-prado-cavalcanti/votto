@@ -1,6 +1,6 @@
 /**
  * Embeddable agent widget: identity + the "Alinhamento com eleitores" rating
- * (stars + %) with the positioning band as a secondary chip. Dynamic so the
+ * (stars + %). Dynamic so the
  * rating stays live inside the iframe.
  */
 import { notFound } from "next/navigation";
@@ -9,7 +9,6 @@ import { EmbedShell } from "@/components/public/EmbedShell";
 import { StarRating } from "@/components/public/StarRating";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { agentElectorateAlignments } from "@/lib/indexes/alignment";
-import { getAgentPosition } from "@/lib/domain/positions";
 import { agentTypeLabel } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -19,12 +18,8 @@ export default async function AgentEmbed({ params }: { params: Promise<{ kid: st
   const agent = await db.publicAgent.findUnique({ where: { kid }, include: { party: true } });
   if (!agent || agent.status !== "ACTIVE") notFound();
 
-  const [engagement, position] = await Promise.all([
-    agentElectorateAlignments(),
-    getAgentPosition(agent.id),
-  ]);
+  const engagement = await agentElectorateAlignments();
   const alignment = engagement.get(agent.kid)?.alignment ?? null;
-  const band = position.basis > 0 ? position.profileLabel : null;
 
   const fullName = `${agent.firstName} ${agent.lastName}`.trim();
   const initials = `${agent.firstName[0] ?? ""}${agent.lastName[0] ?? ""}`.toUpperCase();
@@ -52,13 +47,13 @@ export default async function AgentEmbed({ params }: { params: Promise<{ kid: st
       </div>
 
       <div className="mt-auto pt-4">
-        <RatingBlock alignment={alignment} band={band} />
+        <RatingBlock alignment={alignment} />
       </div>
     </EmbedShell>
   );
 }
 
-function RatingBlock({ alignment, band }: { alignment: number | null; band: string | null }) {
+function RatingBlock({ alignment }: { alignment: number | null }) {
   return (
     <div>
       <div className="text-xs font-medium text-[var(--color-muted)]">Alinhamento com eleitores</div>
@@ -67,11 +62,6 @@ function RatingBlock({ alignment, band }: { alignment: number | null; band: stri
           {alignment === null ? "—" : `${alignment}%`}
         </span>
         {alignment !== null ? <StarRating value={alignment} size={18} /> : null}
-        {band ? (
-          <span className="ml-auto rounded-[2px] bg-navy-100 px-2 py-0.5 text-xs font-semibold text-navy-800">
-            {band}
-          </span>
-        ) : null}
       </div>
     </div>
   );

@@ -62,7 +62,7 @@ export const env = {
     clientId: process.env.GOVBR_CLIENT_ID ?? "",
     clientSecret: process.env.GOVBR_CLIENT_SECRET ?? "",
     redirectUri:
-      process.env.GOVBR_REDIRECT_URI ?? "http://localhost:3000/api/auth/govbr/callback",
+      process.env.GOVBR_REDIRECT_URI ?? "http://localhost:3100/api/auth/govbr/callback",
     scopes: process.env.GOVBR_SCOPES ?? DEFAULT_GOVBR_SCOPES,
     /**
      * Send a PKCE challenge (S256). On by default: gov.br's own integration
@@ -101,7 +101,7 @@ export const env = {
       token: process.env.INFOSIMPLES_TOKEN ?? "",
     },
   },
-  appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  appUrl: process.env.APP_URL ?? "http://localhost:3100",
   /** GA4 measurement id (`G-…`). Empty = no analytics script on the site. */
   gaMeasurementId: GA_MEASUREMENT_ID.test(process.env.GA_MEASUREMENT_ID ?? "")
     ? (process.env.GA_MEASUREMENT_ID as string)
