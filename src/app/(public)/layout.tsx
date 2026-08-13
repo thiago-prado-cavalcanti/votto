@@ -7,6 +7,7 @@ import { Container, ButtonLink } from "@/components/ui";
 import { Wordmark } from "@/components/public/Wordmark";
 import { NavLinks } from "@/components/public/NavLinks";
 import { LogoutButton } from "@/components/public/LogoutButton";
+import { Analytics } from "@/components/public/Analytics";
 import { getCitizenSession } from "@/lib/auth/session";
 
 /** One labelled column of the footer grid: quiet eyebrow over a stack of links. */
@@ -66,6 +67,7 @@ export default async function PublicLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
+      <Analytics />
       {/* Warm paper, not white, so the header dissolves into the page instead of
           floating over it; the only edge is a 1px rule. */}
       <header className="sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur">

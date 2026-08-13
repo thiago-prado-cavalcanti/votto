@@ -82,7 +82,9 @@ Set at minimum in `.env.production`:
 `AUTH_SECRET`, `CPF_ENC_KEY`, `CPF_HMAC_KEY`, `POSTGRES_PASSWORD`,
 `APP_URL` (e.g. `https://votto.online`), `DOMAIN` (e.g. `votto.online`),
 `GOVBR_REDIRECT_URI` (`https://votto.online/api/auth/govbr/callback`).
-Optional: `ANTHROPIC_API_KEY` (AI summary), real `GOVBR_*` for production login.
+Optional: `ANTHROPIC_API_KEY` (AI summary), real `GOVBR_*` for production login,
+`GA_MEASUREMENT_ID` (Google Analytics 4 — `G-…`, only the public site is
+measured; empty means no analytics script is served).
 
 > `DATABASE_URL` / `REDIS_URL` are set automatically by compose to the bundled
 > services — you don't edit them for production.

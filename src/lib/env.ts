@@ -32,6 +32,13 @@ const DEFAULT_GOVBR_SCOPES = "openid email profile govbr_confiabilidades";
  */
 type CpfValidationProvider = "mock" | "serpro" | "infosimples";
 
+/**
+ * Google Analytics 4 measurement id. The value is interpolated into an inline
+ * `<script>` on the public site, so anything that isn't a well-formed id is
+ * discarded (treated as "analytics disabled") rather than trusted.
+ */
+const GA_MEASUREMENT_ID = /^G-[A-Z0-9]{4,24}$/i;
+
 export const env = {
   databaseUrl: required("DATABASE_URL"),
   redisUrl: process.env.REDIS_URL ?? "",
@@ -95,6 +102,10 @@ export const env = {
     },
   },
   appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  /** GA4 measurement id (`G-…`). Empty = no analytics script on the site. */
+  gaMeasurementId: GA_MEASUREMENT_ID.test(process.env.GA_MEASUREMENT_ID ?? "")
+    ? (process.env.GA_MEASUREMENT_ID as string)
+    : "",
 } as const;
 
 export const isAiEnabled = () => env.anthropicApiKey.length > 0;
