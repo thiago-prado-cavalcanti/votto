@@ -13,6 +13,8 @@
  * holder is dead. Requires DATABASE_URL in the environment. Exits 0 when every
  * requested job succeeded, 1 otherwise.
  */
+// Must precede every import that reads `env` at module load.
+import "./load-env";
 import { SYNC_JOBS, findJob, jobNames, type SyncJobDefinition } from "@/lib/integration/jobs";
 import { runJob } from "@/lib/integration/runner";
 import type { SyncOptions } from "@/lib/integration/importer";

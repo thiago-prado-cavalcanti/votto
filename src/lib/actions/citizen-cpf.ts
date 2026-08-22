@@ -19,6 +19,7 @@
 import { redirect } from "next/navigation";
 import { validateCpf, cpfProvider, type CpfSituation } from "@/lib/identity/validation";
 import { signInCitizen } from "@/lib/auth/citizen-login";
+import { splitPersonName } from "@/lib/domain/names";
 import { cookies } from "next/headers";
 import { CITIZEN_COOKIE, sessionCookieOptions } from "@/lib/auth/session";
 import {
@@ -179,13 +180,14 @@ export async function linkCpfAction(
 
   // The registry's name wins over the provider's: it is the name on the
   // document the vote is anchored to. The social name is only the fallback.
-  const registryName = result.name.trim();
-  const [first, ...rest] = registryName.split(/\s+/).filter(Boolean);
+  // Title-cased on the way in — the Receita answers in full caps, and the
+  // header greets the citizen by first name on every page.
+  const { firstName, lastName } = splitPersonName(result.name);
 
   const token = await signInCitizen({
     cpf,
-    firstName: first || pending.firstName,
-    lastName: rest.join(" ") || pending.lastName,
+    firstName: firstName || pending.firstName,
+    lastName: lastName || pending.lastName,
     birthYear,
     verificationSource: cpfProvider().name,
     politicalConsentAt: new Date(),

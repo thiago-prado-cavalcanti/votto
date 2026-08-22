@@ -14,6 +14,8 @@
  * a healthy ranking discriminates, and "everything is urgent" means the same as
  * "nothing is urgent".
  */
+// Must precede every import that reads `env` at module load.
+import "./load-env";
 import { db } from "@/lib/db";
 import { computePriority, priorityBand, priorityBandLabel, type PriorityBand } from "@/lib/domain/priority";
 import { ImportSource } from "@/generated/prisma";

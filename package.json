@@ -19,6 +19,8 @@
     "assets:fonts": "node scripts/fetch-widget-fonts.mjs",
     "assets:party-logos": "node scripts/build-party-logos.mjs",
     "check:sources": "tsx scripts/check-sources.ts",
+    "check:cpf": "tsx scripts/check-cpf.ts",
+    "check:cpf:contract": "tsx scripts/checks/infosimples-contract.ts",
     "backfill": "tsx scripts/backfill.ts",
     "reprioritize": "tsx scripts/reprioritize.ts",
     "summarize": "tsx scripts/sync.ts ai:summaries",

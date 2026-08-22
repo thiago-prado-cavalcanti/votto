@@ -16,6 +16,8 @@
  *
  * Exits 0 when every check passes, 1 otherwise.
  */
+// Must precede every import that reads `env` at module load.
+import "./load-env";
 import {
   computePriority,
   isConcludedSituation,

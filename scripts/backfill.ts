@@ -29,6 +29,8 @@
  * Safe to interrupt and re-run: every import is idempotent, and each job takes
  * its own lock, so this never collides with the worker.
  */
+// Must precede every import that reads `env` at module load.
+import "./load-env";
 import { SYNC_JOBS, type SyncJobDefinition } from "@/lib/integration/jobs";
 import { runJob } from "@/lib/integration/runner";
 import type { SyncOptions } from "@/lib/integration/importer";

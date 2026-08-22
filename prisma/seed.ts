@@ -34,6 +34,8 @@
  *
  * Run: `tsx prisma/seed.ts`. Requires DATABASE_URL, CPF_ENC_KEY, CPF_HMAC_KEY.
  */
+// Must precede every import that reads `env` at module load.
+import "../scripts/load-env";
 import { db } from "@/lib/db";
 import { kid } from "@/lib/ids";
 import { deriveCpfFields } from "@/lib/crypto/cpf";

@@ -19,6 +19,8 @@
  * Concurrency with other triggers (the admin panel, the cron HTTP endpoint) is
  * handled one level down, by the SyncJob lock in `runner.ts`.
  */
+// Must precede every import that reads `env` at module load.
+import "./load-env";
 import { SYNC_JOBS, type SyncJobDefinition } from "@/lib/integration/jobs";
 import { runJob } from "@/lib/integration/runner";
 import { describeSchedule, formatZoned, nextOccurrence } from "@/lib/integration/schedule";

@@ -117,5 +117,6 @@ scripts/             # sync.ts (CLI), worker.ts (agendador), check-sources.ts
 docs/design.md       # design system ("papel & pigmento"): tokens, tipografia, padrões
 docs/integracao.md   # integração com as fontes oficiais + login social e CPF
 docs/login-social-passo-a-passo.md  # cadastro no Google/Meta/Apple, clique a clique
+                     # (validador de CPF: npm run check:cpf)
 docs/migrations/     # SQL do schema (execução manual)
 ```

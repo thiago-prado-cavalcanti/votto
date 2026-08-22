@@ -17,7 +17,11 @@ import type { CpfSituation } from "@/lib/identity/validation";
  */
 export function situationFromDescription(description: string | undefined): CpfSituation {
   const text = (description ?? "").toLowerCase();
-  if (text.includes("regular")) return "REGULAR";
+  // Two spellings for the same state: the Receita's portal says "REGULAR",
+  // while Infosimples' documented payload says "ATIVA". Missing either one is
+  // not a near miss — an unmatched label fails closed, so it would reject every
+  // valid CPF with "situação que não reconhecemos".
+  if (text.includes("regular") || text.includes("ativa")) return "REGULAR";
   if (text.includes("suspens")) return "SUSPENDED";
   if (text.includes("cancelad")) return "CANCELLED";
   if (text.includes("nul")) return "NULL";

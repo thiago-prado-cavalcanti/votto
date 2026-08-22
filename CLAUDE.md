@@ -472,9 +472,11 @@ be), but the reference is a printed record, not a fintech app.
   (click-by-click: `docs/login-social-passo-a-passo.md`; rationale: `docs/integracao.md` §5). Google is the cheapest to get working and has the widest reach —
   start there. Apple needs a paid account and an https callback (it refuses http, even on
   localhost), so it needs a tunnel to test locally.
-- **CPF registry contract:** `CPF_VALIDATION_PROVIDER=mock` accepts any well-formed CPF, so login
-  is not really verified until an Infosimples token is funded (~R$0,24/lookup, R$100/month floor).
-  Nothing else blocks real login.
+- **CPF registry contract:** verified end to end against the live Receita Federal registry on
+  2026-08-22 (`npm run check:cpf`), and against the documented payload by `npm run
+  check:cpf:contract`. What remains is configuration: `CPF_VALIDATION_PROVIDER=mock` accepts any
+  well-formed CPF, so **production is still unverified** until the Infosimples token reaches
+  `.env.production` (~R$0,24/lookup, R$100/month floor).
 - **A real proof of CPF possession.** What ships is CPF + birth date against the registry, which
   proves the CPF is real but not that it is the person's. The Pix of R$0,01 is the deferred
   candidate; revisit before the platform's numbers are quoted as representative.

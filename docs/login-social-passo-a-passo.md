@@ -266,19 +266,40 @@ A Apple não deixa criar o login web sozinho — ele precisa se pendurar num App
 ### 3.5 No `.env`
 
 O `.p8` é um arquivo de várias linhas e precisa virar uma linha só, com `\n` no
-lugar das quebras:
+lugar das quebras. **Não tente copiar do terminal** — a saída é uma linha longa
+e o terminal quebra ela na tela. Escreva direto no `.env`:
 
 ```bash
-awk 'BEGIN{ORS="\\n"} {print}' AuthKey_XXXXXXXXXX.p8
+{
+  echo 'APPLE_CLIENT_ID="online.votto.web"'      # o Services ID, NÃO o App ID
+  echo 'APPLE_TEAM_ID="SEU_TEAM_ID"'
+  echo 'APPLE_KEY_ID="SEU_KEY_ID"'
+  printf 'APPLE_PRIVATE_KEY="'
+  awk 'BEGIN{ORS="\\n"} {print}' ~/Downloads/AuthKey_XXXXXXXXXX.p8 | tr -d '\n'
+  printf '"\n'
+} >> .env
 ```
 
-Cole a saída entre aspas:
+Se preferir colar à mão, mande para a área de transferência em vez de para a
+tela (macOS):
+
+```bash
+awk 'BEGIN{ORS="\\n"} {print}' AuthKey_XXXXXXXXXX.p8 | pbcopy
+```
+
+O resultado no `.env` fica assim:
 
 ```env
 APPLE_CLIENT_ID="online.votto.web"        # o Services ID, NÃO o App ID
 APPLE_TEAM_ID="ABCDE12345"
 APPLE_KEY_ID="XXXXXXXXXX"
 APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----\n"
+```
+
+Para conferir que ficou em **uma linha só** (o valor tem ~250 caracteres):
+
+```bash
+awk -F'"' '/^APPLE_PRIVATE_KEY=/{print length($2) " caracteres"}' .env
 ```
 
 ---
@@ -313,6 +334,47 @@ APP_URL="https://votto.online"
 CPF_VALIDATION_PROVIDER="infosimples"
 INFOSIMPLES_TOKEN="..."
 ```
+
+### Conferir o validador de CPF
+
+O token sai de
+[api.infosimples.com/administracao/tokens](https://api.infosimples.com/administracao/tokens)
+— **sem contrato e sem e-CNPJ**, com R$ 100 de crédito inicial. Depois de
+configurar, confirme contra a API real com um CPF de verdade cuja data de
+nascimento você conheça:
+
+```bash
+npm run check:cpf -- --cpf 000.000.000-00 --nascimento DD/MM/AAAA
+```
+
+O comando faz **uma** consulta paga (~R$ 0,24), nunca imprime o CPF, e mostra o
+que o registro devolveu. O que você quer ver:
+
+| Resultado | O que significa |
+| --- | --- |
+| `ok` + o nome do titular correto | tudo certo, pode abrir o login |
+| `ok` + nome de outra pessoa | o adaptador está lendo o campo errado — não suba |
+| `mismatch` com data que você sabe estar certa | idem: investigue antes de subir |
+| `unavailable: invalid or exhausted API token` | token errado ou sem saldo |
+
+Esse passo não é burocracia. O adaptador foi escrito primeiro a partir dos SDKs
+abertos do fornecedor, e eles erravam **três** coisas que só a documentação
+oficial revelou — e que se disfarçavam umas das outras:
+
+- o corpo é `form-urlencoded`, não JSON (com JSON o token nunca é lido, e a API
+  responde 601, indistinguível de "token inválido");
+- `birthdate` é ISO 8601, não `DD/MM/AAAA` — o inverso do que era enviado, e a
+  API **cobra** pela recusa;
+- a situação cadastral documentada é `ATIVA`, que o normalizador não conhecia:
+  como ele falha fechado, **todo cidadão legítimo seria recusado**.
+
+Há ainda `npm run check:cpf:contract`, que exercita o adaptador contra o payload
+exato da documentação sem token e sem rede — custo zero, bom para CI. O
+`check:cpf` é o complemento: só ele prova o caminho de sucesso contra a Receita.
+
+Nem a Infosimples nem o Serpro versionam a API, e uma mudança silenciosa de
+formato aqui não quebra tela nenhuma — transforma cidadãos reais em
+`unavailable`, ou pior, faz uma recusa passar por aprovação.
 
 Lembre de cadastrar **as duas** URLs de retorno em cada console (a de localhost e
 a de produção) se quiser que os dois ambientes funcionem.
@@ -352,4 +414,5 @@ npm run check:sources
 | `invalid_client` (Apple) | `APPLE_CLIENT_ID` está com o App ID em vez do Services ID |
 | Login da Apple volta para `/login?error=state` | O callback precisa ser `https`; em `http` o cookie `SameSite=None` não sobrevive |
 | Volta para `/login?error=state` | Você levou mais de 10 min na tela do provedor, ou o navegador bloqueia cookies |
-| Todo mundo entra com qualquer CPF | `CPF_VALIDATION_PROVIDER` ainda está em `mock` |
+| Todo mundo entra com qualquer CPF | `CPF_VALIDATION_PROVIDER` ainda está em `mock` — rode `npm run check:cpf` |
+| `unavailable` no cadastro | Token da Infosimples sem saldo, ou portal da Receita fora do ar. **Nunca** é recusa do cidadão. |

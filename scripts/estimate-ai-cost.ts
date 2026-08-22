@@ -15,6 +15,8 @@
  * job itself uses), so the number reflects your actual backlog rather than a
  * guess. Pass `--themes N` to price a hypothetical volume instead.
  */
+// Must precede every import that reads `env` at module load.
+import "./load-env";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 import { env, isAiEnabled } from "@/lib/env";

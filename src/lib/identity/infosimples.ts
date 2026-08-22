@@ -17,9 +17,11 @@
  *    treat `unavailable` as expected background noise and keep the Serpro
  *    adapter as the fallback for when the volume justifies a direct contract.
  *
- * Contract confirmed against the vendor's open-source SDKs (`infosimples/
- * infosimples-data`, `alanmatiasdev/infosimples-sdk`), since the reference docs
- * sit behind a customer login.
+ * Contract confirmed against the vendor's official reference, API v2.2.38
+ * (2026-07-10). It was first written from their open-source SDKs
+ * (`infosimples/infosimples-data`, `alanmatiasdev/infosimples-sdk`) because the
+ * docs sit behind a customer login, and the SDKs got the body encoding wrong:
+ * the API takes `application/x-www-form-urlencoded`, never JSON.
  */
 import { env } from "@/lib/env";
 import { situationFromDescription } from "@/lib/identity/situation";
@@ -27,7 +29,11 @@ import type { CpfProvider, CpfValidation } from "@/lib/identity/validation";
 
 const ENDPOINT = "https://api.infosimples.com/api/v2/consultas/receita-federal/cpf";
 
-/** Seconds the vendor may spend driving the portal before giving up. */
+/**
+ * Seconds the vendor may spend driving the portal before giving up. The API
+ * accepts 15–600; 60 leaves the portal room on a slow day without making a
+ * citizen watch a spinner for minutes.
+ */
 const REMOTE_TIMEOUT_SECONDS = 60;
 
 /** Local ceiling, kept above the remote one so we never abort a paid request. */
@@ -37,37 +43,69 @@ const RETRIES = 2;
 const BACKOFF_MS = 800;
 
 /**
- * Envelope codes. `200`/`201` are success; everything else is an error, and the
- * split below decides whether it is the citizen's fault or ours.
+ * Envelope codes, from the official table (API v2.2.38). `200` is the only
+ * success; everything else is an error, and the split below decides whether it
+ * is the citizen's, ours, or the portal's.
  */
 const CODE = {
-  singleResult: 200,
-  multipleResults: 201,
+  success: 200,
+  unexpected: 600,
   unauthorized: 601,
+  invalidService: 602,
+  serviceNotAllowed: 603,
   invalidRequest: 604,
   emptyParameters: 606,
   invalidParameters: 607,
   refusedParameters: 608,
   incompleteData: 611,
   inexistent: 612,
+  paramChangedAtSource: 619,
+  persistentSourceError: 620,
+  receiptRenderFailed: 621,
+  repeatedQuery: 622,
 } as const;
+
+/**
+ * Codes that must NOT be retried, beyond the ones handled explicitly below.
+ *
+ * The vendor's own guidance is the reason this list exists: 620 is *billed* and
+ * "will probably not change soon", so retrying it spends money three times for
+ * one answer; 622 fires precisely when the same query repeats, so a retry loop
+ * is what causes it; 602/603 are configuration errors that no amount of waiting
+ * fixes. Everything left over (605, 609, 610, 613–618) really is transient.
+ */
+const TERMINAL_CODES: ReadonlySet<number> = new Set([
+  CODE.invalidService,
+  CODE.serviceNotAllowed,
+  CODE.paramChangedAtSource,
+  CODE.persistentSourceError,
+  CODE.repeatedQuery,
+]);
 
 type InfosimplesResponse = {
   code?: number;
   code_message?: string;
+  /**
+   * Vendor diagnostics. The reference is explicit that this must never be
+   * relayed to end users — it can name Infosimples or carry integrator-only
+   * detail — so it only ever reaches a server log.
+   */
+  errors?: string[];
   data?: Array<{
+    /** Preferred display name; equals `nome_civil` unless a social name exists. */
     nome?: string;
+    nome_civil?: string;
+    nome_social?: string;
+    /** `DD/MM/YYYY`. Unused: we echo the date the citizen was challenged on. */
     data_nascimento?: string;
+    /** Documented value is `ATIVA`; the portal itself says `REGULAR`. */
     situacao_cadastral?: string;
+    /** Year of death as text; `0`/empty when alive. */
     ano_obito?: string;
+    /** Same, already coerced to a number by the vendor. `0` when alive. */
+    normalizado_ano_obito?: number;
   }>;
 };
-
-/** `YYYY-MM-DD` → `DD/MM/YYYY`, the format the vendor expects. */
-function toVendorDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day}/${month}/${year}`;
-}
 
 export function createInfosimplesProvider(): CpfProvider {
   const { token } = env.cpfValidation.infosimples;
@@ -90,13 +128,26 @@ export function createInfosimplesProvider(): CpfProvider {
             method: "POST",
             headers: {
               Accept: "application/json",
-              "Content-Type": "application/json",
+              // Mandated by the API reference. A JSON body is not parsed at
+              // all, and the request then fails as an auth error (601) because
+              // the token was never read — which reads exactly like a bad
+              // token and is why this went unnoticed.
+              "Content-Type": "application/x-www-form-urlencoded",
             },
-            body: JSON.stringify({
+            body: new URLSearchParams({
               token,
               cpf,
-              birthdate: toVendorDate(birthDate),
-              timeout: REMOTE_TIMEOUT_SECONDS,
+              // ISO 8601 with padded zeros, per the service reference —
+              // which is already the shape `validateCpf` normalizes to. It
+              // previously sent DD/MM/YYYY, the exact inversion, which the API
+              // answers with a *billed* invalid-parameter error.
+              birthdate: birthDate,
+              timeout: String(REMOTE_TIMEOUT_SECONDS),
+              // Suppress the HTML/PDF receipt the vendor would otherwise render
+              // and host for 7 days. It carries the citizen's registry data, we
+              // never read it, and not creating it is one less copy in one less
+              // place (CLAUDE.md §5).
+              ignore_site_receipt: "1",
             }),
             signal: AbortSignal.timeout(TIMEOUT_MS),
           });
@@ -151,8 +202,8 @@ function interpret(body: InfosimplesResponse, requestedBirthDate: string): Inter
   const code = body.code ?? 0;
   const message = body.code_message ?? "";
 
-  if (code !== CODE.singleResult && code !== CODE.multipleResults) {
-    return errorOutcome(code, message);
+  if (code !== CODE.success) {
+    return errorOutcome(code, message, body.errors);
   }
 
   const record = body.data?.[0];
@@ -163,8 +214,11 @@ function interpret(body: InfosimplesResponse, requestedBirthDate: string): Inter
   }
 
   // The portal exposes a death year separately from the status line; treat it
-  // as authoritative even when the status still reads regular.
-  if ((record.ano_obito ?? "").trim().length > 0) {
+  // as authoritative even when the status still reads regular. Prefer the
+  // vendor's normalized number, which is `0` for a living holder — the raw
+  // string is `"0"` in that case, and a length check would read it as a death.
+  const deathYear = record.normalizado_ano_obito ?? Number(record.ano_obito ?? 0);
+  if (Number.isFinite(deathYear) && deathYear > 0) {
     return { status: "irregular", situation: "DECEASED", description: "Titular falecido" };
   }
 
@@ -177,7 +231,9 @@ function interpret(body: InfosimplesResponse, requestedBirthDate: string): Inter
     };
   }
 
-  const name = (record.nome ?? "").trim();
+  // A citizen with a registered `nome_social` is addressed by it — that is the
+  // name they are known by, and the platform greets people by name.
+  const name = (record.nome_social || record.nome || record.nome_civil || "").trim();
   if (name.length === 0) {
     return { status: "unavailable", reason: "provider returned no name" };
   }
@@ -193,7 +249,10 @@ function interpret(body: InfosimplesResponse, requestedBirthDate: string): Inter
 }
 
 /** Map an error envelope to an outcome, separating the citizen's fault from ours. */
-function errorOutcome(code: number, message: string): Interpreted {
+function errorOutcome(code: number, message: string, errors?: string[]): Interpreted {
+  // Vendor diagnostics are for our logs only, never for the citizen.
+  const detail = [message, ...(errors ?? [])].filter(Boolean).join("; ");
+
   switch (code) {
     case CODE.inexistent:
     case CODE.refusedParameters:
@@ -211,15 +270,15 @@ function errorOutcome(code: number, message: string): Interpreted {
       return { status: "unavailable", reason: "invalid or exhausted API token" };
 
     case CODE.incompleteData:
-      return { status: "unavailable", reason: "portal returned incomplete data" };
+      return { status: "unavailable", reason: `portal returned incomplete data: ${detail}` };
 
     default:
-      // 613–621 are portal-side: blocked, unavailable, overloaded, rate-limited.
-      // All transient by nature, so let the caller retry.
+      // Everything else is the portal or the vendor. Retry only what can
+      // actually change on a second attempt — see TERMINAL_CODES.
       return {
         status: "unavailable",
-        reason: message || `provider error ${code}`,
-        retryable: true,
+        reason: detail || `provider error ${code}`,
+        retryable: !TERMINAL_CODES.has(code),
       };
   }
 }
