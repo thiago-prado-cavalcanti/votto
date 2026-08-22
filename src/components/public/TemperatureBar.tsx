@@ -22,6 +22,7 @@
  * renders finished.
  */
 import type { CSSProperties } from "react";
+import { cn } from "@/lib/cn";
 
 const OPTIONS = [
   { key: "yes", label: "Sim", color: "var(--color-vote-yes)" },
@@ -95,14 +96,23 @@ export function TemperatureBar({
         </div>
       </div>
 
-      {/* The tally: three columns keyed by the radar's vertex dot. Three zeroes
-          say nothing the invitation above has not already said, so an untouched
-          theme skips it. */}
-      {total > 0 ? (
-        <div
-          className="vt-fade mt-3 grid grid-cols-3 gap-x-3"
-          style={{ "--vt-d": "420ms" } as CSSProperties}
-        >
+      {/* The tally: three columns keyed by the radar's vertex dot.
+          
+          It renders even at zero, and that is a correction. Skipping it read
+          well on a single theme — three zeroes add nothing the invitation above
+          has not already said — but the lists are where this panel actually
+          lives, and there almost every theme is untouched: on `/temas` the
+          block collapsed on 59 rows out of 60 while the home, which shows only
+          the most-voted six, always had it. Same component, two shapes, and a
+          ragged column of ballots sitting at different heights.
+          
+          So the shape is constant and the *weight* carries the difference: with
+          votes the figures are ink, without them they recede to muted, which
+          reads as a panel at rest rather than a result of zero. */}
+      <div
+        className="vt-fade mt-3 grid grid-cols-3 gap-x-3"
+        style={{ "--vt-d": "420ms" } as CSSProperties}
+      >
           {OPTIONS.map((o) => (
             <div key={o.key}>
               <div className="flex items-center gap-1.5">
@@ -116,7 +126,12 @@ export function TemperatureBar({
                 </span>
               </div>
               <div className="mt-0.5 flex items-baseline gap-1.5">
-                <span className="vt-num text-base text-navy-900">
+                <span
+                  className={cn(
+                    "vt-num text-base",
+                    total > 0 ? "text-navy-900" : "text-[var(--color-muted)]",
+                  )}
+                >
                   {counts[o.key].toLocaleString("pt-BR")}
                 </span>
                 <span className="text-[0.68rem] text-[var(--color-muted)]">
@@ -126,7 +141,6 @@ export function TemperatureBar({
             </div>
           ))}
         </div>
-      ) : null}
     </div>
   );
 }
