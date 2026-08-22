@@ -14,7 +14,7 @@ import { PriorityBadge } from "@/components/public/PriorityBadge";
 import { OfficialRecord } from "@/components/public/OfficialRecord";
 import { ThemeAuthorLine } from "@/components/public/ThemeAuthorLine";
 import { Reveal } from "@/components/public/motion";
-import { toPublicTheme } from "@/lib/dto";
+import { THEME_AUTHOR_INCLUDE, toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { scopeLabel, houseLabel } from "@/lib/labels";
 import { env } from "@/lib/env";
@@ -61,8 +61,7 @@ export default async function ThemeDetailPage({
     where: { kid },
     include: {
       articles: true,
-      proposer: { include: { party: true } },
-      rapporteur: { include: { party: true } },
+      ...THEME_AUTHOR_INCLUDE,
     },
   });
   if (!theme || theme.status !== "ACTIVE") notFound();

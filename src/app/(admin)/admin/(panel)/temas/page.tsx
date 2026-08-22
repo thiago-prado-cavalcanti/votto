@@ -8,14 +8,17 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { DataTable, type Column } from "@/components/admin/DataTable";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { ThemeRowActions } from "@/components/admin/ThemeRowActions";
-import { toPublicTheme, type PublicTheme } from "@/lib/dto";
+import { THEME_AUTHOR_INCLUDE, toPublicTheme, type PublicTheme } from "@/lib/dto";
 import { scopeLabel } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Temas" };
 
 export default async function ThemesListPage() {
-  const rows = await db.theme.findMany({ orderBy: { createdAt: "desc" } });
+  const rows = await db.theme.findMany({
+    orderBy: { createdAt: "desc" },
+    include: THEME_AUTHOR_INCLUDE,
+  });
   const themes = rows.map((t) => toPublicTheme(t));
 
   const columns: Column<PublicTheme>[] = [

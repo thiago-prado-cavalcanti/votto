@@ -9,7 +9,7 @@ import { ThemeRow, ThemeList } from "@/components/public/ThemeRow";
 import { RankingTabs, type RankingRow } from "@/components/public/RankingTabs";
 import { HeroB } from "@/components/public/HeroB";
 import { db } from "@/lib/db";
-import { toPublicTheme } from "@/lib/dto";
+import { THEME_AUTHOR_INCLUDE, toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import {
   citizenAgentAlignments,
@@ -34,6 +34,10 @@ export default async function HomePage() {
       where: { status: "ACTIVE" },
       orderBy: [{ yesCount: "desc" }, { noCount: "desc" }, { absCount: "desc" }],
       take: 30,
+      // Same rows as /temas: without this the entry falls back to the bare
+      // `proposerName` column — a name with no face, no party and no link —
+      // and a theme carried only by a rapporteur shows no one.
+      include: THEME_AUTHOR_INCLUDE,
     }),
   ]);
 

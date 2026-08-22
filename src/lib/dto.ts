@@ -222,6 +222,27 @@ type ThemeLike = {
 };
 
 /**
+ * The relations `toPublicTheme` needs to build a complete theme.
+ *
+ * It exists because forgetting it is silent and the failure is subtle. Without
+ * the includes, `themeAuthor` still finds the `proposerName` **column** and
+ * renders a bare name — no photo, no party, no link to the agent — while a
+ * theme whose only face is a rapporteur shows nobody at all. Nothing throws,
+ * nothing is empty, the list merely looks poorer on one page than another,
+ * which is exactly how the home and `/temas` drifted apart.
+ *
+ * Spread it into every theme query whose result reaches `toPublicTheme`:
+ *
+ * ```ts
+ * db.theme.findMany({ where, include: THEME_AUTHOR_INCLUDE })
+ * ```
+ */
+export const THEME_AUTHOR_INCLUDE = {
+  proposer: { include: { party: true } },
+  rapporteur: { include: { party: true } },
+} as const;
+
+/**
  * Pick the accountable face for a theme: the proposer when known (a
  * parliamentarian, else the institution that authored it), otherwise the
  * rapporteur. Returns null for themes with neither.

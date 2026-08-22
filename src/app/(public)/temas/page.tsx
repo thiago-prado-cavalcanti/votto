@@ -13,7 +13,7 @@ import { IndexPlate } from "@/components/public/IndexPlate";
 import { FilterBar } from "@/components/public/FilterBar";
 import { ThemeRow, ThemeList } from "@/components/public/ThemeRow";
 import { db } from "@/lib/db";
-import { toPublicTheme } from "@/lib/dto";
+import { THEME_AUTHOR_INCLUDE, toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { scopeLabel, houseLabel, BR_STATES } from "@/lib/labels";
 import { themeTemperature } from "@/lib/domain/theme";
@@ -97,10 +97,7 @@ export default async function ThemesPage({
       where,
       orderBy: ORDERINGS[ordering].orderBy,
       take: 60,
-      include: {
-        proposer: { include: { party: true } },
-        rapporteur: { include: { party: true } },
-      },
+      include: THEME_AUTHOR_INCLUDE,
     }),
     Promise.all(
       PRIORITY_BAND_RANGES.map((range) =>
