@@ -43,6 +43,20 @@ enum VoterType {
   AGENT
 }
 
+/// Identity providers a citizen may sign in with.
+///
+/// There is no INSTAGRAM member on purpose. Meta retired the Instagram Basic
+/// Display API on 2024-12-04, and what replaced it ("Instagram API with
+/// Instagram Login") only serves Business/Creator accounts and returns a
+/// username — no person. The Instagram button therefore runs the Facebook
+/// Login flow and lands here as FACEBOOK, which is also what keeps a citizen
+/// who uses both buttons from ending up with two accounts.
+enum SocialProvider {
+  GOOGLE
+  APPLE
+  FACEBOOK
+}
+
 enum Scope {
   NATIONAL
   STATE
@@ -86,7 +100,7 @@ model Party {
   status      EntityStatus @default(ACTIVE)
 
   // Denormalized counts for fast dashboards (kept in sync on writes/imports).
-  agentCount  Int          @default(0)
+  agentCount Int @default(0)
 
   // Official metadata from the source (Câmara `partidos/{id}`, Senado
   // `composicao/lista/partidos`). `memberCount` is the house's own head count and
@@ -99,10 +113,10 @@ model Party {
   source      ImportSource @default(MANUAL)
   externalRef String?
 
-  agents      PublicAgent[]
+  agents PublicAgent[]
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([source, externalRef])
   @@index([status])
@@ -110,19 +124,19 @@ model Party {
 
 /// Elected/public agent (deputy, councillor, senator, governor, etc.).
 model PublicAgent {
-  id           String       @id @default(cuid())
-  kid          String       @unique
-  firstName    String
-  lastName     String
-  email        String?
-  phone        String?
-  imageUrl     String?
-  description  String?
+  id          String  @id @default(cuid())
+  kid         String  @unique
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  imageUrl    String?
+  description String?
 
   // CPF stored encrypted; HMAC for dedup; 6-digit clear prefix. Optional for agents
   // imported from public sources where CPF is not provided.
   cpfEncrypted String?
-  cpfHash      String?      @unique
+  cpfHash      String? @unique
   cpfPrefix    String?
 
   type         AgentType
@@ -131,26 +145,26 @@ model PublicAgent {
   status       EntityStatus @default(ACTIVE)
 
   // Official profile page on the source (camara.leg.br / senado.leg.br).
-  externalUrl  String?
+  externalUrl String?
   // False once the source stops listing the agent as sitting (mandate ended,
   // leave of absence, substitute stepped down). Kept instead of deleting so the
   // vote history — and therefore the alignment index — stays intact.
-  inOffice     Boolean      @default(true)
+  inOffice    Boolean @default(true)
   /// Legislature number the agent was last seen in (Câmara: 57 = 2023–2027).
-  legislature  Int?
+  legislature Int?
 
-  partyId      String?
-  party        Party?       @relation(fields: [partyId], references: [id])
+  partyId String?
+  party   Party?  @relation(fields: [partyId], references: [id])
 
-  source       ImportSource @default(MANUAL)
-  externalRef  String?
+  source      ImportSource @default(MANUAL)
+  externalRef String?
 
-  votes        Vote[]
-  proposedThemes    Theme[] @relation("ThemeProposer")
+  votes              Vote[]
+  proposedThemes     Theme[] @relation("ThemeProposer")
   rapporteuredThemes Theme[] @relation("ThemeRapporteur")
 
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([source, externalRef])
   @@index([type])
@@ -162,49 +176,49 @@ model PublicAgent {
 
 /// A political theme (bill, amendment, law, etc.) citizens and agents vote on.
 model Theme {
-  id          String       @id @default(cuid())
-  kid         String       @unique
-  name        String
-  summary     String       @default("")
+  id           String       @id @default(cuid())
+  kid          String       @unique
+  name         String
+  summary      String       @default("")
   // Long-form explanation (≥2 paragraphs) shown on the theme detail page.
-  description String       @default("")
+  description  String       @default("")
   // Three perspectives on the theme: { right, center, left } (strings).
-  viewpoints  Json?
-  scope       Scope        @default(NATIONAL)
-  state       String?
+  viewpoints   Json?
+  scope        Scope        @default(NATIONAL)
+  state        String?
   municipality String?
-  status      EntityStatus @default(ACTIVE)
+  status       EntityStatus @default(ACTIVE)
 
   // Positioning dimensions: { economic: -1..1, social: -1..1, ... } weights used by
   // the political positioning index. Provisional model (CLAUDE.md §11).
-  dimensions  Json?
+  dimensions Json?
 
   // ── Official legislative metadata (imported; null for manual themes) ───────
   /// Official short identifier, e.g. "PL 3085/2026".
-  identifier  String?
-  house       House?
+  identifier      String?
+  house           House?
   /// Public page for the bill on the source's own site.
-  externalUrl String?
+  externalUrl     String?
   /// Current procedural situation, verbatim from the source
   /// (Câmara `statusProposicao.descricaoSituacao`, Senado `situacaoAtual`).
-  situation   String?
+  situation       String?
   /// Urgency/priority regime, verbatim from the source
   /// (Câmara `statusProposicao.regime`, e.g. "Urgência (Art. 155, RICD)").
-  urgency     String?
+  urgency         String?
   /// Normalized 0–100 priority rank derived from urgency + situation + recency.
   /// See `src/lib/domain/priority.ts`. Recomputed on every import.
-  priority    Int          @default(0)
+  priority        Int       @default(0)
   /// Official subject classification:
   /// `[{ code, label, hierarchy?, relevance }]` — Câmara `proposicoes/{id}/temas`
   /// (`relevance` 1 = main subject) and Senado `processo.classificacoes`.
   classifications Json?
   /// Source-provided indexing keywords, used for search and AI enrichment.
-  keywords    String?
+  keywords        String?
   /// Whether the bill is still moving through the house (`tramitando`).
-  inProgress  Boolean      @default(true)
-  presentedAt DateTime?
+  inProgress      Boolean   @default(true)
+  presentedAt     DateTime?
   /// Timestamp of the last official action, used for recency ranking.
-  lastActionAt DateTime?
+  lastActionAt    DateTime?
 
   // ── Authorship (imported) ──────────────────────────────────────────────────
   /// The parliamentarian who proposed the bill, when the author is one.
@@ -221,29 +235,29 @@ model Theme {
   // ── AI-generated plain language (CLAUDE.md §4) ─────────────────────────────
   /// Short headline in plain Portuguese. The official `name`/`summary` are never
   /// overwritten — this is an additional, clearly-attributed layer.
-  plainTitle   String?
+  plainTitle       String?
   /// Two or three sentences explaining what the bill does and whom it affects.
-  plainSummary String?
+  plainSummary     String?
   /// Model that produced the fields above, for provenance and re-runs.
-  aiModel      String?
-  aiUpdatedAt  DateTime?
+  aiModel          String?
+  aiUpdatedAt      DateTime?
   /// Where `dimensions` came from: "AI" (generated) or "EDITOR" (human-set).
   /// An editor's tagging is never overwritten by a later AI pass.
   dimensionsSource String?
 
   // Denormalized vote tallies for fast "temperature" display.
-  yesCount    Int          @default(0)
-  noCount     Int          @default(0)
-  absCount    Int          @default(0)
+  yesCount Int @default(0)
+  noCount  Int @default(0)
+  absCount Int @default(0)
 
   source      ImportSource @default(MANUAL)
   externalRef String?
 
-  articles    Article[]
-  votes       Vote[]
+  articles Article[]
+  votes    Vote[]
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([source, externalRef])
   @@index([status])
@@ -257,20 +271,20 @@ model Theme {
 
 /// Source article attached to a Theme. AI enrichment reads it to grow the summary.
 model Article {
-  id          String       @id @default(cuid())
-  kid         String       @unique
+  id          String  @id @default(cuid())
+  kid         String  @unique
   title       String?
   originalUrl String
   downloadUrl String?
 
-  themeId     String
-  theme       Theme        @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  themeId String
+  theme   Theme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
 
   source      ImportSource @default(MANUAL)
   externalRef String?
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([source, externalRef])
   @@index([themeId])
@@ -279,34 +293,34 @@ model Article {
 /// A vote on a Theme by either a citizen (User) or a PublicAgent.
 /// One vote per CPF per Theme is enforced via @@unique([cpfHash, themeId]).
 model Vote {
-  id          String       @id @default(cuid())
-  value       VoteValue
-  voterType   VoterType
+  id        String    @id @default(cuid())
+  value     VoteValue
+  voterType VoterType
 
-  themeId     String
-  theme       Theme        @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  themeId String
+  theme   Theme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
 
   // Citizen vote: linked by user + cpfHash (no plaintext CPF).
-  userId      String?
-  user        User?        @relation(fields: [userId], references: [id])
-  cpfHash     String?
+  userId  String?
+  user    User?   @relation(fields: [userId], references: [id])
+  cpfHash String?
 
   // Agent vote.
-  agentId     String?
-  agent       PublicAgent? @relation(fields: [agentId], references: [id])
+  agentId String?
+  agent   PublicAgent? @relation(fields: [agentId], references: [id])
 
   /// When the roll call actually happened (agent votes only). Distinct from
   /// `createdAt`, which is when WE imported it.
-  occurredAt  DateTime?
+  occurredAt DateTime?
   /// Source identifier of the roll call this vote belongs to (Câmara votação id,
   /// Senado `codigoSessaoVotacao`). Internal only — never exposed (CLAUDE.md §5).
-  sessionRef  String?
+  sessionRef String?
 
   source      ImportSource @default(MANUAL)
   externalRef String?
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // One citizen vote per CPF per theme.
   @@unique([cpfHash, themeId])
@@ -320,22 +334,67 @@ model Vote {
 
 /// Citizen / voter. Minimal PII: only first/last name in clear (CLAUDE.md §5).
 model User {
-  id           String   @id @default(cuid())
-  kid          String   @unique
-  firstName    String
-  lastName     String
+  id        String @id @default(cuid())
+  kid       String @unique
+  firstName String
+  lastName  String
 
   cpfEncrypted String
-  cpfHash      String   @unique
+  cpfHash      String @unique
   cpfPrefix    String
 
+  /// Birth YEAR only — never the full date. The registry answers with the whole
+  /// date, but the year is all the platform needs (age gate, anonymized
+  /// demographics), and storing less is the rule (CLAUDE.md §5).
+  birthYear             Int?
+  /// When the CPF was last confirmed against the official registry.
+  cpfVerifiedAt         DateTime?
+  /// Which registry answered (`infosimples`, `serpro`, `mock`). Audit trail:
+  /// a citizen verified against the mock provider is not verified at all.
+  cpfVerificationSource String?
+
+  /// When the citizen gave the specific, highlighted consent to have their
+  /// votes (an "opinião política" — sensitive data under LGPD art. 5º, II)
+  /// processed. Stored because art. 8º, §2 puts the burden of proving consent
+  /// on the controller: an unprovable consent is no consent. Null means the
+  /// account predates the requirement or the consent was revoked.
+  politicalConsentAt DateTime?
+
   // Bumped on each vote to invalidate cached alignment indexes.
-  voteVersion  Int      @default(0)
+  voteVersion Int @default(0)
 
-  votes        Vote[]
+  votes          Vote[]
+  socialAccounts SocialAccount[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A social identity bound to a citizen.
+///
+/// Rows are only ever written once a CPF has been confirmed, so an abandoned
+/// sign-up leaves nothing behind. Several rows may point at one User: linking
+/// Google and Apple to the same CPF is the same citizen, not two.
+///
+/// `subject` is the provider's `sub` claim — an internal dedup key exactly like
+/// `externalRef` on imported records, and never exposed (CLAUDE.md §5). No
+/// e-mail is stored: the provider hands one over, and keeping it would put a
+/// second identifier beyond the name into a leak.
+model SocialAccount {
+  id       String         @id @default(cuid())
+  provider SocialProvider
+  /// Provider-scoped `sub`. Opaque and stable per (provider, app).
+  subject  String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  lastLoginAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([provider, subject])
+  @@index([userId])
 }
 
 /// Backend administrator (separate auth from citizens).
@@ -351,25 +410,25 @@ model Administrator {
   imageUrl     String?
   status       EntityStatus @default(ACTIVE)
 
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
 }
 
 /// History log: one row per import execution, successful or not.
 model ImportRun {
-  id          String       @id @default(cuid())
-  source      ImportSource
+  id            String       @id @default(cuid())
+  source        ImportSource
   /// Registered job name that produced this run, e.g. "camara:votes"
   /// (null for legacy/ad-hoc runs).
-  job         String?
-  startedAt   DateTime     @default(now())
-  finishedAt  DateTime?
-  itemsSeen   Int          @default(0)
-  itemsUpserted Int        @default(0)
-  ok          Boolean      @default(false)
-  note        String?
+  job           String?
+  startedAt     DateTime     @default(now())
+  finishedAt    DateTime?
+  itemsSeen     Int          @default(0)
+  itemsUpserted Int          @default(0)
+  ok            Boolean      @default(false)
+  note          String?
 
   @@index([source])
   @@index([job, startedAt])
@@ -380,20 +439,20 @@ model ImportRun {
 /// job concurrently: a run claims the job by setting `runningSince`, and a stale
 /// claim older than the lease is reclaimable (see `src/lib/integration/runner.ts`).
 model SyncJob {
-  id             String    @id @default(cuid())
+  id                String    @id @default(cuid())
   /// Registered job name, e.g. "camara:agents".
-  name           String    @unique
+  name              String    @unique
   /// Set while a run holds the lock; null when idle.
-  runningSince   DateTime?
-  lastStartedAt  DateTime?
-  lastFinishedAt DateTime?
-  lastOk         Boolean   @default(false)
-  lastNote       String?
-  lastItemsSeen  Int       @default(0)
-  lastItemsUpserted Int    @default(0)
+  runningSince      DateTime?
+  lastStartedAt     DateTime?
+  lastFinishedAt    DateTime?
+  lastOk            Boolean   @default(false)
+  lastNote          String?
+  lastItemsSeen     Int       @default(0)
+  lastItemsUpserted Int       @default(0)
   /// Resume cursor for incremental jobs (e.g. the last synced date).
-  watermark      String?
+  watermark         String?
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -84,9 +84,11 @@ openssl rand -base64 24   # POSTGRES_PASSWORD
 
 Set at minimum in `.env.production`:
 `AUTH_SECRET`, `CPF_ENC_KEY`, `CPF_HMAC_KEY`, `POSTGRES_PASSWORD`,
-`APP_URL` (e.g. `https://votto.online`), `DOMAIN` (e.g. `votto.online`),
-`GOVBR_REDIRECT_URI` (`https://votto.online/api/auth/govbr/callback`).
-Optional: `ANTHROPIC_API_KEY` (AI summary), real `GOVBR_*` for production login.
+`APP_URL` (e.g. `https://votto.online`), `DOMAIN` (e.g. `votto.online`).
+Every social callback URL is derived from `APP_URL`, so it must be exact.
+For real citizen login also set `SOCIAL_MODE=real`, the credentials of at least
+one provider (`GOOGLE_*`, `APPLE_*`, `FACEBOOK_*`) and `CPF_VALIDATION_PROVIDER`
++ `INFOSIMPLES_TOKEN`. Optional: `ANTHROPIC_API_KEY` (AI summary).
 
 > **Google Analytics** is *not* set here. `GA_MEASUREMENT_ID` is declared in
 > `docker-compose.prod.yml` (a measurement id is public — it ships in the HTML),
@@ -237,14 +239,23 @@ Because the app reads everything from env vars, each step is just changing a URL
 
 ## Production notes
 
-- **gov.br login:** the dev mock (`GOVBR_MODE=mock`) must NOT be used in
-  production. Register the app with gov.br, set `GOVBR_MODE=real` and the real
-  `GOVBR_CLIENT_ID/SECRET/ISSUER/REDIRECT_URI`. The callback route refuses the
-  mock form submission whenever the mode is not `mock`, so a half-finished
-  switch fails closed. Onboarding steps: [integracao.md](integracao.md#govbr).
+- **Provider credentials:** the click-by-click setup for Google, Meta and Apple,
+  with every console URL, is in
+  [login-social-passo-a-passo.md](login-social-passo-a-passo.md).
+- **Citizen login:** the dev mock (`SOCIAL_MODE=mock`) must NOT be used in
+  production — it mints an identity from a form. Set `SOCIAL_MODE=real` and each
+  provider's credentials; the callback refuses the mock submission whenever the
+  mode is not `mock`, and `/dev-idp` 404s, so a half-finished switch fails
+  closed. Onboarding steps: [integracao.md](integracao.md#login).
+- **CPF registry:** `CPF_VALIDATION_PROVIDER=mock` accepts ANY structurally
+  valid CPF. Leaving it in production means every account is unverified — the
+  one-vote-per-citizen guarantee is gone, silently. Set `infosimples` with a
+  funded token before opening login. `User.cpfVerificationSource` records which
+  registry answered, so accounts created under the mock stay identifiable.
 - **Source contract check:** run `npm run check:sources` after a deploy. It hits
-  the Câmara/Senado/gov.br endpoints and fails loudly if a payload shape changed
-  — neither house versions its open data. It touches no database.
+  the Câmara/Senado endpoints plus the social providers' OIDC documents and
+  fails loudly if a shape changed — neither house versions its open data, and
+  the provider endpoints are hardcoded. It touches no database.
 - **Admin password:** change the seeded admin password immediately.
 - **Secrets:** keep `.env.production` off git (already gitignored) and back up
   `CPF_ENC_KEY` securely (e.g. AWS Secrets Manager).

@@ -11,7 +11,8 @@ a visão completa, modelo de dados e convenções.
 - **Redis** (cache do índice de alinhamento; opcional — degrada graciosamente).
 - **Tailwind CSS v4** — design system navy + verde colonial.
 - **Anthropic Claude** — enriquecimento de resumo de temas (opcional, via env).
-- Auth: cidadão via **gov.br** (mock em dev); admin via email + senha.
+- Auth: cidadão via **login social** (Apple, Google, Meta) + confirmação de CPF
+  no registro oficial (mock em dev); admin via email + senha.
 
 ## Pré-requisitos
 
@@ -49,8 +50,12 @@ npm run dev               # http://localhost:3100
 - **Site público:** http://localhost:3100
 - **Backend admin:** http://localhost:3100/admin
   - Login (do seed): `admin@votto.gov.br` / `Votto@2026`
-- **Login de cidadão (gov.br):** em produção, OIDC real (`GOVBR_MODE=real`). Em desenvolvimento, clique em *Entrar* → *Entrar com gov.br*. No ambiente de
-  simulação (`/dev-idp`) escolha uma identidade de teste ou informe nome + um CPF válido.
+- **Login de cidadão (Apple / Google / Meta):** duas etapas — o provedor social
+  autentica a conta, e o CPF é confirmado no registro oficial (`/entrar/cpf`).
+  Em produção, OIDC real (`SOCIAL_MODE=real` + credenciais de cada provedor).
+  Em desenvolvimento, clique em *Entrar* e escolha qualquer provedor: o
+  simulador em `/dev-idp` devolve uma conta de teste, e o provedor `mock` de CPF
+  aceita qualquer CPF estruturalmente válido.
 
 ## Dados oficiais (Câmara / Senado)
 
@@ -67,7 +72,7 @@ npm run check:sources                   # confere os contratos das APIs (não to
 ```
 
 Painel operacional em `/admin/sincronizacao`. Detalhes — jobs, urgência/classificação,
-gatilho HTTP e onboarding do gov.br — em [`docs/integracao.md`](docs/integracao.md).
+gatilho HTTP e onboarding dos provedores sociais — em [`docs/integracao.md`](docs/integracao.md).
 
 ## Scripts
 
@@ -102,14 +107,15 @@ gatilho HTTP e onboarding do gov.br — em [`docs/integracao.md`](docs/integraca
 src/
   app/(public)/      # site público (home, login, agentes, temas, voto)
   app/(admin)/admin/ # backend (login, dashboard, CRUDs)
-  app/api/auth/      # gov.br (OIDC real + mock) + admin
+  app/api/auth/      # login social (OIDC real + mock) + admin
   app/api/cron/      # gatilho HTTP das sincronizações (CRON_SECRET)
-  app/dev-idp/       # provedor gov.br simulado (dev)
+  app/dev-idp/       # provedor social simulado (dev)
   lib/               # db, redis, auth, crypto/cpf, indexes, ai, integration, dto
   components/         # ui (design system), public, admin
 prisma/              # schema.prisma, seed.ts
 scripts/             # sync.ts (CLI), worker.ts (agendador), check-sources.ts
 docs/design.md       # design system ("papel & pigmento"): tokens, tipografia, padrões
-docs/integracao.md   # integração com as fontes oficiais + gov.br
+docs/integracao.md   # integração com as fontes oficiais + login social e CPF
+docs/login-social-passo-a-passo.md  # cadastro no Google/Meta/Apple, clique a clique
 docs/migrations/     # SQL do schema (execução manual)
 ```

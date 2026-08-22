@@ -215,7 +215,7 @@ export default async function ThemeDetailPage({
                 <p className="mt-1 text-sm leading-snug text-[var(--color-muted)]">
                   {isAuthenticated
                     ? "Sua escolha entra no cálculo do seu alinhamento com agentes e partidos."
-                    : "Entre com o gov.br para registrar o seu voto neste tema."}
+                    : "Entre para registrar o seu voto neste tema."}
                 </p>
                 <VoteButtons
                   className="mt-4"

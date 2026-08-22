@@ -3,9 +3,9 @@
 /**
  * Citizen authentication server actions for the public area.
  *
- * Login itself is performed via an official identity provider (mock gov.br in the
- * dev IdP) through the `/api/auth/govbr/*` routes; this module only exposes the
- * logout action used by the public layout.
+ * Login itself runs through `/api/auth/social/*` (a social provider, then the
+ * CPF confirmation at `/entrar/cpf`); this module only exposes the logout
+ * action used by the public layout.
  */
 import { redirect } from "next/navigation";
 import { clearCitizenSession } from "@/lib/auth/session";

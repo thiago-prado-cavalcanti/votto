@@ -76,11 +76,25 @@ async function setSession(cookieName: string, payload: SessionPayload): Promise<
   });
 }
 
-async function readSession<T extends SessionPayload>(cookieName: string): Promise<T | null> {
+/**
+ * Read a session cookie, rejecting anything that is not the expected kind.
+ *
+ * The check is not decoration. Every token the app signs — admin session,
+ * citizen session, pending sign-up (`./pending.ts`) — uses the same secret, so
+ * without it a valid token of one kind dropped into another's cookie would
+ * verify and be cast to the wrong shape: a pending token in the citizen cookie
+ * would read as a citizen with an undefined `userKid`.
+ */
+async function readSession<T extends SessionPayload>(
+  cookieName: string,
+  kind: T["kind"],
+): Promise<T | null> {
   const store = await cookies();
   const token = store.get(cookieName)?.value;
   if (!token) return null;
-  return verify<T>(token);
+
+  const payload = await verify<T>(token);
+  return payload?.kind === kind ? payload : null;
 }
 
 async function clearSession(cookieName: string): Promise<void> {
@@ -91,11 +105,11 @@ async function clearSession(cookieName: string): Promise<void> {
 // ─── Admin ───────────────────────────────────────────────────────────────────
 
 export const setAdminSession = (s: AdminSession) => setSession(ADMIN_COOKIE, s);
-export const getAdminSession = () => readSession<AdminSession>(ADMIN_COOKIE);
+export const getAdminSession = () => readSession<AdminSession>(ADMIN_COOKIE, "admin");
 export const clearAdminSession = () => clearSession(ADMIN_COOKIE);
 
 // ─── Citizen ─────────────────────────────────────────────────────────────────
 
 export const setCitizenSession = (s: CitizenSession) => setSession(CITIZEN_COOKIE, s);
-export const getCitizenSession = () => readSession<CitizenSession>(CITIZEN_COOKIE);
+export const getCitizenSession = () => readSession<CitizenSession>(CITIZEN_COOKIE, "citizen");
 export const clearCitizenSession = () => clearSession(CITIZEN_COOKIE);

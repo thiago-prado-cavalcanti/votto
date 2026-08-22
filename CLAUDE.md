@@ -143,7 +143,12 @@ Position users, public agents and parties on the classic left↔right political 
   original article, foreign key to Theme.
 - **Vote** — a vote on a Theme. Value: abstention / yes / no. Cast by a **User** or a **PublicAgent**.
   Unique: **one vote per CPF per Theme**.
-- **User** — citizen / voter. Fields: first name, last name, CPF (encrypted, see §5).
+- **User** — citizen / voter. Fields: first name, last name, CPF (encrypted, see §5), birth
+  **year** only (age gate + anonymized demographics; the full date is never stored), and the
+  verification trail `cpfVerifiedAt` / `cpfVerificationSource`.
+- **SocialAccount** — a social identity (`provider` + the provider's `sub`) bound to a User. Many
+  per User: linking Google and Apple to one CPF is one citizen, not two. Written only once a CPF
+  has been confirmed. `subject` is internal, exactly like `externalRef` (§5).
 - **Administrator** — backend login. Fields: first name, last name, email, mobile, password (hashed),
   role, image.
 
@@ -180,19 +185,40 @@ Position users, public agents and parties on the classic left↔right political 
 
 ### Authentication
 
-- **Users cannot create accounts.** No sign-up flow, no stored credentials.
-- Users log in **only via gov.br** (Login Único, OIDC authorization-code + PKCE), which already
-  pre-verifies the CPF. Implementation: `src/lib/auth/govbr.ts`; identity reaches the database only
-  through `signInCitizen` (`src/lib/auth/citizen-login.ts`), which owns the CPF privacy rules.
-- We rely on the provider's validated name + CPF (the `sub` claim); we never collect or verify CPF
-  ourselves. Identity is always read from the **signature-verified** id_token, never the query string.
-- **Bank identity is reached through gov.br, not directly.** Brazilian banks expose no public
-  identity API — each would need a bilateral commercial agreement. Validating an account at a
-  credentialed bank is what grants the gov.br **selo prata**, so `GOVBR_MIN_TRUST=prata` is how
-  bank-grade identity is enforced. A future bank IdP plugs in as another provider behind
-  `signInCitizen`.
-- A development-only mock IdP (`/dev-idp`) exists for local work; the callback refuses its form
-  submission whenever `GOVBR_MODE != mock`, so a half-finished production switch fails closed.
+Citizen sign-in is **two steps**, because neither one is sufficient alone:
+
+1. **Social provider** — Apple, Google or Meta (OIDC authorization-code + PKCE). Proves the person
+   controls that account; says nothing about who they are in Brazil. One client
+   (`src/lib/auth/social/oidc.ts`) driven by a registry (`src/lib/auth/social/providers.ts`).
+2. **Official CPF registry** — the citizen types CPF + birth date and
+   `src/lib/identity/validation.ts` confirms the pair against the Receita Federal.
+
+Identity reaches the database only through `signInCitizen`
+(`src/lib/auth/citizen-login.ts`), which owns the CPF privacy rules, and identity is always read
+from the **signature-verified** id_token, never the query string.
+
+- **Users cannot create passwords.** No credential sign-up, nothing to steal.
+- **gov.br is not available and its code was removed.** Login Único would be the better door — it
+  hands over an already-verified CPF — but it is granted only to public institutions on `.gov.br`
+  domains. It was deleted rather than left dormant: its mock callback minted a session from a form
+  and defaulted to `mock`, which is an authentication bypass waiting on a misconfigured deploy.
+- **Be honest about the assurance this buys.** It establishes that the CPF is real and regular —
+  which is what stops votes cast under generated numbers. It does **not** establish possession:
+  someone who knows a relative's CPF and birthday passes. This is the accepted starting position
+  until a stronger binding exists; `User.cpfVerificationSource` records which registry answered, so
+  accounts created under a weak (or `mock`) rule stay identifiable afterwards.
+- **A Pix of R$0,01** would anchor identity to a bank account (the bank returns a verified name and
+  a masked CPF). Evaluated and deferred — sending someone into their banking app mid-signup
+  collapses conversion. It remains the most likely next step.
+- **No e-mail is stored** even though every provider offers one: it would put a second identifier
+  beyond the name into a leak.
+- **Nothing is written before the CPF confirms.** The social identity waits in a signed, httpOnly
+  cookie (`src/lib/auth/pending.ts`), which also carries an attempt counter — each attempt is a paid
+  registry lookup, so the cap guards the budget as much as it guards against brute force.
+- **Bank identity has no direct path.** Brazilian banks expose no public identity API; each would
+  need a bilateral commercial agreement. A future bank IdP plugs in as another `ProviderConfig`.
+- A development-only mock IdP (`/dev-idp`) stands in for every provider; it 404s and the callback
+  refuses its form whenever `SOCIAL_MODE != mock`, so a half-finished production switch fails closed.
 - **Administrators** authenticate with email + hashed password (separate from citizen auth).
 
 ### Internal IDs must never leave the system (global rule)
@@ -246,7 +272,8 @@ Each method **must have a description** (doc comment). Required operations:
   user for manual execution per the global DB rule.
 - **Cache / index acceleration:** Redis (alignment-index caching, hot themes).
 - **AI step:** Claude (latest model) for incremental theme-summary enrichment from uploaded articles.
-- **Auth:** OIDC client for **gov.br** (citizens); credential + session auth for administrators.
+- **Auth:** one OIDC client serving Apple / Google / Meta (citizens), followed by CPF
+  confirmation against the official registry; credential + session auth for administrators.
 - **Sync worker:** a separate long-running container running the weekly official-source jobs
   (`scripts/worker.ts`) plus a one-off historical loader (`scripts/backfill.ts`), kept out of the web process so multi-minute imports never compete with
   request handling and a redeploy doesn't interrupt a running import.
@@ -441,10 +468,16 @@ be), but the reference is a printed record, not a fintech app.
   (`Theme.classifications`) is the obvious input to automate this — currently unused by the
   positioning index.
 - Tune the **priority** weights in `src/lib/domain/priority.ts` against real editorial judgement.
-- **gov.br credentials:** obtain `client_id`/`client_secret` for staging then production, and
-  register the exact `redirect_uri` (see `docs/integracao.md`). Nothing else blocks real login.
-  Note gov.br's discovery document does not advertise `code_challenge_methods_supported`, hence the
-  `GOVBR_PKCE` toggle.
+- **Provider credentials:** register the app with Google, Apple and Meta and fill the `.env`
+  (click-by-click: `docs/login-social-passo-a-passo.md`; rationale: `docs/integracao.md` §5). Google is the cheapest to get working and has the widest reach —
+  start there. Apple needs a paid account and an https callback (it refuses http, even on
+  localhost), so it needs a tunnel to test locally.
+- **CPF registry contract:** `CPF_VALIDATION_PROVIDER=mock` accepts any well-formed CPF, so login
+  is not really verified until an Infosimples token is funded (~R$0,24/lookup, R$100/month floor).
+  Nothing else blocks real login.
+- **A real proof of CPF possession.** What ships is CPF + birth date against the registry, which
+  proves the CPF is real but not that it is the person's. The Pix of R$0,01 is the deferred
+  candidate; revisit before the platform's numbers are quoted as representative.
 - Confirm hosting choice (Fly.io `gru` vs AWS `sa-east-1`).
 - Which state/municipal bodies expose open data, and whether the AI enrichment step (§4) should run
   on the newly imported bills (it is not wired into the importers yet).

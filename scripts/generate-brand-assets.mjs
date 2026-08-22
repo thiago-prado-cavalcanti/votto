@@ -30,6 +30,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const publicDir = join(root, "public");
 const appDir = join(root, "src", "app");
+const brandDir = join(root, "brand");
 
 // Brand palette (mirrors src/app/globals.css — "papel & pigmento", docs/design.md).
 const PINHO = "#183a33";
@@ -178,6 +179,29 @@ async function png(svg, size, outPath) {
   console.log("✓", outPath.replace(root + "/", ""));
 }
 
+/**
+ * Icon for the identity providers' consent screens (Meta requires 1024×1024;
+ * Google's OAuth branding wants ~120×120).
+ *
+ * Two departures from the PWA icons, both deliberate:
+ *
+ *   - **The serif V, not the radar petal.** The petal sits on warm paper, and
+ *     warm paper on the white chrome of a consent dialog reads as a missing
+ *     image. The pinho tile carries its own contrast, which is the whole reason
+ *     that form exists (see faviconSvg above).
+ *   - **Square and flattened.** Every platform masks the tile itself, so a
+ *     pre-rounded corner gets rounded twice; and Meta rejects transparency, so
+ *     the alpha channel is composited away rather than merely unused.
+ */
+async function providerIcon(size, outPath) {
+  await sharp(Buffer.from(faviconSvg(size, { radius: 0 })))
+    .resize(size, size)
+    .flatten({ background: PINHO })
+    .png()
+    .toFile(outPath);
+  console.log("✓", outPath.replace(root + "/", ""));
+}
+
 async function main() {
   await mkdir(publicDir, { recursive: true });
 
@@ -196,6 +220,13 @@ async function main() {
   // Social / share image
   await sharp(Buffer.from(ogSvg())).png().toFile(join(appDir, "opengraph-image.png"));
   console.log("✓ src/app/opengraph-image.png");
+
+  // Consent-screen icons for Apple / Google / Meta. They live in brand/ rather
+  // than public/ because nothing on the site serves them — they are uploaded by
+  // hand to each console (docs/login-social-passo-a-passo.md).
+  await mkdir(brandDir, { recursive: true });
+  await providerIcon(1024, join(brandDir, "app-icon-1024.png"));
+  await providerIcon(120, join(brandDir, "app-icon-120.png"));
 }
 
 main().catch((err) => {

@@ -1,29 +1,31 @@
 /**
- * Citizen login page. Login is only available through gov.br, the official
- * identity provider that has already verified the citizen's CPF.
+ * Citizen login page.
  *
- * Bank identity is reached through gov.br itself: validating an account at a
- * credentialed bank is what raises it to the "selo prata", and `GOVBR_MIN_TRUST`
- * can require that seal. Votto never talks to a bank directly.
+ * Entry is by social provider (Apple, Google, Meta), followed by a CPF
+ * confirmation against the official registry. gov.br would be the better door
+ * — it hands over a CPF it has already verified — but Login Único is granted
+ * only to public bodies on `.gov.br` domains, so it is not available to Votto.
+ *
+ * The page says what the two steps buy and what they do not, because a citizen
+ * about to hand over a CPF is owed that.
  */
 import type { Metadata } from "next";
-import { Container, Card, CardBody, ButtonLink } from "@/components/ui";
+import { Container, Card, CardBody } from "@/components/ui";
 import { Reveal } from "@/components/public/motion";
-import { env, isGovbrConfigured } from "@/lib/env";
+import { SocialButtons } from "@/components/public/SocialButtons";
+import { availableButtons } from "@/lib/auth/social/providers";
 
 export const metadata: Metadata = {
   title: "Entrar",
 };
 
-/** User-facing explanation for each failure the callback can redirect with. */
+/** User-facing explanation for each failure a callback can redirect with. */
 const ERROR_MESSAGES: Record<string, string> = {
   state: "Sessão de login inválida ou expirada. Tente novamente.",
   expired: "O login demorou demais para ser concluído. Tente novamente.",
-  denied: "Autorização cancelada no gov.br.",
-  trust:
-    "Sua conta gov.br ainda não tem o nível de confiabilidade exigido. " +
-    "Valide-a em um banco credenciado ou pelo aplicativo gov.br e tente novamente.",
-  provider: "Não foi possível falar com o gov.br agora. Tente novamente em instantes.",
+  denied: "Autorização cancelada.",
+  not_configured: "Esta forma de entrada ainda não está disponível. Tente outra.",
+  provider: "Não foi possível falar com o provedor agora. Tente novamente em instantes.",
 };
 
 export default async function LoginPage({
@@ -33,11 +35,7 @@ export default async function LoginPage({
 }) {
   const { error } = await searchParams;
   const message = error ? ERROR_MESSAGES[error] ?? ERROR_MESSAGES.provider : null;
-
-  // Production before the gov.br credentials arrive: the authorization route
-  // answers 501, so showing the button would send a visitor to a raw JSON
-  // error. Say plainly that login is not open yet instead.
-  const loginAvailable = env.govbr.mode === "mock" || isGovbrConfigured();
+  const loginAvailable = availableButtons().length > 0;
 
   return (
     <Container className="py-16">
@@ -45,13 +43,11 @@ export default async function LoginPage({
         <Card>
           <CardBody className="flex flex-col gap-5">
             <div>
-              <h1 className="text-[1.9rem] leading-tight text-navy-900">
-                Entrar no Votto
-              </h1>
+              <h1 className="text-[1.9rem] leading-tight text-navy-900">Entrar no Votto</h1>
               <p className="mt-2 text-sm text-[var(--color-muted)]">
-                O acesso é feito exclusivamente pelo gov.br, que verifica o seu CPF
-                previamente. Assim garantimos um voto por cidadão sem que o Votto
-                precise validar documentos.
+                Entre com uma conta que você já tem. Em seguida confirmamos o seu CPF
+                no registro oficial da Receita Federal — é o que garante um voto por
+                cidadão.
               </p>
             </div>
 
@@ -65,32 +61,32 @@ export default async function LoginPage({
             ) : null}
 
             {loginAvailable ? (
-              <ButtonLink href="/api/auth/govbr/start" size="lg" className="w-full">
-                Entrar com gov.br
-              </ButtonLink>
+              <SocialButtons />
             ) : (
               <div className="rounded-card border border-line bg-canvas px-4 py-3.5">
                 <p className="text-sm font-semibold text-navy-900">
-                  A entrada pelo gov.br ainda não está aberta.
+                  A entrada ainda não está aberta.
                 </p>
                 <p className="mt-1 text-sm text-[var(--color-muted)]">
-                  O credenciamento junto ao gov.br está em andamento. Enquanto isso
-                  você pode navegar por todos os temas, agentes públicos e partidos —
-                  só o voto depende do login.
+                  Enquanto isso você pode navegar por todos os temas, agentes públicos
+                  e partidos — só o voto depende do login.
                 </p>
               </div>
             )}
 
-            <p className="text-xs leading-relaxed text-[var(--color-muted)]">
-              Tem conta em um banco credenciado? Ela eleva o nível da sua conta
-              gov.br (selo prata) e serve para entrar aqui — o login continua sendo
-              feito pelo gov.br.
-            </p>
-
-            <p className="text-xs leading-relaxed text-[var(--color-muted)]">
-              Nenhum dado além do seu nome é armazenado. O CPF é usado apenas para
-              garantir a unicidade do voto e fica criptografado, nunca exposto.
-            </p>
+            <div className="border-t border-line pt-4">
+              <p className="text-xs leading-relaxed text-[var(--color-muted)]">
+                <span className="font-semibold text-navy-800">Por que pedimos o CPF.</span>{" "}
+                Uma conta social prova que você controla aquela conta, não quem você é.
+                O CPF é o identificador único nacional: sem ele, um mesmo eleitor
+                poderia votar quantas vezes quisesse criando contas novas.
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-[var(--color-muted)]">
+                Nenhum dado além do seu nome é armazenado. O CPF é guardado
+                criptografado, usado apenas para garantir a unicidade do voto, e nunca
+                é exposto. Seu voto é sempre anônimo.
+              </p>
+            </div>
           </CardBody>
         </Card>
       </Reveal>

@@ -27,7 +27,33 @@ import { describeSchedule, formatZoned, nextOccurrence } from "@/lib/integration
 
 const CAMARA = "https://dadosabertos.camara.leg.br/api/v2";
 const SENADO = "https://legis.senado.leg.br/dadosabertos";
-const GOVBR_ISSUERS = ["https://sso.staging.acesso.gov.br", "https://sso.acesso.gov.br"];
+/**
+ * The social providers' OIDC surfaces. These endpoints are hardcoded in
+ * `src/lib/auth/social/providers.ts` rather than discovered, so this check is
+ * what notices a provider moving one.
+ */
+const SOCIAL_PROVIDERS = [
+  {
+    label: "Google",
+    discovery: "https://accounts.google.com/.well-known/openid-configuration",
+    expect: {
+      issuer: "https://accounts.google.com",
+      authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+      token_endpoint: "https://oauth2.googleapis.com/token",
+      jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+    },
+  },
+  {
+    label: "Apple",
+    discovery: "https://appleid.apple.com/.well-known/openid-configuration",
+    expect: {
+      issuer: "https://appleid.apple.com",
+      authorization_endpoint: "https://appleid.apple.com/auth/authorize",
+      token_endpoint: "https://appleid.apple.com/auth/token",
+      jwks_uri: "https://appleid.apple.com/auth/keys",
+    },
+  },
+] as const;
 
 /** Câmara's Plenário — the only órgão with nominal votes (see camara.ts). */
 const PLENARY_ORG_ID = 180;
@@ -414,31 +440,53 @@ async function checkSenado(): Promise<void> {
   check("códigos Sim e Não presentes", codes.has("Sim") && codes.has("Não"));
 }
 
-// ─── 5. gov.br ───────────────────────────────────────────────────────────────
+// ─── 5. Provedores sociais ───────────────────────────────────────────────────
 
-async function checkGovbr(): Promise<void> {
-  console.log("\n[5] gov.br — descoberta OIDC");
+async function checkSocialProviders(): Promise<void> {
+  console.log("\n[5] Login social — endpoints OIDC");
 
-  for (const issuer of GOVBR_ISSUERS) {
-    const doc = await get<Row>(`${issuer}/.well-known/openid-configuration`);
-    const authMethods = (doc.token_endpoint_auth_methods_supported ?? []) as string[];
+  for (const provider of SOCIAL_PROVIDERS) {
+    const doc = await get<Row>(provider.discovery);
+
+    for (const [field, expected] of Object.entries(provider.expect)) {
+      check(
+        `${provider.label}: ${field} continua ${expected}`,
+        String(doc[field] ?? "").replace(/\/+$/, "") === expected,
+      );
+    }
+
     const algs = (doc.id_token_signing_alg_values_supported ?? []) as string[];
-    const scopes = (doc.scopes_supported ?? []) as string[];
-
-    check(
-      `${issuer}: authorize, token, userinfo e jwks publicados`,
-      Boolean(doc.authorization_endpoint && doc.token_endpoint && doc.userinfo_endpoint && doc.jwks_uri),
-    );
-    check(
-      `${issuer}: client_secret_basic e RS256 (usados por exchangeCode/verifyIdToken)`,
-      authMethods.includes("client_secret_basic") && algs.includes("RS256"),
-    );
-    check(`${issuer}: escopo govbr_confiabilidades disponível`, scopes.includes("govbr_confiabilidades"));
-    note(
-      `PKCE anunciado: ${JSON.stringify(doc.code_challenge_methods_supported ?? null)} ` +
-        "— não é anunciado, por isso GOVBR_PKCE é configurável",
-    );
+    const pkce = (doc.code_challenge_methods_supported ?? []) as string[];
+    check(`${provider.label}: RS256 ou ES256 no id_token`, algs.some((a) => a === "RS256" || a === "ES256"));
+    check(`${provider.label}: PKCE S256 anunciado`, pkce.includes("S256"));
   }
+
+  // Facebook publishes a discovery document that omits `token_endpoint`, which
+  // is exactly why the endpoints are hardcoded. Check what it does publish.
+  const fb = await get<Row>("https://www.facebook.com/.well-known/openid-configuration");
+  check(
+    "Facebook: issuer continua https://www.facebook.com",
+    String(fb.issuer ?? "") === "https://www.facebook.com",
+  );
+  check(
+    "Facebook: jwks_uri continua .well-known/oauth/openid/jwks",
+    String(fb.jwks_uri ?? "").includes("/.well-known/oauth/openid/jwks"),
+  );
+  note("Facebook não publica token_endpoint na descoberta — por isso os endpoints são fixos.");
+
+  const claims = (fb.claims_supported ?? []) as string[];
+  check(
+    "Facebook: claims de nome disponíveis (given_name/family_name)",
+    claims.includes("given_name") && claims.includes("family_name"),
+  );
+
+  // The token endpoint is unversioned on purpose: Meta expires each Graph API
+  // version after ~2 years, so a pinned version is a login outage with a fuse.
+  const tokenProbe = await fetch("https://graph.facebook.com/oauth/access_token");
+  check(
+    "Facebook: token endpoint sem versão continua respondendo",
+    tokenProbe.status !== 404,
+  );
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
@@ -448,7 +496,7 @@ async function main(): Promise<void> {
   checkScheduling();
   await checkCamara();
   await checkSenado();
-  await checkGovbr();
+  await checkSocialProviders();
 
   console.log(
     failures === 0

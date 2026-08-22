@@ -124,7 +124,7 @@ export default async function PublicLayout({
             variant="fade"
             stagger
             step={110}
-            className="mt-9 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]"
+            className="mt-9 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.3fr_1fr_1fr_1fr]"
           >
             <p className="max-w-sm text-base leading-[1.65] text-navy-300">
               Plataforma de escolhas e alinhamentos, construída sobre dados públicos da
@@ -144,6 +144,14 @@ export default async function PublicLayout({
               <FooterLink href="https://legis.senado.leg.br/dadosabertos" external>
                 Senado Federal
               </FooterLink>
+            </FooterColumn>
+
+            {/* Reachable from every page: Meta and Google both check that the
+                privacy policy URL is linked from the site, not just live. */}
+            <FooterColumn title="Transparência">
+              <FooterLink href="/termos">Termos de Serviço</FooterLink>
+              <FooterLink href="/privacidade">Política de Privacidade</FooterLink>
+              <FooterLink href="/exclusao-de-dados">Excluir meus dados</FooterLink>
             </FooterColumn>
           </Reveal>
         </Container>

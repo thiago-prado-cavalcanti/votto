@@ -253,65 +253,145 @@ inteira — a reconciliação exige pelo menos um registro visto.
 
 ---
 
-## 5. Login gov.br {#govbr}
+## 5. Login do cidadão {#login}
 
-`src/lib/auth/govbr.ts` implementa o fluxo *authorization code* com PKCE contra o
-Login Único, incluindo `state` (CSRF), `nonce` (replay), verificação de assinatura
-do `id_token` pelo JWKS do emissor e leitura do `/userinfo` (que o gov.br devolve
-como JWT assinado, não como JSON).
+Duas etapas, porque nenhuma das duas basta sozinha:
 
-O CPF chega no claim `sub`, já verificado pelo provedor — é exatamente por isso
-que o Votto não coleta nem valida documentos. Dele derivam as três formas
-armazenadas (cifrada, HMAC para deduplicação e prefixo de seis dígitos), e só
-nome e sobrenome ficam em claro.
+1. **Provedor social** (Apple, Google, Meta) prova que a pessoa controla aquela
+   conta — e nada sobre quem ela é no Brasil.
+2. **Registro oficial de CPF** confirma que o CPF digitado existe, está regular e
+   pertence a alguém nascido na data informada.
+
+### Por que não é o gov.br
+
+O Login Único seria a porta certa: entrega o CPF **já verificado** no claim
+`sub`, sem que o Votto precise coletar documento nenhum. Mas o credenciamento é
+concedido apenas a **instituições públicas em domínio `.gov.br`** — o Votto não
+se qualifica. O código do fluxo gov.br foi removido em vez de mantido inerte:
+seu callback de simulação criava sessão a partir de um formulário e o modo
+padrão era `mock`, o que em produção era um bypass de autenticação esperando
+para acontecer.
+
+### O que a verificação garante — e o que não garante
+
+Diga isso em voz alta antes de qualquer decisão de produto:
+
+- **Garante** que o CPF é de uma pessoa real e regular. É o que impede voto com
+  número saído de gerador de CPF, que era a preocupação original.
+- **Não garante posse.** Quem sabe o CPF e o aniversário de um parente passa.
+
+A escolha é consciente e provisória (CLAUDE.md §5). `User.cpfVerificationSource`
+grava qual registro respondeu, então quando existir um vínculo mais forte é
+possível saber exatamente quais contas foram criadas sob a regra fraca. O Pix
+verificador de R$ 0,01 — que ancoraria a identidade na conta bancária — foi
+avaliado e adiado: entrar no app do banco no meio do cadastro derruba a
+conversão.
+
+### Fluxo
+
+```
+/login
+  └─ GET /api/auth/social/{provider}/start
+       state + nonce + PKCE em cookies httpOnly → provedor
+  └─ callback (GET, ou POST form_post na Apple)
+       verifica state, troca o code, valida a assinatura do id_token
+       ├─ (provider, sub) já vinculado → sessão de cidadão → /
+       └─ conta nova → cookie "pending" assinado → /entrar/cpf
+  └─ /entrar/cpf
+       CPF + nascimento → validateCpf() → Receita
+       └─ ok → User (upsert por cpfHash) + SocialAccount → sessão → /
+```
+
+Nada é gravado no banco antes do CPF confirmar. Quem desiste no meio não deixa
+linha nenhuma — coleta mínima vale principalmente para quem não terminou.
+
+O cookie `pending` também carrega o contador de tentativas (máx. 5). Cada
+tentativa é uma consulta paga ao registro (~R$ 0,24), então o limite protege o
+orçamento tanto quanto protege contra força bruta sobre a data de nascimento.
 
 ### Onboarding (feito por você)
 
-1. Solicitar o cadastro do Votto como serviço no gov.br (Login Único) e obter
-   `client_id` / `client_secret` para **staging** e depois para produção.
-2. Registrar a `redirect_uri` exata: `https://votto.online/api/auth/govbr/callback`.
-   Registrar o cliente com `subject_type = public` — o Votto lê o CPF do claim `sub`, e um
-   cadastro `pairwise` devolveria um pseudônimo no lugar dele. Se isso acontecer, o login falha
-   com erro claro (`gov.br não retornou um CPF válido no claim sub`) em vez de gravar lixo.
-3. Preencher no `.env.production`:
-   ```
-   GOVBR_MODE="real"
-   GOVBR_ISSUER="https://sso.acesso.gov.br"      # staging: sso.staging.acesso.gov.br
-   GOVBR_CLIENT_ID="..."
-   GOVBR_CLIENT_SECRET="..."
-   GOVBR_REDIRECT_URI="https://votto.online/api/auth/govbr/callback"
-   ```
-4. Validar em staging antes de virar produção.
+> **Passo a passo de cliques, com as URLs de cada console:**
+> [`docs/login-social-passo-a-passo.md`](login-social-passo-a-passo.md).
+> O resumo abaixo é o porquê; o guia é o como.
 
-> **PKCE:** o documento de descoberta do gov.br **não** anuncia
-> `code_challenge_methods_supported`, embora a documentação de integração
-> descreva PKCE. O envio do desafio fica ligado por padrão (`GOVBR_PKCE=true`) —
-> um servidor que ignore o parâmetro não é afetado. Se o cadastro do cliente
-> rejeitar, use `GOVBR_PKCE=false`; o fluxo continua protegido por `state` e
-> `nonce`.
+Cada callback é derivado de `APP_URL` e precisa ser registrado **exatamente**
+assim, sem barra no final:
 
-### Nível de confiabilidade (e os bancos)
+```
+{APP_URL}/api/auth/social/google/callback
+{APP_URL}/api/auth/social/apple/callback
+{APP_URL}/api/auth/social/facebook/callback
+```
 
-`GOVBR_MIN_TRUST` exige um selo mínimo: `bronze`, `prata` ou `ouro` (vazio =
-qualquer conta gov.br, que já tem CPF verificado).
+**Google** — console.cloud.google.com → APIs & Services → Credentials → OAuth
+client ID → *Web application*. Preencha `GOOGLE_CLIENT_ID` e
+`GOOGLE_CLIENT_SECRET`. É o mais simples dos três e o de maior alcance no
+Brasil; comece por ele.
+
+**Apple** — developer.apple.com, conta paga. Crie um **Services ID** (não o App
+ID) e uma **Key** com *Sign in with Apple* habilitado; baixe o `.p8` (só é
+possível baixar uma vez). Preencha `APPLE_CLIENT_ID` (o Services ID),
+`APPLE_TEAM_ID`, `APPLE_KEY_ID` e `APPLE_PRIVATE_KEY`.
+
+Três particularidades da Apple, todas já tratadas no código:
+
+- O `client_secret` é um **JWT ES256** assinado com o `.p8`, gerado a cada troca
+  de código (`appleClientSecret`), não uma string fixa.
+- A resposta volta como `response_mode=form_post` — um **POST cross-site**. Um
+  cookie `SameSite=Lax` não é enviado nesse caso, então os cookies do fluxo da
+  Apple são `SameSite=None; Secure`. Isso exige **https**: a Apple recusa
+  `http`, inclusive em localhost. Para testar localmente, use um túnel.
+- O nome da pessoa vem **uma única vez**, no campo `user` da primeira
+  autorização. Não é problema aqui: o nome armazenado é o do registro da
+  Receita.
+
+**Meta** — developers.facebook.com → seu app → Facebook Login. Preencha
+`FACEBOOK_CLIENT_ID` e `FACEBOOK_CLIENT_SECRET`.
+
+> **Instagram não tem credencial própria.** O botão do Instagram roda o fluxo do
+> Facebook Login e a conta é gravada como `FACEBOOK`, o que também evita que
+> quem usa os dois botões acabe com duas contas. A Meta desligou a Instagram
+> Basic Display API em **04/12/2024**; a substituta ("Instagram API with
+> Instagram Login") atende só contas Business/Creator e devolve um `username` —
+> nem nome, nem e-mail, nem pessoa. Não existe login de Instagram para conta
+> pessoal.
+
+Os endpoints OIDC dos três são fixos no código (`src/lib/auth/social/providers.ts`)
+em vez de descobertos: pouparia um round trip no caminho crítico para buscar
+três URLs, e a descoberta do Facebook nem publica `token_endpoint`. As chaves de
+assinatura continuam rotacionando livremente — o `jose` busca do `jwksUri`.
+`npm run check:sources` confere esses endpoints contra os documentos oficiais.
+
+### Registro de CPF
+
+`CPF_VALIDATION_PROVIDER` escolhe o adaptador (`src/lib/identity/validation.ts`):
+
+| Provedor | Custo | Exige | Observação |
+| --- | --- | --- | --- |
+| `mock` | — | nada | **Aceita qualquer CPF válido.** Só desenvolvimento. |
+| `infosimples` | ~R$ 0,24/consulta, franquia R$ 100/mês | token | Automatiza o portal da Receita por requisição. Comece aqui. |
+| `serpro` | R$ 0,3557–0,5649/consulta | contrato + e-CNPJ | Canal oficial. Migre quando o volume justificar. |
+
+A regra para admitir qualquer outro provedor está no `.env.example` e é curta:
+ele precisa exigir a **data de nascimento como entrada**. Quem devolve o nome a
+partir do CPF sozinho não está consultando o portal oficial — está lendo de uma
+base armazenada, e integrar isso tornaria o Votto controlador de dados de origem
+ilícita.
+
+> Deixar `mock` em produção significa que nenhuma conta está verificada e a
+> garantia de um voto por cidadão não existe — silenciosamente. É o erro de
+> configuração mais caro possível aqui.
+
+### E os bancos
 
 **Não existe login direto com banco.** Não há API pública de identidade dos
-bancos brasileiros — cada integração exigiria acordo comercial bilateral e
-homologação individual. O caminho real para identidade bancária é o próprio
-gov.br: validar a conta em um **banco credenciado** é justamente o que concede o
-**selo prata**. Portanto:
-
-```
-GOVBR_MIN_TRUST="prata"
-```
-
-exige, na prática, que o cidadão tenha validado sua identidade em um banco
-credenciado (ou por biometria/app gov.br). O login continua sendo feito pelo
-gov.br, e a tela de login explica isso ao cidadão.
-
-Se no futuro um banco expuser um IdP OIDC próprio, ele entra como mais um
-provedor: `signInCitizen` (`src/lib/auth/citizen-login.ts`) já concentra a regra
-de privacidade e não sabe qual provedor a chamou.
+bancos brasileiros — cada integração exigiria acordo comercial bilateral. O
+caminho que existia era o gov.br (validar a conta em banco credenciado concede o
+selo prata), e ele está fora. Se um banco expuser um IdP OIDC próprio, ele entra
+como mais um `ProviderConfig`: `signInCitizen`
+(`src/lib/auth/citizen-login.ts`) concentra a regra de privacidade e não sabe
+qual provedor a chamou.
 
 ---
 

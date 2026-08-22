@@ -1,6 +1,7 @@
 /**
  * Centralized, validated access to environment variables.
- * Optional integrations (Redis, Anthropic, real gov.br) degrade gracefully when unset.
+ * Optional integrations (Redis, Anthropic, the social providers and the CPF
+ * registry) degrade gracefully when unset.
  */
 
 function required(name: string): string {
@@ -14,13 +15,10 @@ function required(name: string): string {
 }
 
 /**
- * Citizen identity providers. `mock` uses the built-in dev IdP at `/dev-idp`;
- * `real` performs a full OIDC authorization-code + PKCE flow against gov.br.
+ * Social identity providers. `mock` uses the built-in dev IdP at `/dev-idp`;
+ * `real` performs an OIDC authorization-code + PKCE flow against each provider.
  */
-type GovbrMode = "mock" | "real";
-
-/** Default gov.br scopes. `govbr_confiabilidades` exposes the account's seals. */
-const DEFAULT_GOVBR_SCOPES = "openid email profile govbr_confiabilidades";
+type SocialMode = "mock" | "real";
 
 /**
  * Registry backing CPF validation.
@@ -55,33 +53,6 @@ export const env = {
   anthropicSummaryModel: process.env.ANTHROPIC_SUMMARY_MODEL ?? "claude-haiku-4-5",
   /** Shared secret protecting POST /api/cron/{job}. Unset = endpoint disabled. */
   cronSecret: process.env.CRON_SECRET ?? "",
-  govbr: {
-    mode: (process.env.GOVBR_MODE ?? "mock") as GovbrMode,
-    /** OIDC issuer. Staging: https://sso.staging.acesso.gov.br */
-    issuer: (process.env.GOVBR_ISSUER ?? "https://sso.acesso.gov.br").replace(/\/+$/, ""),
-    clientId: process.env.GOVBR_CLIENT_ID ?? "",
-    clientSecret: process.env.GOVBR_CLIENT_SECRET ?? "",
-    redirectUri:
-      process.env.GOVBR_REDIRECT_URI ?? "http://localhost:3100/api/auth/govbr/callback",
-    scopes: process.env.GOVBR_SCOPES ?? DEFAULT_GOVBR_SCOPES,
-    /**
-     * Send a PKCE challenge (S256). On by default: gov.br's own integration
-     * guide documents PKCE, and an authorization server that ignores the
-     * parameter is unaffected. It is a toggle rather than a constant because
-     * gov.br's discovery document does NOT advertise
-     * `code_challenge_methods_supported`, so if a given client registration
-     * rejects the challenge, set `GOVBR_PKCE=false` to fall back to a plain
-     * authorization-code flow (still protected by `state` + `nonce`).
-     */
-    pkce: (process.env.GOVBR_PKCE ?? "true").toLowerCase() !== "false",
-    /**
-     * Minimum account reliability ("selo") required to vote — `bronze`, `prata`
-     * or `ouro`. Empty means any gov.br account with a verified CPF is accepted.
-     * Silver and gold are the seals granted through a bank or biometric
-     * validation, so this is also the knob that enforces bank-grade identity.
-     */
-    minTrust: (process.env.GOVBR_MIN_TRUST ?? "").toLowerCase(),
-  },
   /**
    * Official CPF registry used to validate a citizen's CPF + birth date.
    * `mock` keeps local development and `next build` free of credentials.
@@ -101,6 +72,49 @@ export const env = {
       token: process.env.INFOSIMPLES_TOKEN ?? "",
     },
   },
+  /**
+   * Social login (Apple, Google, Meta) — the citizen's entry point now that
+   * gov.br is out of reach (it is granted only to public institutions on
+   * `.gov.br` domains). A social provider proves control of an account, never a
+   * Brazilian identity, so it is always followed by the CPF step; see
+   * `src/lib/auth/social/providers.ts`.
+   */
+  social: {
+    /**
+     * `mock` is refused in production, whatever the variable says.
+     *
+     * The default is `mock` so a fresh checkout runs with no credentials — and
+     * that default is exactly the trap: a `.env.production` that simply forgets
+     * the variable would serve `/dev-idp`, where anyone mints a citizen from a
+     * form. That is the hole the gov.br flow was deleted for, and a comment
+     * saying "remember to set this" is not a control. So the mode is derived,
+     * not read: production is always `real`, and a misconfigured deploy fails
+     * closed (no provider configured = no login) instead of failing open.
+     */
+    mode: (process.env.NODE_ENV === "production"
+      ? "real"
+      : (process.env.SOCIAL_MODE ?? "mock")) as SocialMode,
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    },
+    /**
+     * Apple authenticates the client with a short-lived ES256 JWT derived from
+     * a P8 key rather than a static secret, so it needs four values instead of
+     * two. `clientId` is the **Services ID**, not the App ID.
+     */
+    apple: {
+      clientId: process.env.APPLE_CLIENT_ID ?? "",
+      teamId: process.env.APPLE_TEAM_ID ?? "",
+      keyId: process.env.APPLE_KEY_ID ?? "",
+      /** Contents of the .p8 file. `\n` escapes are accepted so it fits one line. */
+      privateKey: (process.env.APPLE_PRIVATE_KEY ?? "").replace(/\\n/g, "\n"),
+    },
+    facebook: {
+      clientId: process.env.FACEBOOK_CLIENT_ID ?? "",
+      clientSecret: process.env.FACEBOOK_CLIENT_SECRET ?? "",
+    },
+  },
   appUrl: process.env.APP_URL ?? "http://localhost:3100",
   /** GA4 measurement id (`G-…`). Empty = no analytics script on the site. */
   gaMeasurementId: GA_MEASUREMENT_ID.test(process.env.GA_MEASUREMENT_ID ?? "")
@@ -110,10 +124,3 @@ export const env = {
 
 export const isAiEnabled = () => env.anthropicApiKey.length > 0;
 export const isRedisEnabled = () => env.redisUrl.length > 0;
-
-/** Whether the real gov.br OIDC flow is fully configured. */
-export const isGovbrConfigured = () =>
-  env.govbr.mode === "real" &&
-  env.govbr.issuer.length > 0 &&
-  env.govbr.clientId.length > 0 &&
-  env.govbr.clientSecret.length > 0;
