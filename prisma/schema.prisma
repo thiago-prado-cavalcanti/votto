@@ -87,6 +87,18 @@ enum House {
   CONGRESSO
 }
 
+/// A stretch of an agent's mandate, as the house itself published it.
+///
+/// EXERCISE is time in the seat; LEAVE is an officially recorded absence
+/// (Senado `licencas`, Câmara "Saída - Afastamento…"). The attendance pillar
+/// subtracts LEAVE from EXERCISE, because a deputy licensed to serve as a state
+/// secretary should not be marked absent from votes held while they were
+/// legitimately away.
+enum ServiceKind {
+  EXERCISE
+  LEAVE
+}
+
 // ─── Core entities ─────────────────────────────────────────────────────────
 
 /// Political party. `kid` is the public identifier used in URLs/DTOs.
@@ -113,6 +125,19 @@ model Party {
   source      ImportSource @default(MANUAL)
   externalRef String?
 
+  /// Accent- and case-folded haystack for the public search box, maintained by
+  /// Postgres as a `GENERATED ... STORED` column — see
+  /// `docs/migrations/0010_search.sql` for the expression and
+  /// `src/lib/domain/search.ts` for its JavaScript mirror.
+  ///
+  /// NEVER write this field from application code: Postgres rejects any INSERT
+  /// or UPDATE that supplies a value for a generated column. It is optional here
+  /// only so Prisma leaves it out of every write.
+  ///
+  /// Covers `acronym` + `name`, so an agents search for `pt` or `uniao` reaches
+  /// the bench through the relation.
+  searchText String?
+
   agents PublicAgent[]
 
   createdAt DateTime @default(now())
@@ -120,6 +145,7 @@ model Party {
 
   @@unique([source, externalRef])
   @@index([status])
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 /// Elected/public agent (deputy, councillor, senator, governor, etc.).
@@ -159,9 +185,47 @@ model PublicAgent {
   source      ImportSource @default(MANUAL)
   externalRef String?
 
+  // ── Quality index (CLAUDE.md §3.3) ─────────────────────────────────────────
+  /// Normalized 0–100 quality rank: attendance, authorship, rapporteurship and
+  /// mandate running cost, each ranked against the agent's peers and combined by
+  /// weight. Denormalized here (rather than derived per request) so lists can
+  /// order in SQL — the same trade-off as `Theme.priority`.
+  ///
+  /// NULL, never 0, when the measured pillars do not cover enough of the index
+  /// (`MIN_COVERAGE` in `src/lib/indexes/quality.ts`). The score is published,
+  /// so an agent we cannot measure must show no reading at all: a zero would
+  /// read as an accusation rather than as missing data.
+  qualityScore      Int?
+  /// The pillar breakdown behind `qualityScore`, always displayed beside it:
+  /// `[{ key, label, score, weight, reading }]`. Kept as JSON because the pillar
+  /// set is a registry meant to grow (CLAUDE.md §3.3) — a fifth factor must not
+  /// cost a migration. No pillar is ever ordered by in SQL.
+  qualityPillars    Json?
+  qualityComputedAt DateTime?
+
+  /// Accent- and case-folded haystack for the public search box, maintained by
+  /// Postgres as a `GENERATED ... STORED` column — see
+  /// `docs/migrations/0010_search.sql` for the expression and
+  /// `src/lib/domain/search.ts` for its JavaScript mirror.
+  ///
+  /// NEVER write this field from application code: Postgres rejects any INSERT
+  /// or UPDATE that supplies a value for a generated column. It is optional here
+  /// only so Prisma leaves it out of every write.
+  ///
+  /// Covers `firstName` + `lastName`. The party is NOT copied in — a generated
+  /// column can only see its own row — so the agents search also matches
+  /// `Party.searchText` through the relation, which is what keeps a party
+  /// rename from needing a cascade.
+  searchText String?
+
   votes              Vote[]
-  proposedThemes     Theme[] @relation("ThemeProposer")
-  rapporteuredThemes Theme[] @relation("ThemeRapporteur")
+  proposedThemes     Theme[]        @relation("ThemeProposer")
+  rapporteuredThemes Theme[]        @relation("ThemeRapporteur")
+  rollCallVotes      RollCallVote[]
+  presidedRollCalls  RollCall[]     @relation("RollCallPresiding")
+  service            AgentService[]
+  metrics            AgentMetrics[]
+  followers          AgentFollow[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -172,6 +236,8 @@ model PublicAgent {
   @@index([status])
   @@index([partyId])
   @@index([inOffice])
+  @@index([qualityScore])
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 /// A political theme (bill, amendment, law, etc.) citizens and agents vote on.
@@ -245,6 +311,20 @@ model Theme {
   /// An editor's tagging is never overwritten by a later AI pass.
   dimensionsSource String?
 
+  /// Accent- and case-folded haystack for the public search box, maintained by
+  /// Postgres as a `GENERATED ... STORED` column — see
+  /// `docs/migrations/0010_search.sql` for the expression and
+  /// `src/lib/domain/search.ts` for its JavaScript mirror.
+  ///
+  /// NEVER write this field from application code: Postgres rejects any INSERT
+  /// or UPDATE that supplies a value for a generated column. It is optional here
+  /// only so Prisma leaves it out of every write.
+  ///
+  /// Covers `name` + `plainTitle` + `identifier` (the identifier twice: as
+  /// written and with its punctuation stripped, so `PL 3085/2026`, `3085/2026`
+  /// and `pl30852026` all find the same bill).
+  searchText String?
+
   // Denormalized vote tallies for fast "temperature" display.
   yesCount Int @default(0)
   noCount  Int @default(0)
@@ -253,8 +333,9 @@ model Theme {
   source      ImportSource @default(MANUAL)
   externalRef String?
 
-  articles Article[]
-  votes    Vote[]
+  articles  Article[]
+  votes     Vote[]
+  rollCalls RollCall[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -267,6 +348,9 @@ model Theme {
   @@index([inProgress])
   @@index([proposerId])
   @@index([rapporteurId])
+  // Trigram index: what turns the search box's `LIKE '%…%'` into an index scan.
+  // Needs the pg_trgm extension, created by the same migration.
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 /// Source article attached to a Theme. AI enrichment reads it to grow the summary.
@@ -332,6 +416,160 @@ model Vote {
   @@index([agentId])
 }
 
+// ─── Quality index inputs (CLAUDE.md §3.3) ─────────────────────────────────
+
+/// One nominal roll call held by a house — the attendance ledger.
+///
+/// This exists separately from `Vote` because `Vote` answers a different
+/// question. `Vote` is unique on `(agentId, themeId)` and `upsertAgentVote`
+/// rewrites the row when a later roll call touches the same bill, so it holds
+/// the agent's STANDING POSITION on a theme — by design, since that is what the
+/// alignment index consumes. Two roll calls on one bill collapse into one row
+/// there, which makes it structurally unable to answer "how many sittings did
+/// this agent show up to". Relaxing `Vote`'s unique key would break alignment to
+/// fix attendance; a ledger of its own breaks nothing.
+///
+/// Written by the existing vote jobs from the responses they already download —
+/// no extra request. Internal only: no `kid`, never exposed (CLAUDE.md §5).
+model RollCall {
+  id         String   @id @default(cuid())
+  house      House
+  occurredAt DateTime
+
+  /// The bill voted on, when it resolves to a theme we imported. Nullable
+  /// because attendance counts the sitting whether or not we track the bill.
+  themeId String?
+  theme   Theme?  @relation(fields: [themeId], references: [id], onDelete: SetNull)
+
+  /// Whoever was in the chair for this vote, when the source names them.
+  ///
+  /// Both houses forbid the presiding officer from voting in an open ballot and
+  /// mark them with a code of their own — Câmara `"Artigo 17"`, Senado
+  /// `"Presidente (art. 51 RISF)"`. That is not a position, so `mapVote` drops
+  /// it; but the person was *in the room*, so dropping it from attendance too
+  /// would count presiding as absence. Recorded here so the quality index can
+  /// take the sitting out of that agent's denominator, the same way an official
+  /// leave is taken out.
+  presidingAgentId String?
+  presiding        PublicAgent? @relation("RollCallPresiding", fields: [presidingAgentId], references: [id], onDelete: SetNull)
+
+  source      ImportSource
+  /// Câmara `votacao.id`, Senado `codigoSessaoVotacao`. Internal only.
+  externalRef String
+
+  votes RollCallVote[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([source, externalRef])
+  @@index([house, occurredAt])
+  @@index([themeId])
+  @@index([presidingAgentId])
+}
+
+/// One agent's participation in one roll call. Presence, not position.
+model RollCallVote {
+  id String @id @default(cuid())
+
+  rollCallId String
+  rollCall   RollCall @relation(fields: [rollCallId], references: [id], onDelete: Cascade)
+
+  agentId String
+  agent   PublicAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  value VoteValue
+
+  @@unique([rollCallId, agentId])
+  @@index([agentId])
+}
+
+/// A stretch of an agent's mandate, as the house published it.
+///
+/// The denominator of the attendance pillar: roll calls held while the agent was
+/// in EXERCISE, minus those falling inside a LEAVE. Both houses publish this,
+/// in different shapes — the Senado as explicit intervals
+/// (`/senador/{cod}/licencas`), the Câmara as an event log
+/// (`/deputados/{id}/historico`) that has to be paired into intervals.
+model AgentService {
+  id String @id @default(cuid())
+
+  agentId String
+  agent   PublicAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  startsAt DateTime
+  /// Null while the stretch is still open (in office, or leave with no end date).
+  endsAt   DateTime?
+  kind     ServiceKind
+  /// Verbatim reason from the source: "Secretário de Estado",
+  /// "LICENCA_SAUDE_ATE_120D". Display and audit only.
+  reason   String?
+
+  source      ImportSource
+  /// Stable key for idempotent re-import, e.g. "camara:hist:204379:2019-02-01".
+  externalRef String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([source, externalRef])
+  @@index([agentId, startsAt])
+}
+
+/// Raw, per-year measurements behind the quality index.
+///
+/// Deliberately stores counts rather than scores. Every input the index needs is
+/// then a column, so re-tuning weights or band cut points is a recompute with no
+/// network (`npm run requality`) — the same property that makes
+/// `scripts/reprioritize.ts` possible for `Theme.priority`. It is also what lets
+/// any published figure be defended document by document.
+model AgentMetrics {
+  id String @id @default(cuid())
+
+  agentId String
+  agent   PublicAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  /// Calendar year the measurements cover.
+  year    Int
+
+  /// Roll calls held by the agent's house inside an EXERCISE stretch and outside
+  /// any LEAVE — the attendance denominator.
+  rollCallsEligible Int @default(0)
+  rollCallsAttended Int @default(0)
+  daysInExercise    Int @default(0)
+  daysOnLeave       Int @default(0)
+
+  /// Substantive bills only (PL/PEC/PLP/PDL) — requerimentos are excluded on
+  /// purpose: one sampled deputy filed 31 of them against 4 bills in a year, so
+  /// counting them would rank who fills the order paper.
+  billsAuthored     Int @default(0)
+  /// Of those, the ones that got somewhere (passed the house, became law,
+  /// awaiting sanction). Counted again on top of `billsAuthored`, so outcome is
+  /// worth double.
+  billsAdvanced     Int @default(0)
+  billsRapporteured Int @default(0)
+
+  /// Parliamentary quota spent (CEAP / CEAPS), net of glosa. The running cost of
+  /// the mandate — office, travel, fuel, publicity, security. NOT emendas
+  /// parlamentares: money an agent secures for public policy is not an expense
+  /// of theirs (CLAUDE.md §3.3).
+  quotaSpent      Decimal @default(0) @db.Decimal(12, 2)
+  /// Reimbursement documents behind `quotaSpent`. Zero means "no data yet", not
+  /// "spent nothing" — the guard that stops an unpublished month reading as
+  /// perfect frugality.
+  quotaDocuments  Int     @default(0)
+  /// Spend per official category, for display: `{ "COMBUSTÍVEIS": 12345.67 }`.
+  quotaByCategory Json?
+  /// Legislature numbers this year belongs to. The Câmara's expense endpoint
+  /// keys on `(idLegislatura, ano)` and an election year spans two.
+  legislatures    Int[]
+
+  source    ImportSource @default(MANUAL)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([agentId, year])
+  @@index([year])
+}
+
 /// Citizen / voter. Minimal PII: only first/last name in clear (CLAUDE.md §5).
 model User {
   id        String @id @default(cuid())
@@ -373,6 +611,7 @@ model User {
 
   votes          Vote[]
   socialAccounts SocialAccount[]
+  follows        AgentFollow[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -402,6 +641,52 @@ model SocialAccount {
   updatedAt   DateTime @updatedAt
 
   @@unique([provider, subject])
+  @@index([userId])
+}
+
+/// A citizen declaring that a public agent represents them ("acompanhar").
+///
+/// The ballot is secret, so the platform can never ask who somebody voted for —
+/// and without that, the index the whole product exists to publish is missing
+/// its denominator: does this agent represent the people who elected them?
+/// Following is the honest analogue. Instead of asserting a past vote, the
+/// citizen declares, in the present and revocably, who represents them; the set
+/// of followers is that agent's "base", and the base is what
+/// `agentBaseAlignments()` measures the agent against.
+///
+/// **One follow per office**, because that is how the ballot works: a citizen
+/// elects one federal deputy, one senator, one governor. `type` is copied from
+/// the agent at follow time for exactly one reason — it puts that rule inside
+/// the database (`@@unique([userId, type])`) instead of trusting every call
+/// site to check first. Two tabs confirming at once therefore collide on the
+/// constraint, which `followAgent` catches and answers in the same words as the
+/// check it ran before writing.
+///
+/// **No `kid`.** Like `Vote`, a follow is never addressed from outside: it is
+/// reached through the session plus the agent's kid (CLAUDE.md §5).
+///
+/// **Sensitivity.** The row ties a citizen to a declared political affiliation
+/// — the same class of data as `Vote`, which already stores user + theme +
+/// value in clear because the alignment index cannot be computed otherwise. The
+/// §5 promise still holds: no CPF, no birth date, no e-mail lands here, and the
+/// names of who follows whom are never published — only the total.
+model AgentFollow {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  agentId String
+  agent   PublicAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  /// The agent's office, copied at follow time. Denormalized so the "one per
+  /// office" rule can live in the unique index below.
+  type AgentType
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, type])
+  @@index([agentId])
   @@index([userId])
 }
 

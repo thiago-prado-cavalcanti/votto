@@ -7,7 +7,13 @@
  * keyed by `kid` (never internal ids; CLAUDE.md §5).
  */
 import { db } from "@/lib/db";
-import { agentElectorateAlignments, partyElectorateAlignments } from "@/lib/indexes/alignment";
+import {
+  agentElectorateAlignments,
+  partyElectorateAlignments,
+  agentBaseAlignments,
+  partyBaseAlignments,
+} from "@/lib/indexes/alignment";
+import { publicReading } from "@/lib/domain/reading";
 import { getAgentPosition, getPartyPosition } from "@/lib/domain/positions";
 import { agentTypeLabel } from "@/lib/labels";
 import { themeCardImage, agentCardImage, partyCardImage } from "@/lib/widgets/images";
@@ -58,8 +64,12 @@ async function buildImage(type: string, kid: string): Promise<Response | null> {
       include: { party: true },
     });
     if (!agent || agent.status !== "ACTIVE") return null;
-    const [engagement, position] = await Promise.all([
+    // The same reading the site publishes: the agent's own base where they have
+    // one, the electorate where they do not. A shared card that disagreed with
+    // the page it links to would be worse than no card.
+    const [engagement, base, position] = await Promise.all([
       agentElectorateAlignments(),
+      agentBaseAlignments(),
       getAgentPosition(agent.id),
     ]);
     const location = [agent.municipality, agent.state].filter(Boolean).join(" · ");
@@ -70,15 +80,17 @@ async function buildImage(type: string, kid: string): Promise<Response | null> {
       name: `${agent.firstName} ${agent.lastName}`.trim(),
       subtitle: subtitleParts.join(" · "),
       imageUrl: agent.imageUrl,
-      alignment: engagement.get(agent.kid)?.alignment ?? null,
+      alignment: publicReading(base.get(agent.kid), engagement.get(agent.kid)?.alignment ?? null)
+        .value,
     });
   }
 
   // partido
   const party = await db.party.findUnique({ where: { kid } });
   if (!party || party.status !== "ACTIVE") return null;
-  const [engagement, position] = await Promise.all([
+  const [engagement, base, position] = await Promise.all([
     partyElectorateAlignments(),
+    partyBaseAlignments(),
     getPartyPosition(party.id),
   ]);
   const acronym = party.acronym ?? party.name.slice(0, 3).toUpperCase();
@@ -87,6 +99,7 @@ async function buildImage(type: string, kid: string): Promise<Response | null> {
     acronym,
     subtitle: `${acronym} · ${party.agentCount} ${party.agentCount === 1 ? "agente" : "agentes"}`,
     logoUrl: party.logoUrl,
-    alignment: engagement.get(party.kid)?.alignment ?? null,
+    alignment: publicReading(base.get(party.kid), engagement.get(party.kid)?.alignment ?? null)
+      .value,
   });
 }

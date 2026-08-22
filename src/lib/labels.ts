@@ -29,6 +29,24 @@ export const agentTypePluralLabel: Record<AgentType, string> = {
   PRESIDENT: "Presidência",
 };
 
+/**
+ * The office in running prose ("você já acompanha um deputado federal").
+ *
+ * Lowercase and plain masculine, for the same reason the plurals above are: the
+ * sentence is about the seat, not about the person sitting in it. Where the
+ * person IS the subject — their own card, their own record — the "(a)" label
+ * above is the one to use.
+ */
+export const agentTypeProseLabel: Record<AgentType, string> = {
+  FEDERAL_DEPUTY: "deputado federal",
+  STATE_DEPUTY: "deputado estadual",
+  COUNCILLOR: "vereador",
+  SENATOR: "senador",
+  GOVERNOR: "governador",
+  MAYOR: "prefeito",
+  PRESIDENT: "presidente",
+};
+
 /** Originating legislative house of an imported theme. */
 export const houseLabel: Record<House, string> = {
   CAMARA: "Câmara dos Deputados",

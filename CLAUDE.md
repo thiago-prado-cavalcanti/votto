@@ -89,6 +89,40 @@ that user's voting record.
 - Consider materialized aggregates / incremental updates as volume grows. Do **not** recompute
   global similarity for every request from raw votes.
 
+**The published reading is the agent against their own base**, not against the whole electorate.
+A citizen declares who represents them by **following** (§3.1.1); the followers of an agent are
+that agent's *base*, and `agentBaseAlignments()` measures the agent's roll-call record against the
+mean stance of that base per theme. `partyBaseAlignments()` is the same reading per party, weighted
+by how many citizens each of its agents represents — the party's base is the union of its agents'
+bases, so a senator speaking for 4.000 citizens cannot count the same as a deputy speaking for 40.
+
+`agentElectorateAlignments()` — the agent against the aggregate of *every* citizen who voted — is
+kept as the **fallback**, because nobody is elected by everybody and that figure answers no real
+question. `publicReading()` in `src/lib/domain/reading.ts` is the single place the rule lives: the
+base wins where there is one, the electorate stands in where there is not, and the two never appear
+together (they answer the same question, and printing both asks the reader to arbitrate). Every
+surface calls it — cards, records, party pages, rankings, embeds, OG images — so they cannot drift.
+
+### 3.1.1 Following ("acompanhar")
+
+The ballot is secret, so the platform can never ask who somebody voted for — and without that, the
+index above has no honest denominator. Following is the analogue it *can* ask for: instead of
+asserting a past vote, the citizen declares, in the present and revocably, who represents them.
+
+- **One follow per office** (`AgentFollow`, `@@unique([userId, type])`), because that is how the
+  ballot works: one federal deputy, one senator, one governor. The office is denormalized onto the
+  row precisely so the rule lives in the database rather than in every call site.
+- **Swapping is two steps.** Where an office is already taken, the button *disappears* from the
+  other agents of that office and is replaced by a line naming who holds it, linked — the swap
+  stays findable without the platform pretending you can follow two deputies.
+- **Not behind the vote challenge.** That challenge stops an unlocked phone from *voting*; a follow
+  on its own moves no index, because the base is computed from the followers' votes — and casting
+  those already passed it.
+- **Only sitting agents** can be followed (`inOffice`). A follow whose mandate later ends is kept
+  (history) and surfaced on `/conta` for the citizen to redo.
+- **Follower counts are public; follower names are not** — for anybody, ever.
+- Server action: `src/lib/actions/follows.ts`. Read helpers: `src/lib/domain/follows.ts`.
+
 ### 3.2 Political Positioning Index (secondary feature)
 
 Position users, public agents and parties on the classic left↔right political spectrum, using a
@@ -111,6 +145,71 @@ Position users, public agents and parties on the classic left↔right political 
 > **figure**, which shows a shape rather than pronouncing a sentence. Put the band back only once
 > theme tagging exists and the output has been checked against parties whose position is not in
 > dispute.
+
+### 3.3 Quality Index
+
+Alignment asks whether an agent agrees **with you**. Quality asks whether they are **doing the job**
+— a reading that owes nothing to who anyone agrees with. A parliamentarian who never turns up,
+proposes nothing and spends the whole quota can still be 100% aligned with someone who thinks as
+they do; that is the gap this closes.
+
+A 0–100 per agent, from four weighted pillars, all built from the houses' own published record:
+
+| Pillar | Weight | Source | Why weighted there |
+|---|---|---|---|
+| Assiduidade | 0.30 | roll-call ledger ÷ sittings held while in the seat | the floor of the office — the one duty every mandate shares |
+| Proposições | 0.25 | `idDeputadoAutor` / `codigoParlamentarAutor`, PL/PEC/PLP/PDL only | initiative; outcome counts twice, filing is the cheap half |
+| Custeio do mandato | 0.25 | CEAP / CEAPS, per month in office | what the mandate consumes to operate |
+| Relatorias | 0.20 | `Theme.rapporteurId` (Câmara) / `processo/relatoria` (Senado) | **lowest on purpose**: a relatoria is *assigned by the leadership*, so it measures standing as much as merit — and on the Câmara side it is a floor, not a count |
+
+**Custeio is the parliamentary quota and nothing else.** Office upkeep, travel, fuel, food,
+publicity, security. Emendas parlamentares are excluded **by design**: a deputy who secured a
+billion reais for schools in their state is not an expensive deputy, and an index that conflated the
+two would say the opposite of the truth. The pillar is never labelled "verba pública" or "economia".
+
+**Every pillar is a percentile inside a peer group**, not an absolute score — house for the first
+three, house **+ UF** for cost (the quota's ceiling is geographic; a UF with fewer than five members
+falls back to its region). This is the §8 comparability rule doing the same work it does for
+`priority`: roll-call participation clusters near 95% for everyone, so a raw ratio would carry no
+information; and the Câmara's rapporteur count is a floor by construction, which only stays fair
+because deputies are ranked against deputies. Ties take the midrank, so the large block with zero
+relatorias shares one score instead of being spread in array order.
+
+The cost of ranking is that it manufactures a uniform distribution, and the mitigation is not in the
+maths: **the UI always prints the raw figure beside the bar** ("92% · 312 de 340 votações"). The
+percentile drives the index; the plain number is what a citizen reads.
+
+**A pillar that cannot be measured is `null`, and its weight is redistributed.** Below
+`MIN_COVERAGE` (half the total weight) the whole score is `null` rather than a number built on half
+a picture — the §3.2 discipline again. `PublicAgent.qualityScore` is therefore nullable with no
+default: an agent we could not measure must show **no reading**, because a zero reads as an
+accusation. Attendance additionally refuses to score when official leave covers more than 40% of the
+window, which is what stops "attended the only sitting they could have attended".
+
+**Expanding the pillar set** is one entry in the registry in `src/lib/indexes/quality.ts` plus its
+raw columns on `AgentMetrics`. Two conditions on any new factor: **both houses publish it or neither
+is scored on it**, and it is **`null` when unknown, never zero**. (Plenary presence is the standing
+example of a factor that fails the first test — only the Câmara publishes it.)
+
+**Presiding is attendance, not absence.** Both houses bar whoever is in the chair from voting in an
+open ballot and mark them with a code of their own (Câmara `"Artigo 17"`, Senado
+`"Presidente (art. 51 RISF)"`). `mapVote` drops those, correctly — they are not a position — but
+reading the missing vote as a missing member is the opposite of what happened. Measured on live
+data before `RollCall.presidingAgentId` existed, the index put the President of the Senate in the
+**1st percentile of attendance and 8th out of 100 overall**: the worst senator in Brazil, for having
+presided 39 of 46 sittings. A sitting an agent presided is taken out of their denominator, exactly
+as a day of official leave is.
+
+Attendance comes from a ledger of its own, `RollCall`/`RollCallVote`, **not** from `Vote`. `Vote` is
+unique on `(agentId, themeId)` and is rewritten when a later roll call touches the same bill, because
+it holds the agent's *standing position* — which is what the alignment index needs. Two roll calls on
+one bill collapse into one row there, so it can never answer "how many sittings did they attend".
+This is written down because it is exactly the kind of thing a future reader would try to
+"simplify" back into `Vote`.
+
+Retuning needs no re-import: every input is a stored column, so `npm run requality [-- --dry]` is the
+twin of `npm run reprioritize`. Bands (Muito acima / Acima / Na média / Abaixo da média) are
+comparative, never evaluative, and their cut points are **provisional** — see §11.
 
 > The data architecture is **not rigid**. Propose improvements where pertinent — especially around
 > how themes map to positioning dimensions.
@@ -146,11 +245,26 @@ Position users, public agents and parties on the classic left↔right political 
 - **User** — citizen / voter. Fields: first name, last name, CPF (encrypted, see §5), birth date
   (encrypted — needed by the vote challenge), birth **year** in clear (age gate + anonymized
   demographics), and the verification trail `cpfVerifiedAt` / `cpfVerificationSource`.
+- **AgentFollow** — a citizen's declaration that a **PublicAgent** represents them (§3.1.1).
+  Fields: user, agent, and the agent's `type` copied at follow time so `UNIQUE(user, type)` can
+  enforce "one per office" in the database. No `kid`: like **Vote**, it is never addressed from
+  outside — it is reached through the session plus the agent's `kid`.
 - **SocialAccount** — a social identity (`provider` + the provider's `sub`) bound to a User. Many
   per User: linking Google and Apple to one CPF is one citizen, not two. Written only once a CPF
   has been confirmed. `subject` is internal, exactly like `externalRef` (§5).
 - **Administrator** — backend login. Fields: first name, last name, email, mobile, password (hashed),
   role, image.
+- **RollCall** / **RollCallVote** — the attendance ledger: one row per nominal sitting, one per
+  agent who took part. Separate from **Vote** on purpose, and the reason is load-bearing: `Vote` is
+  unique on `(agentId, themeId)` and holds the *standing position* the alignment index reads, so two
+  roll calls on one bill collapse into a single row there. Written by the existing vote jobs from
+  responses they already download — no extra request. Internal only, no `kid`.
+- **AgentService** — a stretch of a mandate, `EXERCISE` or `LEAVE`, as the house published it. The
+  attendance denominator subtracts official leave: a deputy licensed to serve as a state secretary is
+  not absent from votes held while they were legitimately away.
+- **AgentMetrics** — raw per-year counts behind the quality index (roll calls, bills, quota), one row
+  per agent per calendar year. Counts rather than scores, which is what makes `npm run requality`
+  possible and what lets any published figure be defended document by document.
 
 ### Themes & Articles ingestion
 
@@ -159,6 +273,59 @@ Position users, public agents and parties on the classic left↔right political 
   (§8) — both paths converge on the same model.
 - When an Article is ingested (manually or imported), it must pass through an **AI step** that reads
   the article and **incrementally enriches the Theme's summary**.
+
+### Search
+
+The public lists (`/agentes`, `/temas`) each carry a search box, and it lives **inside the filter
+block** rather than above it: it is one `<form method="get">` with the selects, every control ANDs
+into the same query, and the masthead plate counts what the whole form matched. There is no second
+search page and no separate search state.
+
+**What each one searches is deliberately narrow.** Agents match on the agent's own name **and** their
+party's name/acronym. Themes match on the official title, the plain-language title the AI wrote
+(`plainTitle`), and the official code (`identifier`) — **and nothing else**. The summary is excluded
+on purpose: it is a paragraph of official prose in which half the vocabulary of Brazilian legislation
+appears at least once, so searching it returned a page of unrelated bills for almost any word and
+made the box feel broken. A title and a code are what a citizen actually has in hand.
+
+**One folded column per table does the matching.** `Theme.searchText`, `PublicAgent.searchText` and
+`Party.searchText` hold the searchable fields concatenated, lowercased and stripped of accents, with
+a GIN **trigram** index over each — which is what turns the resulting `LIKE '%…%'` into an index scan
+instead of a table scan. Two properties are load-bearing:
+
+- **They are Postgres `GENERATED … STORED` columns, never written from application code.** `name`
+  comes from the importers, `plainTitle` from the AI pass, both from the admin CRUD — three write
+  paths for one derived value, which is exactly the shape that drifts. The definition lives in
+  `docs/migrations/0010_search.sql` and nowhere else. `src/lib/domain/search.ts` holds the JavaScript
+  mirror of the same folding, applied to the *query*; **the two are changed together** or matching
+  silently breaks.
+- **Query words are ANDed, not ORed.** Typing more has to narrow the list: `joao pt` means "someone
+  called João, in the PT", not "every João plus the whole PT bench".
+
+The party is reached through the relation rather than copied into the agent's column (a generated
+column may only read its own row), which is also what keeps a party rename from needing a cascade.
+Accents are folded with `translate()` and an explicit Portuguese character map rather than the
+`unaccent` extension, because `unaccent` is not `IMMUTABLE` and a generated column cannot call it.
+
+### The list continues
+
+`/temas` does not stop at the first sixty bills. One page renders **on the server** — in the HTML,
+for the reader without JavaScript, for the crawler and for the first paint — and
+`ThemeFeed` appends the next ones through a server action as the citizen scrolls. What ships in the
+markup is an ordinary `<a href="?p=2">`: the link is the mechanism, and the observer only takes its
+place once it has hydrated and can honour it. A page that fails to load says so and offers the link
+again, because a sentinel that quietly stops looks exactly like the end of the list.
+
+Paging is by **offset**, not by cursor. The failure mode of an offset — a row inserted mid-scroll
+shifts the window by one — is a repeated entry in a list of hundreds, against a cursor that would
+have to encode the tie-break of three different orderings; and `THEME_MAX_PAGES` bounds it, because
+an unbounded `skip` is an unbounded query. The engagement ordering's logarithmic re-sort stays
+**within** a page: a global one would have to read every match to place the first row.
+
+The query lives once, in `src/lib/domain/theme-list.ts`, shared by the page and the action. Two
+translations of the same filters would be two chances for the appended rows to answer a different
+question than the ones already on screen — and the masthead plate, which counts the whole match,
+would then describe neither.
 
 ---
 
@@ -182,6 +349,16 @@ Position users, public agents and parties on the classic left↔right political 
   - `cpf_encrypted` — reversible, for the rare authorized retrieval.
   - `cpf_hash` — deterministic HMAC, for uniqueness/dedup (`UNIQUE(cpf_hash, theme_id)` on votes).
   - `cpf_prefix` — first six digits, clear.
+
+### Political data (votes and follows)
+
+A vote on a theme and a declared representative (`AgentFollow`) are both *opinião política* —
+sensitive data under LGPD art. 5º, II — and both are stored in clear against the citizen's row,
+because the alignment index cannot be computed otherwise. That is a deliberate, bounded exception
+and not a softening of the promise above: no CPF, no birth date and no e-mail reach those tables,
+so a leak still exposes nothing beyond the name. Consent is taken **specifically** (art. 11, I):
+its own box at sign-up, and again in the confirmation sheet the follow action opens. Who follows
+whom is never published — only the totals.
 
 ### Authentication
 
@@ -348,6 +525,22 @@ Verified against the live APIs; `npm run check:sources` re-checks them.
 - Senado `processo?numdias=` is capped at **30 days**.
 - A party must exist **once** across both houses: the Senado importer reuses a party already
   imported by the Câmara when the acronym matches.
+- Câmara `deputados/{id}/despesas` returns `[]` **without `idLegislatura`** — with HTTP 200, which is
+  indistinguishable from "spent nothing". With `idLegislatura` but no `ano`, only the legislature's
+  first year comes back. Both parameters are required, so the sweep is over `(legislatura × ano)`.
+- The Senado's expenses live on a **different host** (`adm.senado.gov.br/adm-dadosabertos`), joined
+  on `codSenador` = our `externalRef`. A different host is not a different source: `ImportSource`
+  records whose data it is.
+- The Câmara publishes only a bill's **last** rapporteur (`statusProposicao.uriUltimoRelator`), so
+  deputy relatoria counts are a floor. The Senado publishes the full history. Ranking inside a house
+  is what keeps that asymmetry from handing the Senado the pillar.
+- Both houses mark the **presiding officer** with a vote code that is not a vote — Câmara
+  `"Artigo 17"`, Senado `"Presidente (art. 51 RISF)"`, one per sitting in both. It means "present but
+  barred from voting", so any attendance measure must exclude that sitting rather than count it as a
+  miss (`RollCall.presidingAgentId`).
+- `"Sessão Não Deliberativa Solene"` contains the substring `"Deliberativa"`. Any filter for real
+  sittings must exclude the negation explicitly (`isDeliberativeSession` in `camara.ts`) — a plain
+  `includes` let 59 solemn sessions through against 36 real ones over a 120-day window.
 
 ### Mapping to the data model
 
@@ -382,6 +575,31 @@ Prioritário (≥60), Tramitação normal (≥30), Baixa prioridade.
 Senado `classificacoes` with hierarchy). The source's numeric code stays internal — the DTO exposes
 label, hierarchy and the "main subject" flag only.
 
+### Authorship, and why it can go missing
+
+A theme's accountable face — the proposing parliamentarian, else the órgão that authored it, else
+the rapporteur — is resolved from a **second** request per bill (Câmara `/proposicoes/{id}/autores`;
+Senado `autoriaIniciativa` in the detail, plus `/processo/relatoria`). That is the whole of the
+fragility: `upsertTheme` maps a null author to `undefined` so a lookup that failed never wipes an
+author we already had — the right call — but the cost is that a bill first written **without** one
+keeps the hole, and the weekly sweeps only revisit bills that moved in the last 30–90 days. A bill
+parked at "Pronta para Pauta" is exactly the kind the themes list ranks highest and exactly the kind
+the sweeps never come back to, which is how the order paper ended up with no faces on it.
+
+Three things follow, and all three are load-bearing:
+
+- **`agentIdByRef` is a required parameter** of both houses' `upsertBillTheme`. While it was
+  optional, the authorship branch read `inProgress && agentIdByRef`, so a call site that forgot the
+  map skipped author *and* rapporteur silently — the bill still written, its regime, situation and
+  classification intact, only its face missing. A required parameter makes that a compile error.
+- **`npm run reauthor`** repairs what is already stored: it re-resolves authorship for in-progress
+  bills that have neither `proposerId` nor `proposerName`, most prioritised first, and is idempotent
+  and interruptible. It is the network-bound twin of `reprioritize`/`requality` — priority and
+  quality recompute from stored columns, authorship has to be asked of the houses again.
+- **`check:sources` asserts `/proposicoes/{id}/autores`**, its `proponente` and its `uri`. It did
+  not, and that is why the gap was silent: an empty response is indistinguishable from "this bill
+  has no author".
+
 ### Sync design
 
 - **Pull/polling** model: scheduled jobs query each source's "recently updated" endpoint, then fetch
@@ -408,6 +626,11 @@ label, hierarchy and the "main subject" flag only.
   link back to the source page; `ImportRun` logs every attempt.
 - **Resilience:** rate-limit, retry with backoff, tolerate source downtime without data loss. An
   agent run that returns nothing never retires the whole house.
+- **One index is computed in batch, not at write time.** Scoring one agent for the quality index
+  needs the whole cohort's distribution, which is why `metrics:quality` is a job while
+  `Theme.priority` is written by the importers. It refuses to write a house whose sitting members are
+  less than 70% measured: percentiles over a partial import tell every agent they are in a cohort
+  they are not in.
 - **Mandates end, history doesn't:** agents dropped from the official roster get `inOffice = false`
   instead of being deleted — their votes are what the alignment index is built from.
 - **Contract check:** `npm run check:sources` asserts every field the importers read is still present
@@ -449,6 +672,14 @@ be), but the reference is a printed record, not a fintech app.
   reading. The panel leads with the winning share in the serif numerals over a keyed tally
   (`TemperatureBar`), and the ballot is three equal columns filled solid with the vote pigments
   (`VoteButtons`), under a terracota prompt — the one place a card opens with a terracota rule.
+- **Following is a small outline button, in ink — the same shape as "Compartilhar".** They are the
+  two secondary actions a record carries and they sit side by side on the masthead, so they take
+  one treatment; terracota stays reserved for the ballot, which is the page's loud action and must
+  not compete with anything. It opens a sheet
+  — through a portal into `<body>`, like every overlay here — that explains the whole thing before
+  anything is recorded: what following is, what it feeds, that it is one per office, that it is
+  revocable, and that only the total is ever published. Where an office is taken the control is
+  *absent*, replaced by a quiet line naming who holds it.
 - **Forms are ours, including the parts browsers usually keep.** One surface for every control
   (`src/components/ui/control.ts`) in two treatments — boxed in the admin, a printed rule in the
   public filters. `Select` replaces the OS dropdown with a paper listbox while the native
@@ -504,6 +735,26 @@ be), but the reference is a printed record, not a fintech app.
 - **A real proof of CPF possession.** What ships is CPF + birth date against the registry, which
   proves the CPF is real but not that it is the person's. The Pix of R$0,01 is the deferred
   candidate; revisit before the platform's numbers are quoted as representative.
+- **Following has no geographic check.** A citizen in SP can only elect a deputy from SP, but the
+  platform does not store the citizen's state (minimal collection, §5), so nothing validates it.
+  Revisit if base readings start being quoted as representative of a state.
+- **The base index is recomputed whole** on a 120s cache (`base:agents:v1`, dropped on follow). The
+  replacement at volume is a materialized per-agent aggregate updated incrementally on each vote.
+- **Calibrate the quality index's band cut points against a real load** (§3.3). Over a simulated
+  bench of 563 the composite spread 7…100 with a median of 50 — a healthy ranking — but 51% landed
+  between 40 and 60, because averaging four independent percentiles pulls mass to the centre. Run
+  `npm run requality -- --dry` on real data and either move the cuts to the observed quantiles
+  (~62/52/42) or rank the composite itself; the second is cleaner but costs the property that the
+  headline number is the weighted mean of the four figures printed under it. Until then the labels
+  are comparative, which keeps a concentrated distribution honest.
+- **Emendas parlamentares executed as a fifth quality pillar** — the positive counterpart of custeio,
+  and the reason custeio had to be scoped so narrowly. Neither house's open data carries it; it would
+  come from the Portal da Transparência / SIOP. Only worth building if it can cover both houses.
+- The Câmara's rapporteur count is a **floor**, not a count. `check:sources` watches
+  `statusProposicao` for the day the history is published, so the floor can be replaced.
+- **Plenary presence** (`eventos/{id}/deputados`, verified to be real presence: ~480 at a deliberative
+  sitting, 0 at a solemn one) would be a finer attendance signal than roll calls — but only the
+  Câmara publishes it, so it fails the both-houses rule and stays unbuilt.
 - Confirm hosting choice (Fly.io `gru` vs AWS `sa-east-1`).
 - Which state/municipal bodies expose open data, and whether the AI enrichment step (§4) should run
   on the newly imported bills (it is not wired into the importers yet).

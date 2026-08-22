@@ -11,7 +11,14 @@ import { PartyCard } from "@/components/public/PartyCard";
 import { db } from "@/lib/db";
 import { toPublicParty } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import { citizenPartyAlignments, partyElectorateAlignments } from "@/lib/indexes/alignment";
+import {
+  citizenPartyAlignments,
+  partyElectorateAlignments,
+  partyBaseAlignments,
+  type BaseAlignment,
+} from "@/lib/indexes/alignment";
+import { partyQualityScores } from "@/lib/domain/quality";
+import { publicReading } from "@/lib/domain/reading";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +36,13 @@ export default async function PartiesPage({
   });
 
 
-  // Electorate engagement (always available, login-independent).
-  const engagement = await partyElectorateAlignments();
+  // The published reading: the combined bases of the party's agents, falling
+  // back to the electorate where none of them is followed yet.
+  const [engagement, base, quality] = await Promise.all([
+    partyElectorateAlignments(),
+    partyBaseAlignments(),
+    partyQualityScores(),
+  ]);
 
   // Alignment for logged-in citizens.
   let alignments: Map<string, { alignment: number | null; agents: number }> | null = null;
@@ -47,19 +59,33 @@ export default async function PartiesPage({
   type Row = {
     party: ReturnType<typeof toPublicParty>;
     alignment: number | null;
+    quality: number | null;
     engagement: number | null;
+    base: BaseAlignment | undefined;
+    /** The figure actually printed — what the ranking must order on. */
+    published: number | null;
   };
 
-  let rows: Row[] = parties.map((p) => ({
-    party: toPublicParty(p),
-    alignment: alignments?.get(p.kid)?.alignment ?? null,
-    engagement: engagement.get(p.kid)?.alignment ?? null,
-  }));
+  let rows: Row[] = parties.map((p) => {
+    const partyBase = base.get(p.kid);
+    const partyEngagement = engagement.get(p.kid)?.alignment ?? null;
+    return {
+      party: toPublicParty(p),
+      alignment: alignments?.get(p.kid)?.alignment ?? null,
+      quality: quality.get(p.kid) ?? null,
+      engagement: partyEngagement,
+      base: partyBase,
+      published: publicReading(partyBase, partyEngagement).value,
+    };
+  });
 
   if (sort === "alignment" && alignments) {
     rows = [...rows].sort((a, b) => (b.alignment ?? -1) - (a.alignment ?? -1));
   } else if (sort === "engagement") {
-    rows = [...rows].sort((a, b) => (b.engagement ?? -1) - (a.engagement ?? -1));
+    rows = [...rows].sort((a, b) => (b.published ?? -1) - (a.published ?? -1));
+  } else if (sort === "quality") {
+    // −1 for the unmeasured, so they sink rather than ranking as zero.
+    rows = [...rows].sort((a, b) => (b.quality ?? -1) - (a.quality ?? -1));
   } else if (sort === "agents") {
     rows = [...rows].sort((a, b) => b.party.agentCount - a.party.agentCount);
   }
@@ -105,9 +131,15 @@ export default async function PartiesPage({
           <Field label="Ordenar por">
             <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
               <option value="">Nome</option>
-              <option value="engagement">Alinhamento com eleitores</option>
-              <option value="agents">Nº de agentes</option>
+              {/* The value stays `engagement` (an internal token, and links to
+                  it already exist); the label follows what is actually shown. */}
+              {/* The two index readings sit together, then the structural
+                  count: they answer the same kind of question as each other and
+                  a different kind from "how big is the bench". */}
+              <option value="engagement">Alinhamento com a base</option>
+              <option value="quality">Índice de qualidade</option>
               {session ? <option value="alignment">Seu alinhamento</option> : null}
+              <option value="agents">Nº de agentes</option>
             </Select>
           </Field>
         </FilterBar>
@@ -124,6 +156,8 @@ export default async function PartiesPage({
                 party={row.party}
                 alignment={session ? row.alignment : null}
                 engagement={row.engagement}
+                base={row.base}
+                quality={row.quality}
                 // Cards sharing a row arrive left to right; each row of the grid
                 // still waits for its own scroll position.
                 delay={(i % 3) * 80}

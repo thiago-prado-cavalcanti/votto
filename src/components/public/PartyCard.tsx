@@ -11,23 +11,35 @@ import { Reveal } from "@/components/public/motion";
 import { Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
+import { publicReading } from "@/lib/domain/reading";
+import type { BaseAlignment } from "@/lib/indexes/alignment";
 import type { PublicParty } from "@/lib/dto";
 
 export function PartyCard({
   party,
   alignment = null,
   engagement = null,
+  base,
+  quality = null,
   delay = 0,
 }: {
   party: PublicParty;
   /** 0–100 alignment with the logged-in citizen, or null when N/A. */
   alignment?: number | null;
-  /** 0–100 engagement with the whole electorate (always available). */
+  /** 0–100 engagement with the whole electorate (the fallback reading). */
   engagement?: number | null;
+  /** The party's reading against the combined bases of its agents. */
+  base?: BaseAlignment;
+  /**
+   * 0–100 quality index — the mean of the party's sitting agents' scores, the
+   * same way alignment aggregates. Null when none of them could be measured.
+   */
+  quality?: number | null;
   /** Offset for cards that arrive on the same row, in ms. */
   delay?: number;
 }) {
   const acronym = party.acronym ?? party.name.slice(0, 3).toUpperCase();
+  const reading = publicReading(base, engagement);
 
   return (
     <Reveal delay={delay} className="h-full">
@@ -79,13 +91,16 @@ export function PartyCard({
 
           {/* Only when there is a reading: an empty block still costs its padding
               and the column gap, leaving the card with a hollow bottom margin. */}
-          {engagement !== null || alignment !== null ? (
+          {reading.value !== null || alignment !== null || quality !== null ? (
             <div className="mt-auto space-y-2 pt-2">
-              {engagement !== null ? (
-                <AlignmentMeter value={engagement} label="Alinhamento com eleitores" />
+              {reading.value !== null ? (
+                <AlignmentMeter value={reading.value} label={reading.label} />
               ) : null}
               {alignment !== null ? (
                 <AlignmentMeter value={alignment} label="Seu alinhamento" />
+              ) : null}
+              {quality !== null ? (
+                <AlignmentMeter value={quality} label="Índice de qualidade" />
               ) : null}
             </div>
           ) : null}

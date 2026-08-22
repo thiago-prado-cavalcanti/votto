@@ -85,12 +85,17 @@ export default async function PublicLayout({
           <div className="flex items-center gap-3">
             {session ? (
               <>
-                <span className="hidden text-sm text-[var(--color-muted)] sm:inline">
+                {/* The greeting is the way into the account — the only page the
+                    citizen owns, and where they change who represents them. */}
+                <Link
+                  href="/conta"
+                  className="hidden text-sm text-[var(--color-muted)] transition-colors hover:text-navy-800 sm:inline"
+                >
                   Olá,{" "}
                   <span className="font-medium text-navy-800">
                     {session.name.split(" ")[0]}
                   </span>
-                </span>
+                </Link>
                 <LogoutButton />
               </>
             ) : (
@@ -101,7 +106,7 @@ export default async function PublicLayout({
           </div>
         </Container>
         <Container className="block pb-2 sm:hidden">
-          <NavLinks />
+          <NavLinks account={Boolean(session)} />
         </Container>
       </SiteHeader>
 
@@ -147,8 +152,14 @@ export default async function PublicLayout({
             </FooterColumn>
 
             {/* Reachable from every page: Meta and Google both check that the
-                privacy policy URL is linked from the site, not just live. */}
+                privacy policy URL is linked from the site, not just live.
+                "Sobre" is in the header nav as well, and repeats here on
+                purpose — it is the long-form answer to the same question the
+                legal documents answer in short, so a reader who came down here
+                looking for what the platform does with them finds it in the
+                column they are already reading. */}
             <FooterColumn title="Transparência">
+              <FooterLink href="/sobre">Sobre o projeto</FooterLink>
               <FooterLink href="/termos">Termos de Serviço</FooterLink>
               <FooterLink href="/privacidade">Política de Privacidade</FooterLink>
               <FooterLink href="/exclusao-de-dados">Excluir meus dados</FooterLink>

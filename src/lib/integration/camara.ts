@@ -41,6 +41,9 @@ import {
   upsertParty,
   upsertTheme,
   verifyImageUrl,
+  recordRollCall,
+  upsertServiceSpan,
+  upsertAgentMetrics,
   type Counters,
   type SyncOptions,
   type SyncResult,
@@ -48,7 +51,7 @@ import {
 } from "@/lib/integration/importer";
 import { computePriority, isConcludedSituation } from "@/lib/domain/priority";
 import { db } from "@/lib/db";
-import { AgentType, House, ImportSource, Scope, VoteValue } from "@/generated/prisma";
+import { AgentType, House, ImportSource, Scope, ServiceKind, VoteValue } from "@/generated/prisma";
 
 const BASE = "https://dadosabertos.camara.leg.br/api/v2";
 const SOURCE = ImportSource.CAMARA;
@@ -192,6 +195,23 @@ function mapVote(tipo: string | undefined): VoteValue | null {
   if (t === "obstrução" || t === "obstrucao") return VoteValue.ABSTENTION;
   // "Artigo 17" is the Speaker, who only votes to break ties: not a position.
   return null;
+}
+
+/**
+ * Whether a vote code marks the deputy who was presiding.
+ *
+ * Art. 17 of the RICD keeps the Speaker out of open ballots — they vote only to
+ * break a tie. Measured over 20 sittings the code appeared 17 times, 16 of them
+ * the Speaker's, so it is one person per sitting and not a rare edge case: left
+ * uncorrected it would file whoever holds the chair as the least assiduous
+ * member of the house.
+ */
+function isPresidingVote(tipoVoto: string | undefined | null): boolean {
+  const t = (tipoVoto ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return t.includes("artigo 17") || t.includes("art. 17");
 }
 
 /** Follow `links[rel=next]` pagination, yielding each page's `dados` array. */
@@ -429,7 +449,7 @@ async function upsertBillTheme(
   id: number,
   ref: CamaraProposicaoRef | null,
   c: Counters,
-  agentIdByRef?: Map<string, string>,
+  agentIdByRef: Map<string, string>,
 ): Promise<string | null> {
   const prop = await tryFetchDados<CamaraProposicao>(`/proposicoes/${id}`);
   await sleep(REQUEST_DELAY);
@@ -452,13 +472,21 @@ async function upsertBillTheme(
 
   // Authorship is only worth a request for bills still in play — a concluded
   // bill is never surfaced with an author card.
-  const { proposerId, proposerName } = inProgress && agentIdByRef
+  //
+  // `agentIdByRef` is a REQUIRED parameter, and that is the point: while it was
+  // optional this branch read `inProgress && agentIdByRef`, so a call site that
+  // forgot the map skipped authorship silently — the bill was still written,
+  // with its situation, regime and classification intact, and only the author
+  // and the rapporteur missing. Nothing ever came back for it, because
+  // `upsertTheme` maps null to `undefined` so as not to wipe an author it could
+  // not resolve. `npm run reauthor` is the repair for the themes left that way.
+  const { proposerId, proposerName } = inProgress
     ? await fetchProposer(id, agentIdByRef)
     : { proposerId: null, proposerName: null };
   // `uriUltimoRelator` is already in the detail we fetched — no extra request.
   const rapporteurRef = idFromUri(status?.uriUltimoRelator);
   const rapporteurId =
-    rapporteurRef != null ? agentIdByRef?.get(String(rapporteurRef)) ?? null : null;
+    rapporteurRef != null ? agentIdByRef.get(String(rapporteurRef)) ?? null : null;
 
   const themeId = await upsertTheme({
     source: SOURCE,
@@ -532,6 +560,60 @@ export async function syncThemes(opts: SyncOptions = {}): Promise<SyncResult> {
   return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark: from };
 }
 
+/**
+ * Re-resolve authorship for bills already imported that carry none.
+ *
+ * The repair for a gap the importer cannot close on its own. `upsertTheme` maps
+ * a null author to `undefined` so a failed lookup never wipes an author we
+ * already had — the right call, but it also means a bill first written WITHOUT
+ * an author keeps that hole until something touches it again, and the weekly
+ * sweeps only revisit bills that moved in the last 30–90 days. A bill that has
+ * been sitting "Pronta para Pauta" since before the gap therefore stays
+ * anonymous forever, which is exactly the set the themes list ranks highest.
+ *
+ * Scoped to bills with NO accountable face at all — neither a linked
+ * parliamentarian (`proposerId`) nor a free-text author (`proposerName`) — and
+ * still in progress, because {@link upsertBillTheme} only resolves authorship
+ * for those; a concluded bill would cost three requests to learn nothing. The
+ * rapporteur rides along in the detail the same pass already fetches.
+ *
+ * Idempotent and interruptible: it re-runs {@link upsertBillTheme}, so a second
+ * run only revisits what is still missing. Ordered by priority so a capped run
+ * repairs what the citizen actually sees first.
+ */
+export async function repairAuthorship(opts: SyncOptions = {}): Promise<SyncResult> {
+  const c = counters();
+  const agentIdByRef = await deputyIdsByRef();
+
+  const pending = await db.theme.findMany({
+    where: {
+      source: SOURCE,
+      inProgress: true,
+      proposerId: null,
+      proposerName: null,
+    },
+    orderBy: [{ priority: "desc" }, { lastActionAt: "desc" }],
+    ...(opts.limit ? { take: opts.limit } : {}),
+    select: { externalRef: true },
+  });
+
+  for (const theme of pending) {
+    const id = Number(theme.externalRef);
+    if (!Number.isFinite(id)) continue;
+    c.seen++;
+    if (c.seen % PROGRESS_INTERVAL === 0) {
+      opts.onProgress?.({
+        seen: c.seen,
+        upserted: c.upserted,
+        note: `${c.seen}/${pending.length} proposições sem autoria`,
+      });
+    }
+    await upsertBillTheme(id, null, c, agentIdByRef);
+  }
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted };
+}
+
 // ─── Floor agenda (the curated "what matters now" feed) ──────────────────────
 
 interface CamaraEvento {
@@ -569,6 +651,20 @@ interface AgendaCandidate {
  * scheduled them and how recently — both cheap signals available before any
  * detail request, so a capped run really does fetch only N bills.
  */
+/**
+ * Whether a Plenário event is a sitting where bills are actually decided.
+ *
+ * Needs care: the Câmara publishes "Sessão Deliberativa" and "Sessão Não
+ * Deliberativa Solene", and a plain `includes("Deliberativa")` matches BOTH —
+ * the negation is a prefix of the thing being looked for. Over a 120-day window
+ * that let 59 solemn sessions through against 36 real ones, each costing a
+ * `/pauta` request that can only ever come back empty.
+ */
+export function isDeliberativeSession(descricaoTipo: string | undefined | null): boolean {
+  const t = descricaoTipo ?? "";
+  return t.includes("Deliberativa") && !t.includes("Não Deliberativa");
+}
+
 export async function syncAgendaThemes(opts: SyncOptions = {}): Promise<SyncResult> {
   const c = counters();
   const agentIdByRef = await deputyIdsByRef();
@@ -588,7 +684,7 @@ export async function syncAgendaThemes(opts: SyncOptions = {}): Promise<SyncResu
       for (const evento of eventos) {
         if (evento.id == null) continue;
         // Solemn and non-deliberative sessions table nothing.
-        if (!(evento.descricaoTipo ?? "").includes("Deliberativa")) continue;
+        if (!isDeliberativeSession(evento.descricaoTipo)) continue;
 
         const pauta = await tryFetchDados<CamaraItemPauta[]>(`/eventos/${evento.id}/pauta`);
         await sleep(REQUEST_DELAY);
@@ -761,7 +857,15 @@ async function deputyIdsByRef(): Promise<Map<string, string>> {
   );
 }
 
-/** Persist one votação's individual votes against a Theme. */
+/**
+ * Persist one votação's individual votes against a Theme, and the same sitting
+ * into the attendance ledger.
+ *
+ * Two records from one response, because they answer different questions: the
+ * `Vote` row is the deputy's standing position on the bill (what the alignment
+ * index reads, one per theme), while the `RollCall` row is the sitting itself
+ * (what the quality index counts, one per votação). See {@link recordRollCall}.
+ */
 async function recordVotos(
   votacaoId: string,
   themeId: string,
@@ -770,11 +874,22 @@ async function recordVotos(
   agentIdByRef: Map<string, string>,
   c: Counters,
 ): Promise<void> {
+  const participants: Array<{ agentId: string; value: VoteValue }> = [];
+  let presidingAgentId: string | null = null;
+
   for (const voto of votos) {
     const dep = voto.deputado_;
     if (!dep?.id) continue;
     const value = mapVote(voto.tipoVoto);
-    if (value === null) continue;
+    // The chair is present but barred from voting. Caught before the `null`
+    // guard below, because `mapVote` correctly reports "no position" and that
+    // is exactly what would otherwise read as an absence.
+    if (value === null) {
+      if (isPresidingVote(voto.tipoVoto)) {
+        presidingAgentId = agentIdByRef.get(String(dep.id)) ?? presidingAgentId;
+      }
+      continue;
+    }
 
     const ref = String(dep.id);
     let agentId = agentIdByRef.get(ref);
@@ -798,6 +913,8 @@ async function recordVotos(
       agentIdByRef.set(ref, agentId);
     }
 
+    participants.push({ agentId, value });
+
     const changed = await upsertAgentVote({
       source: SOURCE,
       externalRef: `votacao:${votacaoId}:deputado:${ref}`,
@@ -809,4 +926,403 @@ async function recordVotos(
     });
     if (changed) c.upserted++;
   }
+
+  // A sitting with no date cannot be placed inside a mandate window, so it
+  // cannot serve as an attendance denominator — skip it rather than guess.
+  if (occurredAt) {
+    await recordRollCall({
+      source: SOURCE,
+      externalRef: votacaoId,
+      house: House.CAMARA,
+      occurredAt,
+      themeId,
+      participants,
+      presidingAgentId,
+    });
+  }
+}
+
+// ─── Quality index: mandate record and running cost (CLAUDE.md §3.3) ─────────
+
+/**
+ * Bill types counted as "projetos propostos".
+ *
+ * Narrower than {@link POLICY_TYPES} on purpose: MPV and PLV are the Executive's
+ * instruments, not a deputy's initiative, so crediting them to whoever signs an
+ * amendment would measure the wrong thing. Requerimentos are excluded outright —
+ * one sampled deputy filed 31 of them against 4 bills in 2025, so counting them
+ * would rank who fills the order paper rather than who legislates.
+ */
+const AUTHORED_TYPES = ["PL", "PLP", "PEC", "PDL"] as const;
+
+/**
+ * Legislature in progress (57 = 2023–2027).
+ *
+ * Only a fallback: `camara:mandate` records the real legislatures per year, and
+ * the expense sweep uses those. This keeps a fresh install — where the mandate
+ * job has not run yet — from collecting nothing at all.
+ */
+const CURRENT_LEGISLATURE = 57;
+
+/** Calendar years the quality index looks back over — one full Câmara legislature. */
+export const QUALITY_WINDOW_YEARS = 4;
+
+interface CamaraLegislatura {
+  id?: number;
+  dataInicio?: string;
+  dataFim?: string;
+}
+
+interface CamaraHistorico {
+  dataHora?: string;
+  idLegislatura?: number;
+  situacao?: string | null;
+  descricaoStatus?: string | null;
+  condicaoEleitoral?: string | null;
+}
+
+/** The years covered by the index window, most recent last. */
+export function windowYears(now: Date = new Date()): number[] {
+  const end = now.getFullYear();
+  return Array.from({ length: QUALITY_WINDOW_YEARS }, (_, i) => end - QUALITY_WINDOW_YEARS + 1 + i);
+}
+
+/**
+ * Reconstruct a deputy's mandate timeline from the Câmara's status log.
+ *
+ * The Senado publishes ready-made intervals; the Câmara publishes an event log,
+ * so the intervals have to be paired up here. Entries read
+ * "Entrada - Posse de Eleito Titular", "Entrada - Reassunção",
+ * "Saída - Afastamento definitivo - Término da Legislatura",
+ * "Saída - Afastamento sem prazo determinado - Secretário de Estado", plus
+ * bookkeeping rows ("Alteração de partido") that move nobody in or out.
+ *
+ * Produces EXERCISE stretches (Entrada → the next Saída) and, for every exit
+ * that is a leave rather than the end of a mandate, a LEAVE stretch covering the
+ * gap until the deputy reassumes. The two are recorded separately because the
+ * attendance pillar needs both: EXERCISE is its denominator, and LEAVE is what
+ * tells it whether the agent was away long enough that the ratio stops meaning
+ * anything at all.
+ */
+export function serviceSpansFromHistory(
+  entries: CamaraHistorico[],
+): Array<{ startsAt: Date; endsAt: Date | null; kind: ServiceKind; reason: string | null }> {
+  const events = entries
+    .map((e) => ({ at: parseDate(e.dataHora), status: e.descricaoStatus ?? "", situacao: e.situacao ?? "" }))
+    .filter((e): e is { at: Date; status: string; situacao: string } => e.at !== null)
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
+
+  const spans: Array<{ startsAt: Date; endsAt: Date | null; kind: ServiceKind; reason: string | null }> = [];
+  let openExercise: Date | null = null;
+  let openLeave: { at: Date; reason: string } | null = null;
+
+  for (const e of events) {
+    const isEntry = e.status.startsWith("Entrada") || e.situacao === "Exercício";
+    const isExit = e.status.startsWith("Saída") || e.situacao === "FIM_MANDATO";
+
+    if (isEntry) {
+      if (openLeave) {
+        spans.push({ startsAt: openLeave.at, endsAt: e.at, kind: ServiceKind.LEAVE, reason: openLeave.reason });
+        openLeave = null;
+      }
+      openExercise ??= e.at;
+      continue;
+    }
+
+    if (isExit) {
+      if (openExercise) {
+        spans.push({ startsAt: openExercise, endsAt: e.at, kind: ServiceKind.EXERCISE, reason: null });
+        openExercise = null;
+      }
+      // "Término da Legislatura" is the mandate ending, not an absence from one:
+      // the seat is gone, so there is nothing to be excused from.
+      const definitive = /Término da Legislatura/i.test(e.status) || e.situacao === "FIM_MANDATO";
+      if (!definitive) openLeave = { at: e.at, reason: leaveReason(e.status) };
+    }
+  }
+
+  // Whatever is still open runs to today.
+  if (openExercise) spans.push({ startsAt: openExercise, endsAt: null, kind: ServiceKind.EXERCISE, reason: null });
+  if (openLeave) spans.push({ startsAt: openLeave.at, endsAt: null, kind: ServiceKind.LEAVE, reason: openLeave.reason });
+
+  return spans;
+}
+
+/** "Saída - Afastamento sem prazo determinado - Secretário de Estado" → "Secretário de Estado". */
+function leaveReason(status: string): string {
+  const parts = status.split(" - ");
+  return (parts[parts.length - 1] || status).trim();
+}
+
+/**
+ * Import every sitting deputy's mandate record: the exercise/leave timeline, the
+ * legislatures they served, and the substantive bills they authored and reported.
+ *
+ * Rapporteurship is counted from our own `Theme.rapporteurId` rather than from an
+ * endpoint, because the Câmara publishes only `statusProposicao.uriUltimoRelator`
+ * — a bill's *last* rapporteur, so the count is a floor by construction. That is
+ * acceptable only because the quality index ranks deputies against deputies: a
+ * floor that applies uniformly to a cohort does not disturb the ordering inside
+ * it. It is never compared against the Senado's count, which is complete.
+ */
+export async function syncMandate(opts: SyncOptions = {}): Promise<SyncResult> {
+  const c = counters();
+  const years = windowYears();
+
+  const legislatures = await fetchLegislatures();
+  const deputies = await db.publicAgent.findMany({
+    where: { source: SOURCE, type: AgentType.FEDERAL_DEPUTY, inOffice: true },
+    select: { id: true, externalRef: true },
+  });
+  const targets = opts.limit ? deputies.slice(0, opts.limit) : deputies;
+  const rapporteured = await rapporteurCountsByYear(targets.map((d) => d.id));
+
+  for (const [i, dep] of targets.entries()) {
+    if (!dep.externalRef) continue;
+    c.seen++;
+    if (i % PROGRESS_INTERVAL === 0) {
+      opts.onProgress?.({ seen: c.seen, upserted: c.upserted, note: `${i}/${targets.length} deputados` });
+    }
+
+    const spans = serviceSpansFromHistory(await fetchHistory(dep.externalRef));
+    for (const span of spans) {
+      await upsertServiceSpan({
+        source: SOURCE,
+        externalRef: `camara:hist:${dep.externalRef}:${span.kind}:${span.startsAt.toISOString().slice(0, 10)}`,
+        agentId: dep.id,
+        ...span,
+      });
+    }
+
+    const authored = await fetchAuthoredByYear(dep.externalRef, years);
+    const legByYear = legislaturesByYear(legislatures, years);
+
+    for (const year of years) {
+      await upsertAgentMetrics(
+        dep.id,
+        year,
+        {
+          billsAuthored: authored.get(year) ?? 0,
+          billsRapporteured: rapporteured.get(dep.id)?.get(year) ?? 0,
+          legislatures: legByYear.get(year) ?? [],
+        },
+        SOURCE,
+      );
+    }
+    c.upserted++;
+  }
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark: new Date().toISOString().slice(0, 10) };
+}
+
+/** All legislatures with their date ranges, for mapping a year onto legislature ids. */
+async function fetchLegislatures(): Promise<CamaraLegislatura[]> {
+  const out: CamaraLegislatura[] = [];
+  for await (const page of paginate<CamaraLegislatura>(
+    `${BASE}/legislaturas?ordem=DESC&ordenarPor=id&itens=20`,
+  )) {
+    out.push(...page);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+/**
+ * Which legislature ids each year belongs to.
+ *
+ * An election year spans two: legislature 56 ran to 2023-01-31 and 57 opened on
+ * 2023-02-01, and the Câmara's expense endpoint keys on `(idLegislatura, ano)` —
+ * so querying 2023 under only one of them silently loses a month of documents.
+ */
+function legislaturesByYear(
+  legislatures: CamaraLegislatura[],
+  years: number[],
+): Map<number, number[]> {
+  const out = new Map<number, number[]>();
+  for (const year of years) {
+    const ids = legislatures
+      .filter((l) => {
+        if (!l.id || !l.dataInicio) return false;
+        const start = Number(l.dataInicio.slice(0, 4));
+        const end = l.dataFim ? Number(l.dataFim.slice(0, 4)) : 9999;
+        return year >= start && year <= end;
+      })
+      .map((l) => l.id as number);
+    out.set(year, ids);
+  }
+  return out;
+}
+
+/** A deputy's status log, tolerating the endpoint being unavailable. */
+async function fetchHistory(deputyRef: string): Promise<CamaraHistorico[]> {
+  try {
+    const res = await fetchJson<{ dados?: CamaraHistorico[] }>(
+      `${BASE}/deputados/${encodeURIComponent(deputyRef)}/historico`,
+    );
+    await sleep(REQUEST_DELAY);
+    return Array.isArray(res.dados) ? res.dados : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Count substantive bills the deputy authored, by year.
+ *
+ * One paginated request covers the whole window: the endpoint accepts repeated
+ * `siglaTipo` and `ano` parameters, and the per-year totals were verified to
+ * match querying each year separately.
+ */
+async function fetchAuthoredByYear(deputyRef: string, years: number[]): Promise<Map<number, number>> {
+  const types = AUTHORED_TYPES.map((t) => `siglaTipo=${t}`).join("&");
+  const anos = years.map((y) => `ano=${y}`).join("&");
+  const url =
+    `${BASE}/proposicoes?idDeputadoAutor=${encodeURIComponent(deputyRef)}` +
+    `&${types}&${anos}&ordem=ASC&ordenarPor=id&itens=100`;
+
+  const counts = new Map<number, number>();
+  try {
+    for await (const page of paginate<CamaraProposicao>(url)) {
+      for (const p of page) {
+        if (typeof p.ano !== "number") continue;
+        counts.set(p.ano, (counts.get(p.ano) ?? 0) + 1);
+      }
+    }
+  } catch {
+    return counts;
+  }
+  return counts;
+}
+
+/** Bills each deputy is on record as rapporteur for, by year of last action. */
+async function rapporteurCountsByYear(agentIds: string[]): Promise<Map<string, Map<number, number>>> {
+  const themes = await db.theme.findMany({
+    where: { rapporteurId: { in: agentIds } },
+    select: { rapporteurId: true, presentedAt: true, lastActionAt: true },
+  });
+  const out = new Map<string, Map<number, number>>();
+  for (const t of themes) {
+    if (!t.rapporteurId) continue;
+    const at = t.lastActionAt ?? t.presentedAt;
+    if (!at) continue;
+    const byYear = out.get(t.rapporteurId) ?? new Map<number, number>();
+    const year = at.getFullYear();
+    byYear.set(year, (byYear.get(year) ?? 0) + 1);
+    out.set(t.rapporteurId, byYear);
+  }
+  return out;
+}
+
+interface CamaraDespesa {
+  ano?: number;
+  mes?: number;
+  tipoDespesa?: string;
+  valorLiquido?: number;
+  valorDocumento?: number;
+  valorGlosa?: number;
+}
+
+/**
+ * Import the parliamentary quota (CEAP) each deputy drew — the running cost of
+ * the mandate, and the fourth pillar of the quality index.
+ *
+ * What this measures, and what it deliberately does not: CEAP reimburses office
+ * upkeep, travel, fuel, food, publicity and security — what a mandate consumes
+ * to operate. Emendas parlamentares do not pass through it, which is the whole
+ * reason it is the right source: a deputy who secured a billion reais for
+ * schools in their state is not an expensive deputy, and an index that confused
+ * the two would say the opposite of the truth (CLAUDE.md §3.3).
+ *
+ * Two quirks of the endpoint, both verified and both silent failures:
+ *
+ *   - **`idLegislatura` is required.** Without it the response is `200 OK` with
+ *     an empty array — indistinguishable from a deputy who spent nothing.
+ *   - **`ano` is required too.** With `idLegislatura` alone, only the first year
+ *     of the legislature comes back (legislature 56 returned 100 rows, all 2019).
+ *
+ * So the sweep is over the product `(legislature × year)`, which is also why
+ * `AgentMetrics.legislatures` exists: an election year belongs to two.
+ *
+ * Self-limiting on re-runs. A closed year whose figures are already stored is
+ * skipped, so the first execution backfills the window and every later one costs
+ * only the current year.
+ */
+export async function syncExpenses(opts: SyncOptions = {}): Promise<SyncResult> {
+  const c = counters();
+  const years = windowYears();
+  const currentYear = new Date().getFullYear();
+
+  const deputies = await db.publicAgent.findMany({
+    where: { source: SOURCE, type: AgentType.FEDERAL_DEPUTY, inOffice: true },
+    select: { id: true, externalRef: true },
+  });
+  const targets = opts.limit ? deputies.slice(0, opts.limit) : deputies;
+
+  const stored = await db.agentMetrics.findMany({
+    where: { agentId: { in: targets.map((d) => d.id) }, year: { in: years } },
+    select: { agentId: true, year: true, quotaDocuments: true, legislatures: true },
+  });
+  const settled = new Set(
+    stored.filter((m) => m.year < currentYear && m.quotaDocuments > 0).map((m) => `${m.agentId}:${m.year}`),
+  );
+  const legsByAgentYear = new Map(stored.map((m) => [`${m.agentId}:${m.year}`, m.legislatures]));
+
+  for (const [i, dep] of targets.entries()) {
+    if (!dep.externalRef) continue;
+    if (i % PROGRESS_INTERVAL === 0) {
+      opts.onProgress?.({ seen: c.seen, upserted: c.upserted, note: `${i}/${targets.length} deputados` });
+    }
+
+    for (const year of years) {
+      const key = `${dep.id}:${year}`;
+      if (settled.has(key)) continue;
+
+      // `camara:mandate` writes the legislatures; if it has not run yet, fall
+      // back to the current one so a fresh install still collects something.
+      const legs = legsByAgentYear.get(key)?.length ? (legsByAgentYear.get(key) as number[]) : [CURRENT_LEGISLATURE];
+
+      let spent = 0;
+      let documents = 0;
+      const byCategory = new Map<string, number>();
+
+      for (const leg of legs) {
+        for await (const page of paginate<CamaraDespesa>(
+          `${BASE}/deputados/${encodeURIComponent(dep.externalRef)}/despesas` +
+            `?idLegislatura=${leg}&ano=${year}&itens=100`,
+        )) {
+          for (const d of page) {
+            const net = typeof d.valorLiquido === "number" ? d.valorLiquido : 0;
+            if (net <= 0) continue;
+            spent += net;
+            documents++;
+            const label = (d.tipoDespesa ?? "OUTROS").trim();
+            byCategory.set(label, (byCategory.get(label) ?? 0) + net);
+          }
+        }
+      }
+
+      c.seen += documents;
+      if (documents === 0) continue;
+
+      await upsertAgentMetrics(
+        dep.id,
+        year,
+        {
+          quotaSpent: round2(spent),
+          quotaDocuments: documents,
+          quotaByCategory: Object.fromEntries(
+            [...byCategory.entries()].map(([k, v]) => [k, round2(v)]),
+          ),
+        },
+        SOURCE,
+      );
+      c.upserted++;
+    }
+  }
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark: String(currentYear) };
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

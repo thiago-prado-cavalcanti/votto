@@ -25,6 +25,8 @@
     "check:vote": "tsx --tsconfig scripts/checks/tsconfig.json scripts/checks/vote-challenge.ts",
     "backfill": "tsx scripts/backfill.ts",
     "reprioritize": "tsx scripts/reprioritize.ts",
+    "requality": "tsx scripts/requality.ts",
+    "reauthor": "tsx scripts/reauthor.ts",
     "summarize": "tsx scripts/sync.ts ai:summaries",
     "estimate:ai": "tsx scripts/estimate-ai-cost.ts",
     "sync": "tsx scripts/sync.ts",

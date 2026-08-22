@@ -1,9 +1,11 @@
 /**
  * Agents list: active public agents with party, type, location, positioning
- * profile and (for logged-in citizens) their alignment meter. Supports filtering
- * by type/state/party and sorting by alignment (when logged in) or name.
+ * profile and (for logged-in citizens) their alignment meter. Supports search by
+ * name or party, filtering by type/state/party, and sorting by alignment (when
+ * logged in), quality or name — one GET form, so every control narrows the same
+ * query and the URL stays the state.
  */
-import { Container, Field, Select, ButtonLink } from "@/components/ui";
+import { Container, Field, Select, Input, ButtonLink } from "@/components/ui";
 import { PageIntro } from "@/components/public/Section";
 import { IndexPlate } from "@/components/public/IndexPlate";
 import { FilterBar } from "@/components/public/FilterBar";
@@ -11,7 +13,16 @@ import { AgentCard } from "@/components/public/AgentCard";
 import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import { citizenAgentAlignments, agentElectorateAlignments } from "@/lib/indexes/alignment";
+import {
+  citizenAgentAlignments,
+  agentElectorateAlignments,
+  agentBaseAlignments,
+  type BaseAlignment,
+} from "@/lib/indexes/alignment";
+import { citizenFollows, followSlot } from "@/lib/domain/follows";
+import { publicReading } from "@/lib/domain/reading";
+import { agentSearchFilter } from "@/lib/domain/search";
+import type { FollowSlot } from "@/components/public/FollowButton";
 import { agentTypeLabel, agentTypePluralLabel, BR_STATES } from "@/lib/labels";
 import type { AgentType, Prisma } from "@/generated/prisma";
 
@@ -22,9 +33,15 @@ const AGENT_TYPES = Object.keys(agentTypeLabel) as AgentType[];
 export default async function AgentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; state?: string; party?: string; sort?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    type?: string;
+    state?: string;
+    party?: string;
+    sort?: string;
+  }>;
 }) {
-  const { type, state, party, sort } = await searchParams;
+  const { q, type, state, party, sort } = await searchParams;
   const session = await getCitizenSession();
 
   // Former members keep their votes (the alignment index needs them) but are
@@ -33,6 +50,13 @@ export default async function AgentsPage({
   if (type && AGENT_TYPES.includes(type as AgentType)) where.type = type as AgentType;
   if (state) where.state = state;
   if (party) where.party = { kid: party };
+  // Search: the agent's own name and their party's name/acronym, folded so an
+  // accent never has to be typed (`jose guimaraes`, `uniao`). Every word must
+  // match, which is what makes `joao pt` mean "someone called João, in the PT"
+  // rather than "every João plus the whole PT bench". ANDed with the selects
+  // above rather than replacing them — box and filters are one form.
+  const search = agentSearchFilter(q);
+  if (search) where.AND = search;
 
   const [agents, parties] = await Promise.all([
     db.publicAgent.findMany({
@@ -49,18 +73,26 @@ export default async function AgentsPage({
 
   // Positioning per agent (uses internal id; never exposed).
 
-  // Electorate engagement (always available, login-independent).
-  const engagement = await agentElectorateAlignments();
+  // The published reading: each agent against their own base, falling back to
+  // the electorate where nobody follows them yet (`publicReading`).
+  const [engagement, base] = await Promise.all([
+    agentElectorateAlignments(),
+    agentBaseAlignments(),
+  ]);
 
-  // Alignment for logged-in citizens.
+  // Alignment and declarations for logged-in citizens.
   let alignments: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
+  let follows: Awaited<ReturnType<typeof citizenFollows>> | null = null;
   if (session) {
     const user = await db.user.findUnique({
       where: { kid: session.userKid },
       select: { id: true, voteVersion: true },
     });
     if (user) {
-      alignments = await citizenAgentAlignments(user.id, user.voteVersion);
+      [alignments, follows] = await Promise.all([
+        citizenAgentAlignments(user.id, user.voteVersion),
+        citizenFollows(user.id),
+      ]);
     }
   }
 
@@ -68,18 +100,36 @@ export default async function AgentsPage({
     agent: ReturnType<typeof toPublicAgent>;
     alignment: number | null;
     engagement: number | null;
+    base: BaseAlignment | undefined;
+    follow: FollowSlot;
+    /** The figure actually printed — what "sort by alignment" must order on. */
+    published: number | null;
+    /** 0–100 quality index, or null when we could not measure enough of it. */
+    quality: number | null;
   };
 
-  let rows: Row[] = agents.map((a) => ({
-    agent: toPublicAgent(a),
-    alignment: alignments?.get(a.kid)?.alignment ?? null,
-    engagement: engagement.get(a.kid)?.alignment ?? null,
-  }));
+  let rows: Row[] = agents.map((a) => {
+    const agentBase = base.get(a.kid);
+    const agentEngagement = engagement.get(a.kid)?.alignment ?? null;
+    return {
+      agent: toPublicAgent(a),
+      alignment: alignments?.get(a.kid)?.alignment ?? null,
+      engagement: agentEngagement,
+      base: agentBase,
+      follow: followSlot(a, session ? follows ?? new Map() : null),
+      published: publicReading(agentBase, agentEngagement).value,
+      quality: a.qualityScore,
+    };
+  });
 
   if (sort === "alignment" && alignments) {
     rows = [...rows].sort((a, b) => (b.alignment ?? -1) - (a.alignment ?? -1));
   } else if (sort === "engagement") {
-    rows = [...rows].sort((a, b) => (b.engagement ?? -1) - (a.engagement ?? -1));
+    rows = [...rows].sort((a, b) => (b.published ?? -1) - (a.published ?? -1));
+  } else if (sort === "quality") {
+    // −1 for the unmeasured, so they sink instead of being ranked as if they
+    // had scored zero (CLAUDE.md §3.3).
+    rows = [...rows].sort((a, b) => (b.quality ?? -1) - (a.quality ?? -1));
   }
 
   // Masthead plate: the bench by office. Counted over the agents already in hand
@@ -101,7 +151,7 @@ export default async function AgentsPage({
       <PageIntro
         eyebrow="Índice de alinhamento"
         title="Agentes públicos"
-        lead="Veja os representantes e, ao entrar, descubra o seu alinhamento com cada um."
+        lead="Veja os representantes, siga quem representa você e descubra o seu alinhamento com cada um."
         figure={
           officeRows.length > 0 ? (
             <IndexPlate
@@ -119,6 +169,14 @@ export default async function AgentsPage({
 
       <Container className="py-10">
         <FilterBar>
+          <Field label="Buscar">
+            <Input
+              variant="rule"
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="Nome ou partido"
+            />
+          </Field>
           <Field label="Tipo">
             <Select variant="rule" name="type" defaultValue={type ?? ""}>
               <option value="">Todos</option>
@@ -152,7 +210,10 @@ export default async function AgentsPage({
           <Field label="Ordenar por">
             <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
               <option value="">Nome</option>
-              <option value="engagement">Alinhamento com eleitores</option>
+              {/* The value stays `engagement` (an internal token, and links to
+                  it already exist); the label follows what is actually shown. */}
+              <option value="engagement">Alinhamento com a base</option>
+              <option value="quality">Índice de qualidade</option>
               {session ? <option value="alignment">Seu alinhamento</option> : null}
             </Select>
           </Field>
@@ -160,7 +221,7 @@ export default async function AgentsPage({
 
         {rows.length === 0 ? (
           <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">
-            Nenhum agente encontrado para os filtros selecionados.
+            Nenhum agente encontrado para esta busca.
           </p>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -170,6 +231,9 @@ export default async function AgentsPage({
                 agent={row.agent}
                 alignment={session ? row.alignment : null}
                 engagement={row.engagement}
+                base={row.base}
+                quality={row.quality}
+                follow={row.follow}
                 // Cards sharing a row arrive left to right; each row of the grid
                 // still waits for its own scroll position.
                 delay={(i % 3) * 80}

@@ -16,7 +16,10 @@ import {
   citizenPartyAlignments,
   agentElectorateAlignments,
   partyElectorateAlignments,
+  agentBaseAlignments,
+  partyBaseAlignments,
 } from "@/lib/indexes/alignment";
+import { publicReading } from "@/lib/domain/reading";
 import type { Prisma, VoteValue } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
@@ -66,10 +69,13 @@ export default async function HomePage() {
     db.party.findMany({ where: { status: "ACTIVE" } }),
   ]);
 
-  // Global alignment with the electorate (always) + personal alignment (logged in).
-  const [agentEngage, partyEngage] = await Promise.all([
+  // The published reading (base first, electorate as fallback) + the personal
+  // alignment when somebody is logged in.
+  const [agentEngage, partyEngage, agentBase, partyBase] = await Promise.all([
     agentElectorateAlignments(),
     partyElectorateAlignments(),
+    agentBaseAlignments(),
+    partyBaseAlignments(),
   ]);
   let agentAlign: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
   let partyAlign: Map<string, { alignment: number | null; agents: number }> | null = null;
@@ -86,7 +92,9 @@ export default async function HomePage() {
     }
   }
 
-  // Ranking score: personal alignment when logged in, else global alignment.
+  // Ranking score: personal alignment when logged in, else the published
+  // reading — the agent's own base where they have one, the electorate where
+  // they do not (`publicReading`).
   const toAgentRow = (a: AgentWithParty): RankingRow => ({
     kid: a.kid,
     name: `${a.firstName} ${a.lastName}`.trim(),
@@ -94,7 +102,7 @@ export default async function HomePage() {
     imageUrl: a.imageUrl,
     alignment: isAuthenticated
       ? agentAlign?.get(a.kid)?.alignment ?? null
-      : agentEngage.get(a.kid)?.alignment ?? null,
+      : publicReading(agentBase.get(a.kid), agentEngage.get(a.kid)?.alignment ?? null).value,
     href: `/agentes/${a.kid}`,
   });
   const byAlignment = (a: RankingRow, b: RankingRow) =>
@@ -102,6 +110,21 @@ export default async function HomePage() {
 
   const topDeputies = deputies.map(toAgentRow).sort(byAlignment).slice(0, 10);
   const topSenators = senators.map(toAgentRow).sort(byAlignment).slice(0, 10);
+
+  // The quality ranking is not a cut of the alignment one: it answers the other
+  // question the platform asks — not who an agent agrees with, but how the
+  // mandate is exercised — so it is ranked on its own figure and mixes both
+  // houses, which the percentile inside each house makes comparable.
+  const toQualityRow = (a: AgentWithParty): RankingRow => ({
+    ...toAgentRow(a),
+    alignment: a.qualityScore,
+  });
+  const topQuality = [...deputies, ...senators]
+    .map(toQualityRow)
+    // Unmeasured agents sink instead of ranking as zero (CLAUDE.md §3.3).
+    .filter((r) => r.alignment !== null)
+    .sort(byAlignment)
+    .slice(0, 10);
   const topParties: RankingRow[] = allParties
     .map((p) => ({
       kid: p.kid,
@@ -110,7 +133,7 @@ export default async function HomePage() {
       imageUrl: p.logoUrl,
       alignment: isAuthenticated
         ? partyAlign?.get(p.kid)?.alignment ?? null
-        : partyEngage.get(p.kid)?.alignment ?? null,
+        : publicReading(partyBase.get(p.kid), partyEngage.get(p.kid)?.alignment ?? null).value,
       href: `/partidos/${p.kid}`,
     }))
     .sort(byAlignment)
@@ -167,6 +190,16 @@ export default async function HomePage() {
                   rows: topSenators,
                   hrefAll: "/agentes?type=SENATOR",
                 },
+                ...(topQuality.length > 0
+                  ? [
+                      {
+                        key: "qualidade",
+                        label: "Índice de qualidade",
+                        rows: topQuality,
+                        hrefAll: "/agentes?sort=quality",
+                      },
+                    ]
+                  : []),
                 {
                   key: "partidos",
                   label: "Partidos",

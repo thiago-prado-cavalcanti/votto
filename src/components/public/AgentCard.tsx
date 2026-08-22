@@ -11,26 +11,44 @@ import { Reveal } from "@/components/public/motion";
 import { Card, CardBody, Badge, AlignmentMeter } from "@/components/ui";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
-import { agentTypeLabel } from "@/lib/labels";
+import { FollowButton, type FollowSlot } from "@/components/public/FollowButton";
+import { cn } from "@/lib/cn";
+import { agentTypeLabel, agentTypeProseLabel } from "@/lib/labels";
+import { publicReading } from "@/lib/domain/reading";
+import type { BaseAlignment } from "@/lib/indexes/alignment";
 import type { PublicAgentDTO } from "@/lib/dto";
 
 export function AgentCard({
   agent,
   alignment = null,
   engagement = null,
+  base,
+  quality = null,
+  follow,
   delay = 0,
 }: {
   agent: PublicAgentDTO;
   /** 0–100 alignment with the logged-in citizen, or null when N/A. */
   alignment?: number | null;
-  /** 0–100 engagement with the whole electorate (always available). */
+  /** 0–100 engagement with the whole electorate (the fallback reading). */
   engagement?: number | null;
+  /** The agent's reading against their own base, when anybody follows them. */
+  base?: BaseAlignment;
+  /**
+   * 0–100 quality index — how the mandate is exercised, independent of who the
+   * agent agrees with. Null when too little of it could be measured, and the
+   * meter is then omitted rather than drawn at zero (CLAUDE.md §3.3).
+   */
+  quality?: number | null;
+  /** What the follow control should render; omitted where it does not belong. */
+  follow?: FollowSlot;
   /** Offset for cards that arrive on the same row, in ms. */
   delay?: number;
 }) {
   const fullName = `${agent.firstName} ${agent.lastName}`.trim();
   const location = [agent.municipality, agent.state].filter(Boolean).join(" · ");
   const initials = `${agent.firstName[0] ?? ""}${agent.lastName[0] ?? ""}`.toUpperCase();
+  const reading = publicReading(base, engagement);
 
   return (
     <Reveal delay={delay} className="h-full">
@@ -97,15 +115,45 @@ export function AgentCard({
           {/* Rendered only when there is a reading to show. An agent with no
               shared themes yet has neither meter, and an empty block still costs
               its own padding plus the column gap — which is the hollow bottom
-              margin those cards were carrying. */}
-          {engagement !== null || alignment !== null ? (
+              margin those cards were carrying.
+
+              The first meter is the base wherever there is one and the
+              electorate where there is not (`publicReading`) — never both, they
+              answer the same question. */}
+          {reading.value !== null || alignment !== null || quality !== null ? (
             <div className="mt-auto space-y-2 pt-2">
-              {engagement !== null ? (
-                <AlignmentMeter value={engagement} label="Alinhamento com eleitores" />
+              {reading.value !== null ? (
+                <AlignmentMeter value={reading.value} label={reading.label} />
               ) : null}
               {alignment !== null ? (
                 <AlignmentMeter value={alignment} label="Seu alinhamento" />
               ) : null}
+              {/* Quality answers a different question from the two above — not
+                  who the agent agrees with, but how the mandate is exercised.
+                  Omitted, never zeroed, when it could not be measured. */}
+              {quality !== null ? (
+                <AlignmentMeter value={quality} label="Índice de qualidade" />
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* The declaration, on its own rule under the readings: it is an
+              action, not a statistic, and it must not read as a third meter.
+              `mt-auto` here too, so a card with no reading at all still pins it
+              to the bottom edge. */}
+          {follow && follow.kind !== "unavailable" ? (
+            <div
+              className={cn(
+                "border-t border-line pt-2.5",
+                reading.value === null && alignment === null ? "mt-auto" : "",
+              )}
+            >
+              <FollowButton
+                agentKid={agent.kid}
+                agentName={fullName}
+                officeLabel={agentTypeProseLabel[agent.type]}
+                slot={follow}
+              />
             </div>
           ) : null}
         </CardBody>

@@ -26,6 +26,7 @@
 import * as camara from "@/lib/integration/camara";
 import * as senado from "@/lib/integration/senado";
 import { syncSummaries } from "@/lib/integration/summaries";
+import { syncQuality } from "@/lib/integration/quality";
 import type { SyncOptions, SyncResult, SyncStep } from "@/lib/integration/importer";
 import { ImportSource } from "@/generated/prisma";
 
@@ -162,6 +163,56 @@ export const SYNC_JOBS: SyncJobDefinition[] = [
     schedule: { weekday: 0, hour: 7, minute: 0 },
     defaults: { days: WEEKLY_LOOKBACK_DAYS },
     run: senado.syncVotes,
+  },
+  {
+    name: "camara:mandate",
+    source: ImportSource.CAMARA,
+    label: "Câmara — mandatos e produção",
+    description:
+      "Períodos de exercício e licença, legislaturas servidas, projetos apresentados e relatados por deputado.",
+    schedule: { weekday: 0, hour: 7, minute: 30 },
+    defaults: {},
+    run: camara.syncMandate,
+  },
+  {
+    name: "senado:mandate",
+    source: ImportSource.SENADO,
+    label: "Senado — mandatos e produção",
+    description:
+      "Períodos de exercício e licença, projetos apresentados e relatados por senador.",
+    schedule: { weekday: 0, hour: 7, minute: 45 },
+    defaults: {},
+    run: senado.syncMandate,
+  },
+  {
+    name: "camara:expenses",
+    source: ImportSource.CAMARA,
+    label: "Câmara — cota parlamentar",
+    description:
+      "Custeio do mandato (CEAP) por deputado, por legislatura e ano. Não inclui emendas parlamentares.",
+    schedule: { weekday: 0, hour: 8, minute: 0 },
+    defaults: {},
+    run: camara.syncExpenses,
+  },
+  {
+    name: "senado:expenses",
+    source: ImportSource.SENADO,
+    label: "Senado — cota parlamentar",
+    description:
+      "Custeio do mandato (CEAPS) por senador, por ano. Não inclui emendas parlamentares.",
+    schedule: { weekday: 0, hour: 8, minute: 15 },
+    defaults: {},
+    run: senado.syncExpenses,
+  },
+  {
+    name: "metrics:quality",
+    source: ImportSource.MANUAL,
+    label: "Índice de qualidade",
+    description:
+      "Recalcula o índice 0–100 de cada agente a partir dos dados já importados. Sem rede.",
+    schedule: { weekday: 0, hour: 8, minute: 30 },
+    defaults: {},
+    run: syncQuality,
   },
 ];
 

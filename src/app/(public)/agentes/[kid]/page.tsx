@@ -20,15 +20,24 @@ import { ReadingPlate } from "@/components/public/ReadingPlate";
 import { IndexPlate } from "@/components/public/IndexPlate";
 import { ThemeBriefList, type ThemeBriefItem } from "@/components/public/ThemeBrief";
 import { PositioningChart } from "@/components/public/PositioningChart";
+import { QualityPlate } from "@/components/public/QualityPlate";
+import { parseQualityPillars } from "@/lib/domain/quality";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
+import { FollowButton } from "@/components/public/FollowButton";
 import { Reveal } from "@/components/public/motion";
 import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { getAgentPosition } from "@/lib/domain/positions";
-import { citizenAgentAlignment, agentElectorateAlignments } from "@/lib/indexes/alignment";
-import { agentTypeLabel, voteValueLabel } from "@/lib/labels";
+import {
+  citizenAgentAlignment,
+  agentElectorateAlignments,
+  agentBaseAlignments,
+} from "@/lib/indexes/alignment";
+import { citizenFollows, followSlot } from "@/lib/domain/follows";
+import { publicReading, followersNote } from "@/lib/domain/reading";
+import { agentTypeLabel, agentTypeProseLabel, voteValueLabel } from "@/lib/labels";
 import { POSITIONING_AXES } from "@/lib/indexes/positioning";
 import { env } from "@/lib/env";
 
@@ -81,7 +90,14 @@ export default async function AgentDetailPage({
   if (!agent || agent.status !== "ACTIVE") notFound();
 
   const position = await getAgentPosition(agent.id);
-  const engagement = (await agentElectorateAlignments()).get(agent.kid)?.alignment ?? null;
+  const [electorateMap, baseMap] = await Promise.all([
+    agentElectorateAlignments(),
+    agentBaseAlignments(),
+  ]);
+  const engagement = electorateMap.get(agent.kid)?.alignment ?? null;
+  // The base wins where there is one; the electorate stands in where there is
+  // not. Never both — they answer the same question (`publicReading`).
+  const reading = publicReading(baseMap.get(agent.kid), engagement);
 
   // The bills this agent signs. Ordered by legislative priority rather than by
   // date: what a profile is asked is "what of theirs is about to be voted", and
@@ -139,23 +155,33 @@ export default async function AgentDetailPage({
 
   let alignment: number | null = null;
   let sharedThemes = 0;
+  let follows: Awaited<ReturnType<typeof citizenFollows>> | null = null;
   if (session) {
     const user = await db.user.findUnique({
       where: { kid: session.userKid },
       select: { id: true, voteVersion: true },
     });
     if (user) {
-      const result = await citizenAgentAlignment(user.id, user.voteVersion, agent.kid);
+      const [result, followMap] = await Promise.all([
+        citizenAgentAlignment(user.id, user.voteVersion, agent.kid),
+        citizenFollows(user.id),
+      ]);
       alignment = result?.alignment ?? null;
       sharedThemes = result?.sharedThemes ?? 0;
+      follows = followMap;
     }
   }
+  const follow = followSlot(agent, session ? follows ?? new Map() : null);
 
-  // The masthead figure is the alignment when there is one to print. Until
-  // citizens have voted there is none for anybody, and a masthead whose figure is
-  // two apologies is weaker than the plain heading it replaced — so the roll-call
-  // record, which exists from the first import, stands in for it.
-  const hasReading = engagement !== null || alignment !== null;
+  // The masthead figure is an index reading when there is one to print. Until
+  // citizens have voted there is no alignment for anybody, and a masthead whose
+  // figure is two apologies is weaker than the plain heading it replaced — so the
+  // roll-call record, which exists from the first import, stands in for it.
+  //
+  // Quality counts here too, and it is the reading most likely to exist first:
+  // it is built from the houses' own record and needs no citizen to have voted.
+  const hasReading =
+    reading.value !== null || alignment !== null || agent.qualityScore !== null;
 
   const dto = toPublicAgent(agent);
   const fullName = `${dto.firstName} ${dto.lastName}`.trim();
@@ -170,7 +196,15 @@ export default async function AgentDetailPage({
             <Link href="/agentes" className="text-sm text-navy-600 hover:text-navy-800">
               ← Voltar para agentes
             </Link>
-            <ShareButton kind="agente" kid={dto.kid} title={fullName} variant="button" />
+            <div className="flex items-center gap-2">
+              <FollowButton
+                agentKid={dto.kid}
+                agentName={fullName}
+                officeLabel={agentTypeProseLabel[dto.type]}
+                slot={follow}
+              />
+              <ShareButton kind="agente" kid={dto.kid} title={fullName} variant="button" />
+            </div>
           </>
         }
         portrait={
@@ -198,15 +232,30 @@ export default async function AgentDetailPage({
         figure={
           hasReading ? (
             <ReadingPlate
-              caption="Alinhamento"
+              // Three readings that answer different questions — two about who
+              // the agent agrees with, one about how the mandate is exercised —
+              // so the caption names the family, not the first of them.
+              caption="Índices"
               readings={[
                 {
-                  label: "Com os eleitores",
-                  value: engagement,
+                  label: reading.shortLabel,
+                  value: reading.value,
                   hint:
-                    engagement === null
-                      ? "Ainda não há votos de cidadãos suficientes para calcular."
-                      : "O quanto os votos deste agente acompanham o conjunto dos cidadãos.",
+                    reading.value === null
+                      ? reading.followers > 0
+                        ? `${followersNote(reading.followers)}, mas ainda não votaram nos temas em que ele se posicionou.`
+                        : "Ainda não há votos de cidadãos suficientes para calcular."
+                      : reading.fromBase
+                        ? `O quanto os votos dele acompanham quem o segue — ${followersNote(reading.followers)}.`
+                        : "O quanto os votos deste agente acompanham o conjunto dos cidadãos. Ainda ninguém o segue.",
+                },
+                {
+                  label: "Qualidade",
+                  value: agent.qualityScore,
+                  hint:
+                    agent.qualityScore === null
+                      ? "Ainda não há registro suficiente de presença, produção e custeio para calcular."
+                      : "Assiduidade, projetos apresentados e relatados, e custeio do mandato — comparado aos pares da mesma casa.",
                 },
                 {
                   label: "Com você",
@@ -377,6 +426,23 @@ export default async function AgentDetailPage({
               maths behind it is only as good as the themes' axis tags, which are
               not filled in yet (CLAUDE.md §11) — it was calling PL centrist. The
               two-axis figure stays because it shows a shape, not a sentence. */}
+          {/* Quality: the composite is in the masthead, so what belongs here is
+              what it is made of. The plate prints each pillar's raw figure beside
+              its rank on purpose — the rank is a position among peers, and
+              printing it alone would assert a difference the data may not hold
+              (CLAUDE.md §3.3). */}
+          {agent.qualityScore !== null ? (
+            <Reveal as="aside" variant="fade" delay={100}>
+              <h2 className="text-xl text-navy-900">Índice de qualidade</h2>
+              <div className="mt-4">
+                <QualityPlate
+                  pillars={parseQualityPillars(agent.qualityPillars)}
+                  note={`${agent.qualityScore}/100`}
+                />
+              </div>
+            </Reveal>
+          ) : null}
+
           <Reveal as="aside" variant="fade" delay={120}>
             <h2 className="text-xl text-navy-900">Posicionamento</h2>
             <div className="mt-4">

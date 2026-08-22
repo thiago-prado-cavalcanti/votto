@@ -88,12 +88,12 @@ export function CpfForm() {
           value="1"
           label={
             <span className="text-[0.9rem] leading-[1.55]">
-              Autorizo o Votto a registrar os meus votos em temas políticos para calcular
-              o meu alinhamento com agentes públicos e partidos, e para compor totais
-              agregados.
+              Autorizo o Votto a registrar os meus votos em temas políticos, e o agente
+              público que eu escolher acompanhar, para calcular o meu alinhamento com
+              agentes públicos e partidos, e para compor totais agregados.
             </span>
           }
-          hint="Voto é opinião política — dado sensível pela LGPD. Por isso pedimos esta autorização separadamente, e você pode revogá-la depois."
+          hint="Voto e escolha de representante são opinião política — dado sensível pela LGPD. Por isso pedimos esta autorização separadamente, e você pode revogá-la depois."
         />
         <p className="mt-3 border-t border-line pt-3 text-xs text-[var(--color-muted)]">
           Ao entrar, você concorda com os{" "}

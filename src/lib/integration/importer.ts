@@ -18,6 +18,7 @@ import {
   House,
   ImportSource,
   Scope,
+  ServiceKind,
   VoteValue,
   VoterType,
   type Prisma,
@@ -742,6 +743,132 @@ function tallyDelta(
   if (from) dec(from);
   inc(to);
   return data;
+}
+
+/**
+ * Record one nominal roll call and who took part in it — the attendance ledger
+ * behind the quality index (CLAUDE.md §3.3).
+ *
+ * This is deliberately NOT derived from `Vote`. `Vote` is unique on
+ * `(agentId, themeId)` and {@link upsertAgentVote} rewrites the row when a later
+ * roll call touches the same bill, because what it holds is the agent's
+ * *standing position* — which is exactly what the alignment index needs. The
+ * side effect is that two roll calls on one bill collapse into a single row, so
+ * counting `Vote` rows answers "how many bills does this agent have a position
+ * on", never "how many sittings did they show up to". Relaxing that unique key
+ * would break alignment to fix attendance; a ledger of its own breaks nothing.
+ *
+ * Costs no extra request: both houses' vote imports already download the full
+ * participant list, and this persists what they were throwing away.
+ *
+ * Returns the number of participations written.
+ */
+export interface RollCallInput {
+  source: ImportSource;
+  /** Câmara `votacao.id`, Senado `codigoSessaoVotacao`. */
+  externalRef: string;
+  house: House;
+  occurredAt: Date;
+  /** The bill decided, when it resolves to a theme we track. */
+  themeId?: string | null;
+  participants: Array<{ agentId: string; value: VoteValue }>;
+  /**
+   * Whoever was in the chair, when the source names them. They are present but
+   * barred from voting, so they belong in neither `participants` (no position)
+   * nor the absentees (they were there) — see `RollCall.presidingAgentId`.
+   */
+  presidingAgentId?: string | null;
+}
+
+export async function recordRollCall(input: RollCallInput): Promise<number> {
+  const { source, externalRef, house, occurredAt, themeId, participants, presidingAgentId } = input;
+  if (participants.length === 0) return 0;
+
+  const rollCall = await db.rollCall.upsert({
+    where: { source_externalRef: { source, externalRef } },
+    create: {
+      source,
+      externalRef,
+      house,
+      occurredAt,
+      themeId: themeId ?? null,
+      presidingAgentId: presidingAgentId ?? null,
+    },
+    update: { occurredAt, themeId: themeId ?? null, presidingAgentId: presidingAgentId ?? null },
+    select: { id: true },
+  });
+
+  // `skipDuplicates` rather than a per-row upsert: a sitting has ~500
+  // participants, and the load-bearing fact here is presence, which cannot
+  // change on re-import. A vote's *value* can be corrected by the source, but
+  // `Vote` already carries the authoritative one — this column is for audit.
+  const created = await db.rollCallVote.createMany({
+    data: participants.map((p) => ({
+      rollCallId: rollCall.id,
+      agentId: p.agentId,
+      value: p.value,
+    })),
+    skipDuplicates: true,
+  });
+
+  return created.count;
+}
+
+/**
+ * Idempotently record one stretch of an agent's mandate — time in the seat
+ * (EXERCISE) or an officially recorded absence (LEAVE).
+ *
+ * The attendance denominator is built from these: roll calls held inside an
+ * EXERCISE stretch, minus those falling inside a LEAVE. Both houses publish the
+ * information in different shapes — the Senado as ready intervals, the Câmara as
+ * an event log that has to be paired up — so the importers converge here.
+ */
+export interface ServiceSpanInput {
+  source: ImportSource;
+  /** Stable key, e.g. `camara:hist:204379:2019-02-01`. */
+  externalRef: string;
+  agentId: string;
+  startsAt: Date;
+  /** Null while the stretch is still open. */
+  endsAt?: Date | null;
+  kind: ServiceKind;
+  reason?: string | null;
+}
+
+export async function upsertServiceSpan(input: ServiceSpanInput): Promise<void> {
+  const { source, externalRef, agentId, startsAt, endsAt, kind, reason } = input;
+  const data = { agentId, startsAt, endsAt: endsAt ?? null, kind, reason: reason ?? null };
+  await db.agentService.upsert({
+    where: { source_externalRef: { source, externalRef } },
+    create: { ...data, source, externalRef },
+    update: data,
+  });
+}
+
+/**
+ * Merge a partial measurement into an agent's per-year metrics row.
+ *
+ * Several jobs own different columns of the same row — the mandate job writes
+ * the bill counts, the expense job the quota, the recompute step the attendance
+ * numerator and denominator — so this patches rather than replaces. Whichever
+ * runs first creates the row.
+ */
+export type AgentMetricsPatch = Omit<
+  Prisma.AgentMetricsUncheckedCreateInput,
+  "id" | "agentId" | "year" | "source" | "createdAt" | "updatedAt"
+>;
+
+export async function upsertAgentMetrics(
+  agentId: string,
+  year: number,
+  patch: AgentMetricsPatch,
+  source: ImportSource = ImportSource.MANUAL,
+): Promise<void> {
+  await db.agentMetrics.upsert({
+    where: { agentId_year: { agentId, year } },
+    create: { agentId, year, source, ...patch },
+    update: patch,
+  });
 }
 
 /**

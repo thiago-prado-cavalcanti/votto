@@ -1,5 +1,6 @@
 /**
- * Embeddable agent widget: identity + the "Alinhamento com eleitores" rating
+ * Embeddable agent widget: identity + the published alignment rating (the
+ * agent's own base where they have one, the electorate where they do not)
  * (stars + %). Dynamic so the
  * rating stays live inside the iframe.
  */
@@ -8,7 +9,8 @@ import { db } from "@/lib/db";
 import { EmbedShell } from "@/components/public/EmbedShell";
 import { StarRating } from "@/components/public/StarRating";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
-import { agentElectorateAlignments } from "@/lib/indexes/alignment";
+import { agentElectorateAlignments, agentBaseAlignments } from "@/lib/indexes/alignment";
+import { publicReading } from "@/lib/domain/reading";
 import { agentTypeLabel } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +20,12 @@ export default async function AgentEmbed({ params }: { params: Promise<{ kid: st
   const agent = await db.publicAgent.findUnique({ where: { kid }, include: { party: true } });
   if (!agent || agent.status !== "ACTIVE") notFound();
 
-  const engagement = await agentElectorateAlignments();
-  const alignment = engagement.get(agent.kid)?.alignment ?? null;
+  // Same rule as the site, so the widget never contradicts the page it links to.
+  const [engagement, base] = await Promise.all([
+    agentElectorateAlignments(),
+    agentBaseAlignments(),
+  ]);
+  const reading = publicReading(base.get(agent.kid), engagement.get(agent.kid)?.alignment ?? null);
 
   const fullName = `${agent.firstName} ${agent.lastName}`.trim();
   const initials = `${agent.firstName[0] ?? ""}${agent.lastName[0] ?? ""}`.toUpperCase();
@@ -47,16 +53,16 @@ export default async function AgentEmbed({ params }: { params: Promise<{ kid: st
       </div>
 
       <div className="mt-auto pt-4">
-        <RatingBlock alignment={alignment} />
+        <RatingBlock alignment={reading.value} label={reading.label} />
       </div>
     </EmbedShell>
   );
 }
 
-function RatingBlock({ alignment }: { alignment: number | null }) {
+function RatingBlock({ alignment, label }: { alignment: number | null; label: string }) {
   return (
     <div>
-      <div className="text-xs font-medium text-[var(--color-muted)]">Alinhamento com eleitores</div>
+      <div className="text-xs font-medium text-[var(--color-muted)]">{label}</div>
       <div className="mt-1 flex items-center gap-3">
         <span className="vt-num text-3xl text-navy-900">
           {alignment === null ? "—" : `${alignment}%`}

@@ -16,12 +16,18 @@ import { db } from "@/lib/db";
 import { toPublicParty, toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { getPartyPosition } from "@/lib/domain/positions";
+import { partyQualityScores } from "@/lib/domain/quality";
 import { POSITIONING_AXES } from "@/lib/indexes/positioning";
 import {
   citizenAgentAlignments,
   citizenPartyAlignments,
   partyElectorateAlignments,
+  partyBaseAlignments,
+  agentElectorateAlignments,
+  agentBaseAlignments,
 } from "@/lib/indexes/alignment";
+import { citizenFollows, followSlot } from "@/lib/domain/follows";
+import { publicReading } from "@/lib/domain/reading";
 import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +66,18 @@ export default async function PartyDetailPage({
   if (!party || party.status !== "ACTIVE") notFound();
 
   const position = await getPartyPosition(party.id);
-  const engagement = (await partyElectorateAlignments()).get(party.kid)?.alignment ?? null;
+  const [partyElectorate, partyBase, agentElectorate, agentBase, partyQuality] = await Promise.all([
+    partyElectorateAlignments(),
+    partyBaseAlignments(),
+    agentElectorateAlignments(),
+    agentBaseAlignments(),
+    partyQualityScores(),
+  ]);
+  const engagement = partyElectorate.get(party.kid)?.alignment ?? null;
+  const quality = partyQuality.get(party.kid) ?? null;
+  // The base wins where there is one; the electorate stands in where there is
+  // not (`publicReading`) — the same rule the cards and the records follow.
+  const reading = publicReading(partyBase.get(party.kid), engagement);
 
   const agents = await db.publicAgent.findMany({
     where: { partyId: party.id, status: "ACTIVE", inOffice: true },
@@ -72,18 +89,21 @@ export default async function PartyDetailPage({
   let partyAlignment: number | null = null;
   let agentAlignments: Map<string, { alignment: number | null; sharedThemes: number }> | null =
     null;
+  let follows: Awaited<ReturnType<typeof citizenFollows>> | null = null;
   if (session) {
     const user = await db.user.findUnique({
       where: { kid: session.userKid },
       select: { id: true, voteVersion: true },
     });
     if (user) {
-      const [parties, agentsMap] = await Promise.all([
+      const [parties, agentsMap, followMap] = await Promise.all([
         citizenPartyAlignments(user.id, user.voteVersion),
         citizenAgentAlignments(user.id, user.voteVersion),
+        citizenFollows(user.id),
       ]);
       partyAlignment = parties.get(party.kid)?.alignment ?? null;
       agentAlignments = agentsMap;
+      follows = followMap;
     }
   }
 
@@ -146,6 +166,9 @@ export default async function PartyDetailPage({
                       key={a.kid}
                       agent={toPublicAgent(a)}
                       alignment={session ? agentAlignments?.get(a.kid)?.alignment ?? null : null}
+                      engagement={agentElectorate.get(a.kid)?.alignment ?? null}
+                      base={agentBase.get(a.kid)}
+                      follow={followSlot(a, session ? follows ?? new Map() : null)}
                       delay={(i % 2) * 80}
                     />
                   ))}
@@ -163,19 +186,35 @@ export default async function PartyDetailPage({
 
               {/* Global alignment (always shown) */}
               <div className="mt-3">
-                {engagement !== null ? (
+                {reading.value !== null ? (
                   <>
-                    <AlignmentMeter value={engagement} label="Alinhamento com eleitores" />
+                    <AlignmentMeter value={reading.value} label={reading.label} />
                     <p className="mt-2 text-xs text-[var(--color-muted)]">
-                      O quanto os agentes do partido acompanham o conjunto dos cidadãos.
+                      {reading.fromBase
+                        ? `O quanto os agentes do partido acompanham quem os segue — ${reading.followers.toLocaleString("pt-BR")} ${reading.followers === 1 ? "pessoa" : "pessoas"}.`
+                        : "O quanto os agentes do partido acompanham o conjunto dos cidadãos."}
                     </p>
                   </>
                 ) : (
                   <p className="text-sm text-[var(--color-muted)]">
-                    Ainda não há votos de cidadãos suficientes para o alinhamento com eleitores.
+                    Ainda não há votos de cidadãos suficientes para calcular o alinhamento.
                   </p>
                 )}
               </div>
+
+              {/* Quality: the mean of the bench's scores. Under the alignment
+                  readings because it answers a different question — not who the
+                  party agrees with, but how its members exercise their mandates.
+                  Omitted, never zeroed, when none of them could be measured. */}
+              {quality !== null ? (
+                <div className="mt-4 border-t border-[var(--color-line)] pt-4">
+                  <AlignmentMeter value={quality} label="Índice de qualidade" />
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    Média do índice dos agentes do partido em exercício: assiduidade, projetos
+                    apresentados e relatados, e custeio do mandato.
+                  </p>
+                </div>
+              ) : null}
 
               {/* Personal alignment (logged-in citizens) */}
               {session ? (

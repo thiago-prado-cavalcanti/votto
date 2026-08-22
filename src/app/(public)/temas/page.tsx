@@ -1,51 +1,54 @@
 /**
  * Themes list, set as an order paper: one hairline-separated entry per active
- * theme, with tallies and the quick-vote panel on the right. Supports search,
- * scope/state/house filters and three orderings.
+ * theme, with tallies and the quick-vote panel on the right. Supports search by
+ * title/code, scope/state/house filters and three orderings — one GET form, so
+ * every control narrows the same query and the URL stays the state.
  *
  * The default ordering is legislative priority, not citizen engagement: once the
  * official importers are running, most themes have no citizen votes yet, so
  * ranking by engagement would bury exactly the bills that are about to be voted.
+ *
+ * The list does not end at the first sixty bills. The page renders one page on
+ * the server — in the HTML, for the reader without JavaScript and for the first
+ * paint — and `ThemeFeed` continues it as the citizen scrolls. `?p=` addresses a
+ * page directly, which is what the "Ver mais temas" link uses when there is no
+ * JavaScript to intercept it.
+ *
+ * The query itself lives in `src/lib/domain/theme-list.ts`, shared with the
+ * server action that appends: two translations of the same filters would be two
+ * chances for the appended rows to answer a different question than the ones
+ * already on screen.
  */
 import { Container, Field, Select, Input } from "@/components/ui";
 import { PageIntro } from "@/components/public/Section";
 import { IndexPlate } from "@/components/public/IndexPlate";
 import { FilterBar } from "@/components/public/FilterBar";
-import { ThemeRow, ThemeList } from "@/components/public/ThemeRow";
+import { ThemeRow } from "@/components/public/ThemeRow";
+import { ThemeFeed } from "@/components/public/ThemeFeed";
 import { db } from "@/lib/db";
-import { THEME_AUTHOR_INCLUDE, toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { scopeLabel, houseLabel, BR_STATES } from "@/lib/labels";
-import { themeTemperature } from "@/lib/domain/theme";
+import {
+  THEME_ORDERINGS,
+  loadThemePage,
+  themeListWhere,
+  themeOnlyOpen,
+  themeOrdering,
+  themeVotesFor,
+  type ThemeListQuery,
+  type ThemeOrdering,
+} from "@/lib/domain/theme-list";
 import {
   PRIORITY_BAND_RANGES,
   priorityBandLabel,
   type PriorityBand,
 } from "@/lib/domain/priority";
-import type { Scope, House, Prisma, VoteValue } from "@/generated/prisma";
+import type { Scope, House } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
 
 const SCOPES = Object.keys(scopeLabel) as Scope[];
 const HOUSES = Object.keys(houseLabel) as House[];
-
-/** Available orderings, with the SQL that implements each. */
-const ORDERINGS = {
-  priority: {
-    label: "Prioridade na pauta",
-    orderBy: [{ priority: "desc" }, { lastActionAt: "desc" }] as Prisma.ThemeOrderByWithRelationInput[],
-  },
-  recent: {
-    label: "Movimentação mais recente",
-    orderBy: [{ lastActionAt: "desc" }, { priority: "desc" }] as Prisma.ThemeOrderByWithRelationInput[],
-  },
-  engagement: {
-    label: "Mais votados no Votto",
-    orderBy: [{ yesCount: "desc" }, { noCount: "desc" }] as Prisma.ThemeOrderByWithRelationInput[],
-  },
-} as const;
-
-type Ordering = keyof typeof ORDERINGS;
 
 /** Pigment of each priority band in the masthead plate: hot ink → cold paper. */
 const BAND_COLOR: Record<PriorityBand, string> = {
@@ -58,47 +61,24 @@ const BAND_COLOR: Record<PriorityBand, string> = {
 export default async function ThemesPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    scope?: string;
-    state?: string;
-    house?: string;
-    q?: string;
-    order?: string;
-    open?: string;
-  }>;
+  searchParams: Promise<ThemeListQuery & { p?: string }>;
 }) {
-  const { scope, state, house, q, order, open } = await searchParams;
+  const params = await searchParams;
+  const { scope, state, house, q, order, open, p } = params;
+  const query: ThemeListQuery = { scope, state, house, q, order, open };
+
   const session = await getCitizenSession();
   const isAuthenticated = Boolean(session);
+  const ordering: ThemeOrdering = themeOrdering(order);
+  const onlyOpen = themeOnlyOpen(open);
 
-  const ordering: Ordering = order && order in ORDERINGS ? (order as Ordering) : "priority";
-  const onlyOpen = open !== "0";
+  const where = themeListWhere(query);
 
-  const where: Prisma.ThemeWhereInput = { status: "ACTIVE" };
-  if (scope && SCOPES.includes(scope as Scope)) where.scope = scope as Scope;
-  if (state) where.state = state;
-  if (house && HOUSES.includes(house as House)) where.house = house as House;
-  if (onlyOpen) where.inProgress = true;
-  if (q) {
-    // Match the popular name, the official identifier ("PL 3085/2026") and the
-    // one-line summary, so a citizen can search either way.
-    where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { identifier: { contains: q, mode: "insensitive" } },
-      { summary: { contains: q, mode: "insensitive" } },
-    ];
-  }
-
-  // The list is capped at 60 rows; the masthead plate counts the whole match, so
-  // it describes the query the citizen just made rather than the page of it that
-  // happens to be printed. Four indexed counts on `priority`.
-  const [themesRaw, bandCounts] = await Promise.all([
-    db.theme.findMany({
-      where,
-      orderBy: ORDERINGS[ordering].orderBy,
-      take: 60,
-      include: THEME_AUTHOR_INCLUDE,
-    }),
+  // The masthead plate counts the WHOLE match, not the page of it that happens
+  // to be printed, so it describes the query the citizen just made. Four indexed
+  // counts on `priority`.
+  const [page, bandCounts] = await Promise.all([
+    loadThemePage(query, Number(p) || 1),
     Promise.all(
       PRIORITY_BAND_RANGES.map((range) =>
         db.theme.count({
@@ -112,23 +92,9 @@ export default async function ThemesPage({
   ]);
 
   const matchedThemes = bandCounts.reduce((sum, n) => sum + n, 0);
-
-  const themes = themesRaw.map(toPublicTheme);
-  // Engagement ordering is refined in memory: the temperature curve is
-  // logarithmic, so raw tallies alone don't reproduce it.
-  if (ordering === "engagement") {
-    themes.sort((a, b) => themeTemperature(b) - themeTemperature(a));
-  }
-
-  let currentVotes = new Map<string, VoteValue>();
-  if (session) {
-    const themeKids = themes.map((t) => t.kid);
-    const votes = await db.vote.findMany({
-      where: { cpfHash: session.cpfHash, voterType: "USER", theme: { kid: { in: themeKids } } },
-      select: { value: true, theme: { select: { kid: true } } },
-    });
-    currentVotes = new Map(votes.map((v) => [v.theme.kid, v.value]));
-  }
+  const currentVotes = session
+    ? await themeVotesFor(session.cpfHash, page.themes.map((t) => t.kid))
+    : {};
 
   return (
     <>
@@ -158,14 +124,14 @@ export default async function ThemesPage({
               variant="rule"
               name="q"
               defaultValue={q ?? ""}
-              placeholder="Nome, ementa ou PL 3085/2026"
+              placeholder="Título ou PL 3085/2026"
             />
           </Field>
           <Field label="Ordenar por">
             <Select variant="rule" name="order" defaultValue={ordering}>
-              {(Object.keys(ORDERINGS) as Ordering[]).map((key) => (
+              {(Object.keys(THEME_ORDERINGS) as ThemeOrdering[]).map((key) => (
                 <option key={key} value={key}>
-                  {ORDERINGS[key].label}
+                  {THEME_ORDERINGS[key].label}
                 </option>
               ))}
             </Select>
@@ -208,24 +174,29 @@ export default async function ThemesPage({
           </Field>
         </FilterBar>
 
-        {themes.length === 0 ? (
+        {page.themes.length === 0 ? (
           <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">
-            Nenhum tema encontrado para os filtros selecionados.
+            Nenhum tema encontrado para esta busca.
           </p>
         ) : (
-          <ThemeList>
-            {themes.map((theme, i) => (
+          <ThemeFeed
+            query={query}
+            startPage={page.page}
+            initialHasMore={page.hasMore}
+            isAuthenticated={isAuthenticated}
+          >
+            {page.themes.map((theme, i) => (
               <ThemeRow
                 key={theme.kid}
                 theme={theme}
                 isAuthenticated={isAuthenticated}
-                currentVote={currentVotes.get(theme.kid) ?? null}
+                currentVote={currentVotes[theme.kid] ?? null}
                 // Only the first screenful is offset; past that the scroll itself
                 // is the stagger and a growing delay would just feel sluggish.
                 delay={Math.min(i, 3) * 80}
               />
             ))}
-          </ThemeList>
+          </ThemeFeed>
         )}
       </Container>
     </>

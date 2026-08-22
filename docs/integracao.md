@@ -15,9 +15,16 @@ Referência de arquitetura: `CLAUDE.md` §8.
 | Agentes | `GET /deputados` | `GET /senador/lista/atual` |
 | Temas | `GET /proposicoes` + `/{id}` + `/{id}/temas` | `GET /processo` + `GET /processo/{id}` |
 | Votos | `GET /votacoes` + `/{id}` + `/{id}/votos` | `GET /votacao` |
+| Mandato e afastamentos | `GET /deputados/{id}/historico` + `GET /legislaturas` | `GET /senador/{cod}/mandatos` + `GET /senador/{cod}/licencas` |
+| Autoria e relatoria | `GET /proposicoes?idDeputadoAutor=` (relatoria vem de `Theme.rapporteurId`) | `GET /processo?codigoParlamentarAutor=` + `GET /processo/relatoria?codigoParlamentar=` |
+| Custeio do mandato | `GET /deputados/{id}/despesas?idLegislatura=&ano=` | `GET /senadores/despesas_ceaps/{ano}` |
 
 Bases: `https://dadosabertos.camara.leg.br/api/v2` e
 `https://legis.senado.leg.br/dadosabertos`. Ambas são públicas, sem autenticação.
+As despesas do Senado ficam num **host administrativo separado**,
+`https://adm.senado.gov.br/adm-dadosabertos/api/v1`, ligado pelo `codSenador` — que
+é o mesmo `externalRef` que já guardamos. Host diferente não é fonte diferente: o
+`ImportSource` registra de quem é o dado, não quem o serviu.
 
 Todo registro importado carrega `(source, externalRef)` e é gravado por *upsert*
 nessa chave, então reexecutar uma importação nunca duplica nada. Os identificadores
@@ -42,6 +49,27 @@ apenas `kid` (`CLAUDE.md` §5).
 6. **Um partido existe uma única vez.** O importador do Senado reaproveita o
    registro criado pela Câmara quando a sigla coincide — caso contrário "PT"
    apareceria duas vezes na listagem de partidos.
+7. **`despesas` falha em silêncio sem `idLegislatura`.** Devolve `200 OK` com
+   `[]`, que nenhum contador distingue de "esse deputado não gastou nada". E com
+   `idLegislatura` mas sem `ano`, volta só o primeiro ano da legislatura. Os dois
+   parâmetros são obrigatórios, por isso a varredura é sobre
+   `(legislatura × ano)` — e por isso `AgentMetrics.legislatures` existe: ano de
+   eleição pertence a duas legislaturas.
+8. **A Câmara publica só o *último* relator** (`statusProposicao.uriUltimoRelator`).
+   A contagem de relatorias de deputado é um piso, não uma contagem; o índice de
+   qualidade só compara deputado com deputado, o que mantém o piso inofensivo
+   para a ordenação. O Senado publica o histórico completo.
+9. **Quem preside recebe um código que não é voto.** Câmara `"Artigo 17"`
+   (RICD art. 17), Senado `"Presidente (art. 51 RISF)"` — um por sessão nas duas
+   casas. Significa *presente, impedido de votar*. Antes de
+   `RollCall.presidingAgentId` existir, o índice colocou o presidente do Senado
+   no 1º percentil de assiduidade e em 8º de 100 no geral: o pior senador do
+   Brasil, por ter presidido 39 de 46 sessões. Sessão presidida sai do
+   denominador, como sai um dia de licença.
+10. **`"Sessão Não Deliberativa Solene"` contém `"Deliberativa"`.** Um
+   `includes` ingênuo deixava passar 59 sessões solenes contra 36 reais numa
+   janela de 120 dias, cada uma custando um `/pauta` que só podia vir vazio.
+   O predicado correto é `isDeliberativeSession`, em `camara.ts`.
 
 ---
 
@@ -98,9 +126,68 @@ movimentação, e o link para a página oficial de tramitação.
 
 ---
 
+## 2.1 Índice de qualidade
+
+Segunda leitura de um parlamentar, ortogonal ao alinhamento: alinhamento pergunta
+se ele concorda **com você**, qualidade pergunta se ele **está fazendo o
+trabalho**. Um 0–100 por agente, de quatro pilares ponderados
+(`src/lib/indexes/quality.ts`):
+
+| Pilar | Origem | Normalização | Peso |
+| --- | --- | --- | --- |
+| Assiduidade | livro de presença (`RollCall`) ÷ sessões da casa dentro do exercício, fora de licença e fora das que o próprio agente presidiu | percentil na casa | 0,30 |
+| Proposições | `idDeputadoAutor` / `codigoParlamentarAutor`, só PL/PEC/PLP/PDL | percentil na casa, desfecho conta dobrado | 0,25 |
+| Custeio do mandato | CEAP / CEAPS líquido, por mês de exercício | percentil invertido na casa **+ UF** | 0,25 |
+| Relatorias | `Theme.rapporteurId` / `processo/relatoria` | percentil na casa | 0,20 |
+
+**Custeio é a cota parlamentar e mais nada.** Gabinete, viagem, combustível,
+alimentação, divulgação, segurança. Emenda parlamentar fica de fora **por
+desenho**: quem garantiu R$ 1 bi para escolas no seu estado não é um deputado
+caro, e um índice que confundisse as duas diria o oposto da verdade.
+
+Três decisões de calibragem, na mesma linha das do `priority`:
+
+- **Tudo é percentil, não escala absoluta.** Participação em votação nominal se
+  concentra perto de 95% para todo mundo; repassar a razão crua faria o pilar não
+  informar nada — a mesma lição do "35 de 42 projetos em pauta são urgentes".
+  Ranquear dentro da casa também cancela viés sistemático de medição: a relatoria
+  da Câmara é subcontada por construção, mas de forma igual para todos os
+  deputados.
+- **Custeio ranqueia por UF** porque o teto da cota é geográfico (Roraima recebe
+  muito mais que o DF por causa de passagem aérea). UF com menos de cinco membros
+  cai para a região — três deputados não são uma coorte. E **gastar zero não é
+  virtude**: sem nenhum documento o pilar vira `null`, nunca nota máxima, porque
+  mês não publicado e agente afastado são indistinguíveis de R$ 0.
+- **Presidir não é faltar.** As duas casas impedem quem está na cadeira de votar
+  em votação aberta e marcam isso com um código próprio. Ler o voto ausente como
+  membro ausente inverte o fato — e o efeito medido foi exatamente esse antes da
+  correção.
+- **Licença é descontada, mas com teto.** Quem se licenciou para ser secretário
+  de estado não é faltoso pelas votações do período. Só que
+  `LICENCA_ATIVIDADE_PARLAMENTAR` respondeu por 770 de 877 licenças numa amostra
+  de 20 senadores, então descontar sem limite inverteria o pilar: acima de 40% da
+  janela em afastamento, a assiduidade vira `null`.
+
+Pilar sem medida é `null` e **tem o peso redistribuído** entre os demais; abaixo
+de metade do peso total, a nota inteira é `null`. `PublicAgent.qualityScore` é
+anulável sem default de propósito — agente que não deu para medir aparece **sem
+leitura**, porque zero se lê como acusação.
+
+Retunar **não** exige reimportar: `npm run requality -- --dry` mostra a
+distribuição e `npm run requality` grava. É o gêmeo do `reprioritize`, pelo mesmo
+motivo.
+
+> ⚠️ Os cortes de banda são **provisórios**. Num banco simulado de 563 agentes a
+> nota espalhou de 7 a 100 com mediana 50 — ranking saudável —, mas 51% caiu
+> entre 40 e 60, porque média de quatro percentis independentes puxa massa para o
+> centro. Rode `npm run requality -- --dry` com dado real antes de confiar nas
+> bandas (`CLAUDE.md` §11).
+
+---
+
 ## 3. Os workers
 
-Dez jobs independentes, registrados em `src/lib/integration/jobs.ts`:
+Dezesseis jobs independentes, registrados em `src/lib/integration/jobs.ts`:
 
 | Job | O que traz | Horário (Brasília) |
 | --- | --- | --- |
@@ -112,8 +199,14 @@ Dez jobs independentes, registrados em `src/lib/integration/jobs.ts`:
 | `senado:agenda` | Processos na ordem do dia / prontos para o Plenário | domingo 03:20 |
 | `camara:themes` | Todas as proposições que tramitaram | domingo 03:30 |
 | `senado:themes` | Todos os processos atualizados | domingo 05:00 |
-| `camara:votes` | Votações nominais + votos | domingo 06:00 |
-| `senado:votes` | Votações nominais + votos | domingo 07:00 |
+| `ai:summaries` | Resumo em linguagem simples dos temas prioritários | domingo 05:30 |
+| `camara:votes` | Votações nominais + votos (e o livro de presença) | domingo 06:00 |
+| `senado:votes` | Votações nominais + votos (e o livro de presença) | domingo 07:00 |
+| `camara:mandate` | Exercício, licenças, legislaturas, autoria | domingo 07:30 |
+| `senado:mandate` | Exercício, licenças, autoria, relatoria | domingo 07:45 |
+| `camara:expenses` | Cota parlamentar (CEAP) | domingo 08:00 |
+| `senado:expenses` | Cota parlamentar (CEAPS) | domingo 08:15 |
+| `metrics:quality` | Recalcula o índice de qualidade (sem rede) | domingo 08:30 |
 
 Os pares `*:agenda` e `*:themes` cobrem ângulos diferentes de propósito: o
 primeiro traz o punhado de proposições efetivamente pautadas para votação
@@ -199,6 +292,26 @@ O `--top` é teto, não meta: se a janela tiver menos que N, importa o que houve
 
 Interromper e rodar de novo é seguro — tudo é idempotente e cada job pega o
 próprio lock, então o backfill nunca colide com o worker.
+
+### Recalcular o índice de qualidade
+
+```bash
+npm run requality -- --dry   # mostra a distribuição, não grava
+npm run requality            # grava
+```
+
+Lê só colunas já armazenadas — sem rede. Imprime a distribuição de bandas antes e
+depois, mais o topo e o fundo do ranking: **a conferência que importa é humana**,
+os extremos têm que ser reconhecíveis. Um ranking cujo topo e fundo parecem
+arbitrários não está medindo nada, por mais limpo que seja o histograma.
+
+Dois cuidados no backfill:
+
+- `--source camara|senado` filtra por prefixo de nome, o que **exclui**
+  `metrics:quality`. Depois de um backfill por fonte, rode `npm run requality`.
+- **Não use `--top` com os jobs de mandato/despesa.** Um roster parcial envenena
+  todas as coortes; `metrics:quality` se recusa a gravar uma casa com menos de
+  70% dos membros medidos, justamente por isso.
 
 ### CLI
 
@@ -417,3 +530,15 @@ Resumo do que muda:
 - `PublicAgent` ganha URL do perfil, `inOffice` e legislatura.
 - `Vote` ganha `occurredAt` e `sessionRef` (referência interna da votação).
 - Nova tabela `SyncJob` (estado + lock dos workers); `ImportRun` ganha `job`.
+
+O índice de qualidade tem a sua própria, em
+`docs/migrations/0007_agent_quality.sql` / `prisma/migrations/20260822160000_agent_quality/`:
+
+- `PublicAgent` ganha `qualityScore` (**anulável, sem default** — de propósito),
+  `qualityPillars` e `qualityComputedAt`.
+- Novas tabelas `RollCall` / `RollCallVote` (livro de presença), `AgentService`
+  (exercício e licenças) e `AgentMetrics` (medições brutas por ano).
+- Novo enum `ServiceKind`.
+
+E, em `docs/migrations/0009_rollcall_presiding.sql`, `RollCall.presidingAgentId` —
+quem estava na cadeira, para que presidir não seja contado como falta.

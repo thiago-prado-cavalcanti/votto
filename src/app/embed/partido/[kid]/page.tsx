@@ -1,5 +1,6 @@
 /**
- * Embeddable party widget: identity + the "Alinhamento com eleitores" rating
+ * Embeddable party widget: identity + the published alignment rating (the
+ * combined bases of its agents where they have one, the electorate otherwise)
  * (stars + %). Dynamic
  * so the rating stays live inside the iframe.
  */
@@ -8,7 +9,8 @@ import { db } from "@/lib/db";
 import { EmbedShell } from "@/components/public/EmbedShell";
 import { StarRating } from "@/components/public/StarRating";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
-import { partyElectorateAlignments } from "@/lib/indexes/alignment";
+import { partyElectorateAlignments, partyBaseAlignments } from "@/lib/indexes/alignment";
+import { publicReading } from "@/lib/domain/reading";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +19,13 @@ export default async function PartyEmbed({ params }: { params: Promise<{ kid: st
   const party = await db.party.findUnique({ where: { kid } });
   if (!party || party.status !== "ACTIVE") notFound();
 
-  const engagement = await partyElectorateAlignments();
-  const alignment = engagement.get(party.kid)?.alignment ?? null;
+  // Same rule as the site, so the widget never contradicts the page it links to.
+  const [engagement, base] = await Promise.all([
+    partyElectorateAlignments(),
+    partyBaseAlignments(),
+  ]);
+  const reading = publicReading(base.get(party.kid), engagement.get(party.kid)?.alignment ?? null);
+  const alignment = reading.value;
 
   const acronym = party.acronym ?? party.name.slice(0, 3).toUpperCase();
 
@@ -46,9 +53,7 @@ export default async function PartyEmbed({ params }: { params: Promise<{ kid: st
       </div>
 
       <div className="mt-auto pt-4">
-        <div className="text-xs font-medium text-[var(--color-muted)]">
-          Alinhamento com eleitores
-        </div>
+        <div className="text-xs font-medium text-[var(--color-muted)]">{reading.label}</div>
         <div className="mt-1 flex items-center gap-3">
           <span className="vt-num text-3xl text-navy-900">
             {alignment === null ? "—" : `${alignment}%`}

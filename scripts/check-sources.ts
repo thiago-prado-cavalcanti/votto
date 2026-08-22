@@ -24,6 +24,15 @@ import {
   priorityBand,
 } from "@/lib/domain/priority";
 import { dateWindows, isoDaysAgo, parseDate, splitName } from "@/lib/integration/importer";
+import {
+  computeQuality,
+  isAdvancedSituation,
+  percentileRank,
+  qualityBand,
+  QUALITY_PILLARS,
+  type QualityInputs,
+} from "@/lib/indexes/quality";
+import { isDeliberativeSession, serviceSpansFromHistory } from "@/lib/integration/camara";
 import { SYNC_JOBS, findJob } from "@/lib/integration/jobs";
 import { describeSchedule, formatZoned, nextOccurrence } from "@/lib/integration/schedule";
 
@@ -294,7 +303,7 @@ async function checkCamaraAgenda(): Promise<void> {
     `${CAMARA}/orgaos/${PLENARY_ORG_ID}/eventos?dataInicio=${isoDaysAgo(60)}&dataFim=${isoDaysAgo(0)}&itens=100`,
   );
   const deliberative = (events.dados ?? []).filter((e) =>
-    String(e.descricaoTipo ?? "").includes("Deliberativa"),
+    isDeliberativeSession(String(e.descricaoTipo ?? "")),
   );
   check(
     `sessões deliberativas do Plenário em 60 dias: ${deliberative.length}`,
@@ -493,11 +502,421 @@ async function checkSocialProviders(): Promise<void> {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
+// ─── 1b. Quality index helpers ───────────────────────────────────────────────
+
+function checkQualityHelpers(): void {
+  console.log("\n[1b] Índice de qualidade (sem rede)");
+
+  // Outcome vocabulary. Deliberately disjoint from `isConcludedSituation`: a
+  // shelved bill has stopped moving without having got anywhere.
+  check("norma jurídica conta como avanço", isAdvancedSituation("Transformado em Norma Jurídica"));
+  check("aguardando sanção conta como avanço", isAdvancedSituation("Aguardando Sanção"));
+  check("enviada à outra casa conta como avanço", isAdvancedSituation("Aguardando Apreciação pelo Senado Federal"));
+  check("arquivada NÃO conta como avanço", !isAdvancedSituation("Arquivada"));
+  check("rejeitada NÃO conta como avanço", !isAdvancedSituation("Rejeitada"));
+  check(
+    "encerrada sem avanço é encerrada, não avanço",
+    isConcludedSituation("Arquivada") && !isAdvancedSituation("Arquivada"),
+    "os dois vocabulários deixaram de ser disjuntos",
+  );
+
+  // Midrank on a MINORITY tie block: the three tied members share one score
+  // instead of being spread across a range in whatever order the array arrived
+  // in — a difference the data does not contain. The fixture has to stay a
+  // minority, because a majority block is nulled by the rule checked below.
+  const tied = [0, 1, 2, 2, 2, 3, 4, 5, 6, 7];
+  const midrank = percentileRank(2, tied);
+  check(
+    `bloco de empate divide um percentil só (${midrank})`,
+    midrank !== null && midrank > 20 && midrank < 50,
+    "empates deixaram de usar midrank — o índice está inventando diferença entre iguais",
+  );
+  check(
+    "os três empatados recebem a mesma nota",
+    percentileRank(2, tied) === midrank,
+  );
+  check("coorte pequena não produz percentil", percentileRank(1, [1, 2, 3]) === null);
+  // A rank shared with most of the field ranks nobody. Measured on the first
+  // real load: 87% of agents tied at 50 for relatorias, adding a near-constant
+  // to every score and diluting the three pillars that discriminate.
+  check(
+    "bloco de empate majoritário não produz percentil",
+    percentileRank(0, [0, 0, 0, 0, 0, 0, 0, 1, 2]) === null,
+    "pilar que empata a maioria voltou a pontuar — está somando constante e diluindo os demais",
+  );
+  check(
+    "a minoria distinguida continua pontuando",
+    (percentileRank(2, [0, 0, 0, 0, 0, 0, 0, 1, 2]) ?? 0) > 80,
+  );
+
+  const full = (over: Partial<QualityInputs> = {}): QualityInputs => ({
+    attendance: { eligible: 200, attended: 190, leaveShare: 0.02 },
+    authorship: { authored: 12, advanced: 3, months: 40 },
+    rapporteurship: { count: 4, months: 40 },
+    cost: { spent: 800_000, documents: 900, months: 40 },
+    ...over,
+  });
+  const raw = (key: string, inputs: QualityInputs) =>
+    QUALITY_PILLARS.find((p) => p.key === key)?.raw(inputs) ?? null;
+
+  // The guard against the index's worst false positive: an unpublished month,
+  // or an agent on leave, must never read as exemplary frugality.
+  check(
+    "gasto zero sem documento é null, nunca nota máxima",
+    raw("cost", full({ cost: { spent: 0, documents: 0, months: 40 } })) === null,
+    "custeio sem documento voltou a pontuar — R$ 0 está sendo lido como economia",
+  );
+  check(
+    "afastamento acima do teto zera a assiduidade",
+    raw("attendance", full({ attendance: { eligible: 200, attended: 200, leaveShare: 0.8 } })) === null,
+    "quem passou a janela afastado está pontuando 100% de presença",
+  );
+  check(
+    "poucas votações não produzem assiduidade",
+    raw("attendance", full({ attendance: { eligible: 3, attended: 3, leaveShare: 0 } })) === null,
+  );
+  check(
+    "mandato curto não produz taxa por mês",
+    raw("authorship", full({ authorship: { authored: 2, advanced: 0, months: 2 } })) === null,
+  );
+  check(
+    "custeio é invertido (gastar menos pontua mais)",
+    (raw("cost", full({ cost: { spent: 100_000, documents: 900, months: 40 } })) ?? 0) >
+      (raw("cost", full({ cost: { spent: 900_000, documents: 900, months: 40 } })) ?? 0),
+    "o pilar de custeio deixou de ser negado — gastar mais está pontuando mais",
+  );
+  check(
+    "desfecho conta duas vezes",
+    (raw("authorship", full({ authorship: { authored: 10, advanced: 10, months: 40 } })) ?? 0) >
+      (raw("authorship", full({ authorship: { authored: 10, advanced: 0, months: 40 } })) ?? 0),
+  );
+
+  // Weight redistribution — the mechanism that makes the pillar set expandable.
+  const twoPillars = new Map<string, number | null>([
+    ["attendance", 80],
+    ["cost", 60],
+    ["authorship", null],
+    ["rapporteurship", null],
+  ]);
+  const partial = computeQuality(
+    full({ authorship: null, rapporteurship: null }),
+    twoPillars,
+  );
+  const expected = Math.round((80 * 0.3 + 60 * 0.25) / (0.3 + 0.25));
+  check(
+    `peso de pilar ausente é redistribuído (${partial.score} ≈ ${expected})`,
+    partial.score === expected,
+    "o peso de um pilar ausente deixou de ser redistribuído — agentes sem uma fonte estão sendo empurrados para zero",
+  );
+
+  // Coverage floor: half a picture stated as a number is worse than no number.
+  const thin = computeQuality(
+    full({ attendance: null, authorship: null, rapporteurship: null }),
+    new Map<string, number | null>([["cost", 90]]),
+  );
+  check(
+    "cobertura abaixo do piso devolve null",
+    thin.score === null,
+    "está publicando nota com menos da metade dos pilares medidos",
+  );
+
+  // Bands, asserted as bands (not numbers) so retuning weights costs no rewrite.
+  check("85 → banda de topo", qualityBand(85) === "EXCELLENT");
+  check("50 → banda do meio", qualityBand(50) === "AVERAGE");
+  check("20 → banda de baixo", qualityBand(20) === "WEAK");
+
+  // Câmara timeline reconstruction, from the vocabulary observed live.
+  const spans = serviceSpansFromHistory([
+    { dataHora: "2023-02-01T12:05", descricaoStatus: "Entrada - Posse de Eleito Titular", situacao: "Exercício" },
+    { dataHora: "2023-06-10T00:00", descricaoStatus: "Saída - Afastamento sem prazo determinado - Secretário de Estado", situacao: "Licença" },
+    { dataHora: "2024-02-01T00:00", descricaoStatus: "Entrada - Reassunção", situacao: "Exercício" },
+    { dataHora: "2024-05-01T00:00", descricaoStatus: "Alteração de partido", situacao: null },
+  ]);
+  const exercise = spans.filter((s) => s.kind === "EXERCISE");
+  const leave = spans.filter((s) => s.kind === "LEAVE");
+  check(
+    `log da Câmara vira 2 exercícios + 1 licença (${exercise.length}+${leave.length})`,
+    exercise.length === 2 && leave.length === 1,
+    "o pareamento entrada/saída mudou — a assiduidade da Câmara perde o denominador",
+  );
+  check(
+    "a licença carrega o motivo publicado",
+    leave[0]?.reason === "Secretário de Estado",
+  );
+  check("o último exercício fica aberto", exercise[1]?.endsAt === null);
+  check(
+    "'Alteração de partido' não move ninguém para dentro nem para fora",
+    exercise.length === 2,
+  );
+}
+
+// ─── 4b. Quality index sources ───────────────────────────────────────────────
+
+const SENADO_ADM = "https://adm.senado.gov.br/adm-dadosabertos/api/v1";
+
+async function checkQualitySources(): Promise<void> {
+  console.log("\n[4b] Fontes do índice de qualidade");
+
+  // ── Câmara: mandate log ───────────────────────────────────────────────────
+  const roster = await get<Page<Row>>(`${CAMARA}/deputados?ordem=ASC&ordenarPor=nome&itens=1`);
+  const deputy = roster.dados?.[0];
+  const deputyId = deputy?.id;
+  check("deputados/{id} disponível para amostragem", typeof deputyId === "number");
+  if (typeof deputyId !== "number") return;
+
+  const history = await get<Page<Row>>(`${CAMARA}/deputados/${deputyId}/historico`);
+  const hist = history.dados ?? [];
+  check("historico traz dataHora", hist.some((h) => typeof h.dataHora === "string"));
+  check("historico traz descricaoStatus", hist.some((h) => typeof h.descricaoStatus === "string"));
+  check("historico traz idLegislatura", hist.some((h) => typeof h.idLegislatura === "number"));
+  const statuses = new Set(hist.map((h) => String(h.descricaoStatus ?? "").split(" - ")[0]));
+  check(
+    `historico ainda usa o vocabulário Entrada/Saída (${[...statuses].join(", ")})`,
+    [...statuses].some((x) => x === "Entrada" || x === "Saída"),
+    "o pareamento entrada/saída de serviceSpansFromHistory perde o denominador da assiduidade",
+  );
+
+  const legs = await get<Page<Row>>(`${CAMARA}/legislaturas?ordem=DESC&ordenarPor=id&itens=3`);
+  check(
+    "legislaturas trazem dataInicio/dataFim",
+    (legs.dados ?? []).some((l) => typeof l.dataInicio === "string" && typeof l.id === "number"),
+  );
+
+  // ── Câmara: expenses, and the two silent quirks the sweep is built around ──
+  const legId = Number(at(legs, "dados.0.id") ?? 57);
+  const year = new Date().getFullYear();
+  let expenses: Page<Row> | null = null;
+  for (const y of [year, year - 1, year - 2]) {
+    const page = await get<Page<Row>>(
+      `${CAMARA}/deputados/${deputyId}/despesas?idLegislatura=${legId}&ano=${y}&itens=100`,
+    );
+    if ((page.dados ?? []).length > 0) {
+      expenses = page;
+      note(`despesas amostradas em ${y} (legislatura ${legId})`);
+      break;
+    }
+  }
+  check("despesas com (idLegislatura, ano) retornam documentos", (expenses?.dados ?? []).length > 0);
+  const doc = expenses?.dados?.[0];
+  if (doc) {
+    for (const field of ["ano", "mes", "tipoDespesa", "valorLiquido"]) {
+      check(`despesa traz ${field}`, doc[field] !== undefined);
+    }
+  }
+
+  // NEGATIVE INVARIANT — the highest-value check in this section. The failure it
+  // guards is a 200 OK with `[]`, which no counter distinguishes from "this
+  // deputy spent nothing".
+  const noLeg = await get<Page<Row>>(`${CAMARA}/deputados/${deputyId}/despesas?ano=${year - 1}&itens=10`);
+  check(
+    "despesas SEM idLegislatura continuam vindo vazias",
+    (noLeg.dados ?? []).length === 0,
+    "a Câmara passou a aceitar despesas sem idLegislatura — o contorno virou desnecessário e alguém pode removê-lo sem notar",
+  );
+
+  // NEGATIVE INVARIANT — with idLegislatura but no ano, only the legislature's
+  // first year comes back, which is why the sweep is over (legislatura × ano).
+  const noYear = await get<Page<Row>>(
+    `${CAMARA}/deputados/${deputyId}/despesas?idLegislatura=${legId}&itens=100`,
+  );
+  const yearsSeen = new Set((noYear.dados ?? []).map((d) => d.ano));
+  check(
+    `despesas sem 'ano' ainda cobrem um ano só (${[...yearsSeen].join(", ") || "vazio"})`,
+    yearsSeen.size <= 1,
+    "o parâmetro 'ano' deixou de ser necessário — a varredura por (legislatura × ano) pode ser simplificada",
+  );
+
+  // ── Câmara: authorship filter actually filters ────────────────────────────
+  const authored = await get<Page<Row>>(
+    `${CAMARA}/proposicoes?idDeputadoAutor=${deputyId}&siglaTipo=PL&siglaTipo=PEC&ano=${year - 1}&itens=100`,
+  );
+  const unfiltered = await get<Page<Row>>(
+    `${CAMARA}/proposicoes?siglaTipo=PL&siglaTipo=PEC&ano=${year - 1}&itens=100`,
+  );
+  check(
+    "idDeputadoAutor filtra de verdade (não só é aceito)",
+    (authored.dados ?? []).length < (unfiltered.dados ?? []).length,
+    "aceito não é filtrado — mesma lição do codSituacao; a autoria estaria contando a Câmara inteira",
+  );
+
+  // NEGATIVE INVARIANT — the Câmara still publishes only a bill's LAST
+  // rapporteur, which is why our count for deputies is a floor. The day it
+  // publishes the history, the undercount becomes fixable.
+  const bill = at(unfiltered, "dados.0.id");
+  if (typeof bill === "number") {
+    const detail = await get<Wrapped<Row>>(`${CAMARA}/proposicoes/${bill}`);
+    const status = at(detail, "dados.statusProposicao") as Row | undefined;
+    check("statusProposicao ainda expõe uriUltimoRelator", status?.uriUltimoRelator !== undefined);
+
+    // The bill's author, which the themes list prints as its accountable face.
+    // Unchecked until now, and that is how it went missing quietly: a failed or
+    // empty `/autores` is indistinguishable from "this bill has no author", so
+    // the theme is written anyway and nothing ever comes back for it
+    // (`npm run reauthor` is the repair). Assert the two fields the mapping
+    // reads — `proponente`, which picks the author of record out of the
+    // signatories, and `uri`, which is what separates a parliamentarian from an
+    // órgão.
+    const authors = await get<Page<Row>>(`${CAMARA}/proposicoes/${bill}/autores`);
+    const authorRows = authors.dados ?? [];
+    check(`proposicoes/{id}/autores responde (${authorRows.length})`, authorRows.length > 0);
+    if (authorRows.length > 0) {
+      check(
+        "autores trazem 'proponente' e 'uri'",
+        authorRows.some((a) => a.proponente !== undefined) && authorRows.every((a) => a.uri !== undefined),
+        "sem proponente/uri não dá para saber quem assina de fato nem se é parlamentar ou órgão",
+      );
+    }
+    check(
+      "statusProposicao continua SEM histórico de relatoria",
+      status?.relatores === undefined && status?.uriRelatores === undefined,
+      "a Câmara passou a publicar o histórico de relatores — dá para trocar o piso por uma contagem real",
+    );
+  }
+
+  // ── Senado: authorship, rapporteurship, leaves, mandates ──────────────────
+  const senators = await get<Row>(`${SENADO}/senador/lista/atual`);
+  const list = at(senators, "ListaParlamentarEmExercicio.Parlamentares.Parlamentar");
+  const codes = (Array.isArray(list) ? list : [])
+    .map((p) => at(p, "IdentificacaoParlamentar.CodigoParlamentar"))
+    .filter((c): c is string => typeof c === "string");
+  check(`lista de senadores em exercício (${codes.length})`, codes.length > 0);
+  if (codes.length === 0) return;
+  const code = codes[0];
+
+  const mandates = await get<Row>(`${SENADO}/senador/${code}/mandatos`);
+  check(
+    "mandatos trazem Exercicios.Exercicio.DataInicio",
+    JSON.stringify(mandates).includes("DataInicio"),
+    "sem intervalos de exercício o denominador da assiduidade do Senado some",
+  );
+
+  const leaves = await get<Row>(`${SENADO}/senador/${code}/licencas`);
+  const raw = JSON.stringify(leaves);
+  check("licenças trazem DataInicio/DataFim", raw.includes("DataInicio") && raw.includes("DataFim"));
+  check("licenças trazem SiglaTipoAfastamento", raw.includes("SiglaTipoAfastamento"));
+
+  const relatorias = await get<Row[]>(`${SENADO}/processo/relatoria?codigoParlamentar=${code}`);
+  check("relatorias por parlamentar retornam linhas", Array.isArray(relatorias) && relatorias.length > 0);
+  if (Array.isArray(relatorias) && relatorias[0]) {
+    for (const field of ["dataDesignacao", "idProcesso", "descricaoTipoRelator"]) {
+      check(`relatoria traz ${field}`, relatorias[0][field] !== undefined);
+    }
+  }
+
+  // "Accepted" is not "filters" — the codSituacao lesson, applied to the Senado.
+  const byAuthor = await get<Row[]>(`${SENADO}/processo?codigoParlamentarAutor=${code}`);
+  const anyProcess = await get<Row[]>(`${SENADO}/processo`);
+  check(
+    `codigoParlamentarAutor filtra de verdade (${Array.isArray(byAuthor) ? byAuthor.length : "?"} linhas)`,
+    Array.isArray(byAuthor) &&
+      byAuthor.length > 0 &&
+      Array.isArray(anyProcess) &&
+      byAuthor.length < anyProcess.length,
+    "codigoParlamentarAutor não filtra — a autoria do Senado precisaria cair para a contagem sobre o corpus importado",
+  );
+
+  note("senador/{cod}/autorias e /relatorias passaram da desativação (2026-02-01); nada aqui se apoia neles");
+
+  // ── Senado: CEAPS, on the administrative host ─────────────────────────────
+  let ceaps: Row[] | null = null;
+  for (const y of [year, year - 1]) {
+    ceaps = await getOrNull<Row[]>(`${SENADO_ADM}/senadores/despesas_ceaps/${y}`);
+    if (Array.isArray(ceaps) && ceaps.length > 0) {
+      note(`CEAPS amostrado em ${y} (${ceaps.length.toLocaleString("pt-BR")} documentos)`);
+      break;
+    }
+  }
+  check("CEAPS retorna documentos", Array.isArray(ceaps) && ceaps.length > 0);
+  if (Array.isArray(ceaps) && ceaps[0]) {
+    for (const field of ["codSenador", "ano", "mes", "tipoDespesa", "valorReembolsado"]) {
+      check(`CEAPS traz ${field}`, ceaps[0][field] !== undefined);
+    }
+    // The two hosts must agree on the key we join on. If they ever diverge,
+    // every senator's cost pillar goes null in silence.
+    const ceapsCodes = new Set(ceaps.map((r) => String(r.codSenador)));
+    const shared = codes.filter((c) => ceapsCodes.has(String(Number(c))));
+    check(
+      `codSenador do CEAPS casa com CodigoParlamentar (${shared.length}/${codes.length})`,
+      shared.length > 0,
+      "os dois hosts divergiram na chave de junção — o custeio de todo senador viraria null em silêncio",
+    );
+  }
+
+  // ── The presiding code, in both houses ────────────────────────────────────
+  // Attendance leans on this: it is what separates "was barred from voting" from
+  // "did not show up". If either house renames or drops the code, the chair
+  // silently becomes the least assiduous member of the house again.
+  // Windows of 80 days, not one wide one: `/votacoes` refuses ranges over three
+  // months (the quirk `MAX_VOTE_WINDOW_DAYS` exists for). Walk back until a
+  // window yields sittings with a roll call — recesses are real.
+  let camaraCodes = new Set<string>();
+  for (const offset of [0, 80, 160, 240]) {
+    if (camaraCodes.size > 3) break;
+    const page = await getOrNull<Page<Row>>(
+      `${CAMARA}/votacoes?idOrgao=${PLENARY_ORG_ID}&dataInicio=${isoDaysAgo(offset + 80)}` +
+        `&dataFim=${isoDaysAgo(offset)}&ordem=DESC&ordenarPor=dataHoraRegistro&itens=100`,
+    );
+    for (const v of (page?.dados ?? []).slice(0, 25)) {
+      const votes = await getOrNull<Page<Row>>(`${CAMARA}/votacoes/${v.id}/votos`);
+      const rows2 = votes?.dados ?? [];
+      if (rows2.length === 0) continue;
+      camaraCodes = new Set([...camaraCodes, ...rows2.map((x) => String(x.tipoVoto ?? "").trim())]);
+      if (camaraCodes.size > 3) break;
+    }
+  }
+  check(
+    `Câmara ainda marca quem preside (${[...camaraCodes].join(", ") || "nenhum código lido"})`,
+    [...camaraCodes].some((c) => /artigo\s*17|art\.\s*17/i.test(c)),
+    "o código de presidência sumiu — quem está na cadeira volta a ser contado como faltoso",
+  );
+
+  const senadoVotacoes = await getOrNull<Row[]>(
+    `${SENADO}/votacao?dataInicio=${isoDaysAgo(180)}&dataFim=${isoDaysAgo(0)}`,
+  );
+  const senadoCodes = new Set<string>();
+  for (const v of Array.isArray(senadoVotacoes) ? senadoVotacoes : []) {
+    for (const x of (v.votos as Row[] | undefined) ?? []) {
+      senadoCodes.add(String(x.siglaVotoParlamentar ?? "").trim());
+    }
+  }
+  check(
+    "Senado ainda marca quem preside (art. 51 RISF)",
+    [...senadoCodes].some((c) => /presidente/i.test(c)),
+    "o código de presidência sumiu — quem está na cadeira volta a ser contado como faltoso",
+  );
+  note(`códigos de voto do Senado: ${[...senadoCodes].sort().join(", ")}`);
+
+  // ── Plenary presence: not a pillar yet, but watched ───────────────────────
+  const events = await get<Page<Row>>(
+    `${CAMARA}/orgaos/${PLENARY_ORG_ID}/eventos?dataInicio=${isoDaysAgo(120)}&dataFim=${isoDaysAgo(0)}&itens=100`,
+  );
+  const rows = events.dados ?? [];
+  const deliberative = rows.find((e) => isDeliberativeSession(String(e.descricaoTipo ?? "")));
+  const solemn = rows.find((e) => String(e.descricaoTipo ?? "").includes("Solene"));
+  if (deliberative && solemn) {
+    const [d, sn] = await Promise.all([
+      getOrNull<Page<Row>>(`${CAMARA}/eventos/${deliberative.id}/deputados`),
+      getOrNull<Page<Row>>(`${CAMARA}/eventos/${solemn.id}/deputados`),
+    ]);
+    const dN = (d?.dados ?? []).length;
+    const sN = (sn?.dados ?? []).length;
+    check(
+      `eventos/{id}/deputados é presença, não roster (deliberativa ${dN} × solene ${sN})`,
+      dN > 100 && sN === 0,
+      "a semântica mudou — reavaliar antes de promover presença de plenário a pilar",
+    );
+  } else {
+    note("sem par deliberativa/solene na janela para conferir a semântica de presença");
+  }
+}
+
 async function main(): Promise<void> {
   checkHelpers();
+  checkQualityHelpers();
   checkScheduling();
   await checkCamara();
   await checkSenado();
+  await checkQualitySources();
   await checkSocialProviders();
 
   console.log(

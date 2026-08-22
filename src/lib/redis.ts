@@ -51,3 +51,21 @@ export async function cacheSet(key: string, value: unknown, ttlSeconds = 300): P
     // best-effort
   }
 }
+
+/**
+ * Drop a cached key. Silent no-op if cache unavailable.
+ *
+ * The TTLs here are short enough that stale readings correct themselves, so
+ * this exists for one case only: the citizen who just acted. Following an agent
+ * changes that agent's base index, and waiting out the TTL to see the effect of
+ * your own click reads as the platform having ignored it.
+ */
+export async function cacheDel(key: string): Promise<void> {
+  const client = getClient();
+  if (!client) return;
+  try {
+    await client.del(key);
+  } catch {
+    // best-effort
+  }
+}

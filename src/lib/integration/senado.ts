@@ -36,14 +36,20 @@ import {
   upsertAgentVote,
   upsertArticle,
   upsertTheme,
+  recordRollCall,
+  upsertServiceSpan,
+  upsertAgentMetrics,
   type Counters,
   type SyncOptions,
   type SyncResult,
   type ThemeClassification,
 } from "@/lib/integration/importer";
 import { computePriority, isConcludedSituation } from "@/lib/domain/priority";
+// The index window is one definition for both houses, so it lives beside the
+// legislature arithmetic that produced it rather than being restated here.
+import { windowYears } from "@/lib/integration/camara";
 import { db } from "@/lib/db";
-import { AgentType, House, ImportSource, Scope, VoteValue } from "@/generated/prisma";
+import { AgentType, House, ImportSource, Scope, ServiceKind, VoteValue } from "@/generated/prisma";
 
 const BASE = "https://legis.senado.leg.br/dadosabertos";
 const SOURCE = ImportSource.SENADO;
@@ -84,6 +90,22 @@ function dig(root: unknown, path: string): unknown {
     if (cur === undefined) return undefined;
   }
   return cur;
+}
+
+/**
+ * Whether a vote code marks the senator who was presiding.
+ *
+ * Art. 51 of the RISF keeps the chair out of open ballots. Measured over a year
+ * the code appeared exactly once per sitting — 39 of 46 of them the Senate
+ * President's — so leaving it uncorrected filed the presiding officer at the 1st
+ * percentile of attendance while he had in fact been in the room every time.
+ */
+function isPresidingVote(sigla: string | undefined | null): boolean {
+  const t = (sigla ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return t.includes("presidente");
 }
 
 /** Fetch JSON from the Senado service, returning null on any failure. */
@@ -343,7 +365,7 @@ export async function syncAgents(opts: SyncOptions = {}): Promise<SyncResult> {
 async function upsertBillTheme(
   summary: SenadoProcesso,
   c: Counters,
-  agentIdByRef?: Map<string, string>,
+  agentIdByRef: Map<string, string>,
   detail?: SenadoProcessoDetalhe | null,
 ): Promise<string | null> {
   const ref = themeRef(summary);
@@ -387,14 +409,16 @@ async function upsertBillTheme(
   // Authorship rides along in the detail we already fetched — no extra request.
   const author = full?.autoriaIniciativa?.[0];
   const authorCode = author?.codigoParlamentar;
-  const proposerId = authorCode != null ? agentIdByRef?.get(String(authorCode)) ?? null : null;
+  // `agentIdByRef` is REQUIRED, like its Câmara twin: while it was optional, a
+  // call site that omitted it left the bill written and only its authorship
+  // empty, and nothing ever came back for it. See `upsertBillTheme` in
+  // `camara.ts` and the repair in `scripts/reauthor.ts`.
+  const proposerId = authorCode != null ? agentIdByRef.get(String(authorCode)) ?? null : null;
   const proposerName = proposerId ? null : author?.autor?.trim() || null;
 
   // The rapporteur needs its own call, so only for bills still in play.
   const rapporteurId =
-    inProgress && processId != null && agentIdByRef
-      ? await fetchRapporteur(processId, agentIdByRef)
-      : null;
+    inProgress && processId != null ? await fetchRapporteur(processId, agentIdByRef) : null;
 
   const themeId = await upsertTheme({
     source: SOURCE,
@@ -512,6 +536,68 @@ export async function syncThemes(opts: SyncOptions = {}): Promise<SyncResult> {
   }
 
   return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark };
+}
+
+/**
+ * Re-resolve authorship for bills already imported that carry none — the Senado
+ * half of the repair described on {@link import("./camara").repairAuthorship}.
+ *
+ * Costs one extra request per bill, because {@link themeRef} keys a theme by
+ * `codigoMateria` while the detail (where `autoriaIniciativa` lives) is keyed by
+ * the *process* id. `/processo?codigoMateria=` returns the same summary row the
+ * sweeps read, process id included, so the repair rejoins the normal path
+ * instead of duplicating its mapping.
+ */
+export async function repairAuthorship(opts: SyncOptions = {}): Promise<SyncResult> {
+  const c = counters();
+  const agentIdByRef = await senatorIdsByRef();
+
+  const pending = await db.theme.findMany({
+    where: {
+      source: SOURCE,
+      inProgress: true,
+      proposerId: null,
+      proposerName: null,
+    },
+    orderBy: [{ priority: "desc" }, { lastActionAt: "desc" }],
+    ...(opts.limit ? { take: opts.limit } : {}),
+    select: { externalRef: true },
+  });
+
+  for (const theme of pending) {
+    const ref = theme.externalRef;
+    if (!ref) continue;
+    c.seen++;
+    if (c.seen % PROGRESS_INTERVAL === 0) {
+      opts.onProgress?.({
+        seen: c.seen,
+        upserted: c.upserted,
+        note: `${c.seen}/${pending.length} processos sem autoria`,
+      });
+    }
+
+    const summary = await resolveProcessSummary(ref);
+    if (!summary) continue;
+    await upsertBillTheme(summary, c, agentIdByRef);
+  }
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted };
+}
+
+/**
+ * Recover the summary row behind a stored `externalRef`, in either of the two
+ * shapes {@link themeRef} produces: a bare `codigoMateria`, or `processo:{id}`
+ * for the bills the service never gave a matéria code.
+ */
+async function resolveProcessSummary(ref: string): Promise<SenadoProcesso | null> {
+  const viaProcess = ref.startsWith("processo:") ? Number(ref.slice("processo:".length)) : null;
+  if (viaProcess != null) return Number.isFinite(viaProcess) ? { id: viaProcess } : null;
+
+  const code = Number(ref);
+  if (!Number.isFinite(code)) return null;
+  const rows = await tryFetch<SenadoProcesso[]>(`/processo?codigoMateria=${code}`);
+  await sleep(REQUEST_DELAY);
+  return Array.isArray(rows) ? rows[0] ?? null : null;
 }
 
 // ─── Floor agenda (the curated "what matters now" feed) ──────────────────────
@@ -650,11 +736,25 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
 
     const occurredAt = parseDate(v.dataSessao);
     const sessionRef = String(v.codigoSessaoVotacao ?? v.idProcesso ?? ref);
+    // The same response feeds two records: the senator's standing position on
+    // the bill (`Vote`, one per theme — what alignment reads) and the sitting
+    // itself (`RollCall`, one per votação — what the quality index counts).
+    const participants: Array<{ agentId: string; value: VoteValue }> = [];
+    let presidingAgentId: string | null = null;
 
     for (const voto of votos) {
       if (voto.codigoParlamentar == null) continue;
       const value = mapVote(voto.siglaVotoParlamentar);
-      if (value === null) continue;
+      // The chair is present but barred from voting. Caught before the `null`
+      // guard below, because `mapVote` correctly reports "no position" and that
+      // is exactly what would otherwise read as an absence.
+      if (value === null) {
+        if (isPresidingVote(voto.siglaVotoParlamentar)) {
+          presidingAgentId =
+            agentIdByRef.get(String(voto.codigoParlamentar)) ?? presidingAgentId;
+        }
+        continue;
+      }
       c.seen++;
 
       const code = String(voto.codigoParlamentar);
@@ -666,6 +766,8 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
         agentIdByRef.set(code, agentId);
       }
 
+      participants.push({ agentId, value });
+
       const changed = await upsertAgentVote({
         source: SOURCE,
         externalRef: `votacao:${sessionRef}:senador:${code}`,
@@ -676,6 +778,20 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
         sessionRef,
       });
       if (changed) c.upserted++;
+    }
+
+    // A sitting with no date cannot be placed inside a mandate window, so it
+    // cannot serve as an attendance denominator — skip it rather than guess.
+    if (occurredAt) {
+      await recordRollCall({
+        source: SOURCE,
+        externalRef: sessionRef,
+        house: House.SENADO,
+        occurredAt,
+        themeId,
+        participants,
+        presidingAgentId,
+      });
     }
   }
 
@@ -705,4 +821,288 @@ async function upsertPastSenator(
     inOffice: false,
     partyId,
   });
+}
+
+// ─── Quality index: mandate record and running cost (CLAUDE.md §3.3) ─────────
+
+/**
+ * The Senado's administrative open data — a different host, still the Senado.
+ *
+ * `ImportSource` records *whose* data a row is, not which hostname served it, so
+ * expenses imported from here are `SENADO` like everything else in this module.
+ */
+const ADM_BASE = "https://adm.senado.gov.br/adm-dadosabertos/api/v1";
+
+/**
+ * Document types counted as "projetos propostos".
+ *
+ * Requerimentos (RQS) and the like are excluded for the same reason as in the
+ * Câmara: they are procedural traffic, and one sampled senator's authorship list
+ * was overwhelmingly made of them.
+ */
+const AUTHORED_TYPES = new Set(["PL", "PLP", "PEC", "PDL", "PLS", "PRS"]);
+
+interface SenadoRelatoria {
+  codigoParlamentar?: number;
+  idProcesso?: number;
+  identificacaoProcesso?: string;
+  dataDesignacao?: string;
+  descricaoTipoRelator?: string;
+}
+
+interface SenadoCeaps {
+  codSenador?: number;
+  ano?: number;
+  mes?: number;
+  tipoDespesa?: string;
+  valorReembolsado?: number;
+}
+
+/**
+ * Import every sitting senator's mandate record: exercise stretches, official
+ * leaves, substantive bills authored and bills reported.
+ *
+ * The Senado is the easier of the two houses here — it publishes exercise
+ * intervals and leave intervals ready-made (`/senador/{cod}/mandatos`,
+ * `/senador/{cod}/licencas`), where the Câmara publishes an event log that has
+ * to be paired into intervals. It also publishes a *complete* rapporteur history
+ * (`/processo/relatoria`), where the Câmara exposes only a bill's last
+ * rapporteur. That asymmetry is why the quality index ranks inside a house and
+ * never across: comparing a complete count with a floor would hand the Senado
+ * the pillar for free.
+ *
+ * Built on `/processo*`, not on `/senador/{cod}/autorias` or `/relatorias`:
+ * those are past their announced shutdown (2026-02-01) and still answering, but
+ * building on a service the publisher has retired is borrowing trouble.
+ */
+export async function syncMandate(opts: SyncOptions = {}): Promise<SyncResult> {
+  const c = counters();
+  const years = windowYears();
+
+  const senators = await db.publicAgent.findMany({
+    where: { source: SOURCE, type: AgentType.SENATOR, inOffice: true },
+    select: { id: true, externalRef: true },
+  });
+  const targets = opts.limit ? senators.slice(0, opts.limit) : senators;
+
+  for (const [i, sen] of targets.entries()) {
+    if (!sen.externalRef) continue;
+    c.seen++;
+    if (i % PROGRESS_INTERVAL === 0) {
+      opts.onProgress?.({ seen: c.seen, upserted: c.upserted, note: `${i}/${targets.length} senadores` });
+    }
+
+    for (const span of await fetchServiceSpans(sen.externalRef)) {
+      await upsertServiceSpan({
+        source: SOURCE,
+        externalRef: `senado:${span.kind}:${sen.externalRef}:${span.startsAt.toISOString().slice(0, 10)}`,
+        agentId: sen.id,
+        ...span,
+      });
+    }
+
+    const authored = await fetchAuthoredByYear(sen.externalRef, years);
+    const reported = await fetchRapporteuredByYear(sen.externalRef, years);
+
+    for (const year of years) {
+      await upsertAgentMetrics(
+        sen.id,
+        year,
+        {
+          billsAuthored: authored.get(year) ?? 0,
+          billsRapporteured: reported.get(year) ?? 0,
+        },
+        SOURCE,
+      );
+    }
+    c.upserted++;
+  }
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark: new Date().toISOString().slice(0, 10) };
+}
+
+/**
+ * A senator's exercise stretches and officially recorded leaves.
+ *
+ * Both feed the attendance denominator: roll calls held inside an EXERCISE
+ * stretch, minus those inside a LEAVE. `LICENCA_ATIVIDADE_PARLAMENTAR` — a
+ * one-day leave for an official mission — made up 770 of 877 records in a
+ * 20-senator sample, so this is a large excusable surface, which is exactly why
+ * `src/lib/indexes/quality.ts` caps how much of a window leave may cover before
+ * the pillar refuses to score at all.
+ */
+async function fetchServiceSpans(
+  code: string,
+): Promise<Array<{ startsAt: Date; endsAt: Date | null; kind: ServiceKind; reason: string | null }>> {
+  const spans: Array<{ startsAt: Date; endsAt: Date | null; kind: ServiceKind; reason: string | null }> = [];
+
+  const mandatos = await tryFetch(`/senador/${encodeURIComponent(code)}/mandatos`);
+  await sleep(REQUEST_DELAY);
+  for (const mandato of arr(dig(mandatos, "MandatoParlamentar.Parlamentar.Mandatos.Mandato"))) {
+    for (const ex of arr(dig(mandato, "Exercicios.Exercicio"))) {
+      const startsAt = parseDate(str(obj(ex).DataInicio));
+      if (!startsAt) continue;
+      spans.push({
+        startsAt,
+        endsAt: parseDate(str(obj(ex).DataFim)),
+        kind: ServiceKind.EXERCISE,
+        reason: null,
+      });
+    }
+  }
+
+  const licencas = await tryFetch(`/senador/${encodeURIComponent(code)}/licencas`);
+  await sleep(REQUEST_DELAY);
+  for (const lic of arr(dig(licencas, "LicencaParlamentar.Parlamentar.Licencas.Licenca"))) {
+    const l = obj(lic);
+    const startsAt = parseDate(str(l.DataInicio));
+    if (!startsAt) continue;
+    spans.push({
+      startsAt,
+      endsAt: parseDate(str(l.DataFim) ?? str(l.DataFimPrevista)),
+      kind: ServiceKind.LEAVE,
+      reason: str(l.SiglaTipoAfastamento) ?? null,
+    });
+  }
+
+  return spans;
+}
+
+/** Substantive bills the senator authored, by year of presentation. */
+async function fetchAuthoredByYear(code: string, years: number[]): Promise<Map<number, number>> {
+  const rows = await tryFetch<SenadoProcesso[]>(
+    `/processo?codigoParlamentarAutor=${encodeURIComponent(code)}`,
+  );
+  await sleep(REQUEST_DELAY);
+  const counts = new Map<number, number>();
+  if (!Array.isArray(rows)) return counts;
+
+  for (const row of rows) {
+    const sigla = (row.identificacao ?? "").split(/\s+/)[0]?.toUpperCase();
+    if (!sigla || !AUTHORED_TYPES.has(sigla)) continue;
+    const at = parseDate(row.dataApresentacao);
+    if (!at) continue;
+    const year = at.getFullYear();
+    if (!years.includes(year)) continue;
+    counts.set(year, (counts.get(year) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Bills the senator was designated rapporteur for, by year of designation.
+ *
+ * "Relator ad hoc" — someone standing in for one sitting — is counted like any
+ * other: the record does not distinguish how much work each involved, and
+ * inventing a discount here would be editorialising over the source.
+ */
+async function fetchRapporteuredByYear(code: string, years: number[]): Promise<Map<number, number>> {
+  const rows = await tryFetch<SenadoRelatoria[]>(
+    `/processo/relatoria?codigoParlamentar=${encodeURIComponent(code)}`,
+  );
+  await sleep(REQUEST_DELAY);
+  const counts = new Map<number, number>();
+  if (!Array.isArray(rows)) return counts;
+
+  for (const row of rows) {
+    const at = parseDate(row.dataDesignacao?.slice(0, 10));
+    if (!at) continue;
+    const year = at.getFullYear();
+    if (!years.includes(year)) continue;
+    counts.set(year, (counts.get(year) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Import the senators' quota (CEAPS) — the running cost of the mandate.
+ *
+ * One request per year returns every senator's documents (~10 MB), which is why
+ * this job costs a handful of requests against the Câmara's thousands: the
+ * Senado publishes the whole year in one payload, keyed by `codSenador` — the
+ * same code we store as `externalRef`.
+ *
+ * Scope note, same as the Câmara's: CEAPS is office upkeep, travel, fuel, food
+ * and publicity. It is not emendas parlamentares, and the index would be saying
+ * the opposite of the truth if it conflated the two (CLAUDE.md §3.3).
+ */
+export async function syncExpenses(opts: SyncOptions = {}): Promise<SyncResult> {
+  const c = counters();
+  const years = windowYears();
+  const currentYear = new Date().getFullYear();
+
+  const senators = await db.publicAgent.findMany({
+    where: { source: SOURCE, type: AgentType.SENATOR },
+    select: { id: true, externalRef: true },
+  });
+  const idByCode = new Map(
+    senators
+      .filter((s): s is { id: string; externalRef: string } => Boolean(s.externalRef))
+      .map((s) => [s.externalRef, s.id]),
+  );
+
+  const settled = new Set(
+    (
+      await db.agentMetrics.findMany({
+        where: { agentId: { in: senators.map((s) => s.id) }, year: { in: years } },
+        select: { agentId: true, year: true, quotaDocuments: true },
+      })
+    )
+      .filter((m) => m.year < currentYear && m.quotaDocuments > 0)
+      .map((m) => `${m.agentId}:${m.year}`),
+  );
+
+  for (const year of years) {
+    opts.onProgress?.({ seen: c.seen, upserted: c.upserted, note: `CEAPS ${year}` });
+
+    let rows: SenadoCeaps[] | null = null;
+    try {
+      rows = await fetchJson<SenadoCeaps[]>(`${ADM_BASE}/senadores/despesas_ceaps/${year}`, {
+        headers: JSON_HEADERS,
+        timeoutMs: 120_000,
+      });
+    } catch {
+      continue; // A year the service cannot serve is skipped, never zeroed.
+    }
+    await sleep(REQUEST_DELAY);
+    if (!Array.isArray(rows)) continue;
+
+    const totals = new Map<string, { spent: number; documents: number; byCategory: Map<string, number> }>();
+    for (const row of rows) {
+      const agentId = idByCode.get(String(row.codSenador));
+      if (!agentId) continue;
+      const value = typeof row.valorReembolsado === "number" ? row.valorReembolsado : 0;
+      if (value <= 0) continue;
+      const bucket = totals.get(agentId) ?? { spent: 0, documents: 0, byCategory: new Map<string, number>() };
+      bucket.spent += value;
+      bucket.documents++;
+      const label = (row.tipoDespesa ?? "OUTROS").trim();
+      bucket.byCategory.set(label, (bucket.byCategory.get(label) ?? 0) + value);
+      totals.set(agentId, bucket);
+    }
+    c.seen += rows.length;
+
+    for (const [agentId, bucket] of totals) {
+      if (settled.has(`${agentId}:${year}`)) continue;
+      await upsertAgentMetrics(
+        agentId,
+        year,
+        {
+          quotaSpent: round2(bucket.spent),
+          quotaDocuments: bucket.documents,
+          quotaByCategory: Object.fromEntries(
+            [...bucket.byCategory.entries()].map(([k, v]) => [k, round2(v)]),
+          ),
+        },
+        SOURCE,
+      );
+      c.upserted++;
+    }
+  }
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark: String(currentYear) };
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
