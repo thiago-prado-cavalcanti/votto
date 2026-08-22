@@ -43,7 +43,11 @@ export function CpfForm() {
         <Field label="Primeiro nome" htmlFor="firstName">
           <Input id="firstName" name="firstName" required autoComplete="given-name" />
         </Field>
-        <Field label="Último sobrenome" htmlFor="lastName">
+        <Field
+          label="Último sobrenome"
+          htmlFor="lastName"
+          hint="O último do seu nome completo, como está no documento."
+        >
           <Input id="lastName" name="lastName" required autoComplete="family-name" />
         </Field>
       </div>

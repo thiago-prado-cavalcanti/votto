@@ -64,6 +64,15 @@ export function splitPersonName(raw: string): { firstName: string; lastName: str
 }
 
 /**
+ * Generational suffixes, which trail a name without being the surname.
+ *
+ * `JOSÉ CARLOS SILVA JÚNIOR` has `Silva` as its last surname — asking for the
+ * "último sobrenome" and demanding `Júnior` would reject a great many people
+ * for knowing their own name. Either answer is accepted.
+ */
+const SUFFIXES = new Set(["filho", "filha", "junior", "neto", "neta", "sobrinho", "sobrinha", "segundo", "terceiro"]);
+
+/**
  * Whether a typed first + last name match the name the registry holds.
  *
  * The point of asking is that the citizen must *know* the name behind the CPF,
@@ -71,34 +80,43 @@ export function splitPersonName(raw: string): { firstName: string; lastName: str
  * they chose on Google. It raises the bar over CPF + birth date alone; it does
  * not stop someone holding a leaked record, which carries all three together.
  *
- * Matching is deliberately forgiving in the ways real names vary and strict in
- * the way that matters:
+ * Matching is forgiving in the ways names are *written* and strict in the way
+ * that carries the security:
  *
  *  - **Accents and case are ignored.** Nobody should fail for typing `Jose`.
- *  - **The first name must be the first name.** It is the one part everyone
- *    knows and spells the same way.
- *  - **The surname may be any of them, not only the last.** A great many
- *    Brazilians go by a middle surname — `Thiago Prado`, whose record ends in
- *    `Cavalcanti`. Demanding the final token would reject them, and proves
- *    nothing extra: knowing *any* surname already proves knowledge of the name.
- *  - **Particles do not count as surnames.** `de`, `dos`, `e` would otherwise
- *    let anyone through.
+ *  - **The first name must be the first name**, and **the last surname must be
+ *    the last one.** Accepting any surname was the first cut here and it was
+ *    wrong: the middle surname is precisely the one that circulates socially —
+ *    someone is publicly `Thiago Prado` while the record ends in `Cavalcanti`.
+ *    Against the realistic attacker, a relative or a colleague, the final
+ *    surname is the part that lives on the document rather than in conversation.
+ *  - **Generational suffixes are not the surname.** `SILVA JÚNIOR` accepts both
+ *    `Silva` and `Júnior`; the citizen decides which one they call theirs.
+ *  - **Particles do not count.** `de`, `dos`, `e` are never the answer.
  */
 export function nameMatchesRegistry(
   typed: { firstName: string; lastName: string },
   registryName: string,
 ): boolean {
-  const registry = tokenize(registryName);
+  const tokens = tokenize(registryName);
   const first = fold(typed.firstName);
   const last = fold(typed.lastName);
-  if (!first || !last || registry.length === 0) return false;
+  if (!first || !last || tokens.length === 0) return false;
 
-  if (registry[0] !== first) return false;
+  if (tokens[0] !== first) return false;
 
-  const surnames = registry.slice(1).filter((token) => !PARTICLES.has(token));
+  const surnames = tokens.slice(1).filter((token) => !PARTICLES.has(token));
   // A single-token record has no surname to check; the first name is all there
   // is, and rejecting the citizen for our source's brevity would be wrong.
-  return surnames.length === 0 || surnames.includes(last);
+  if (surnames.length === 0) return true;
+
+  // The accepted answers: the final token, plus the surname before it whenever
+  // that final token is only a generational suffix.
+  const accepted = new Set<string>([surnames[surnames.length - 1]]);
+  for (let i = surnames.length - 1; i > 0 && SUFFIXES.has(surnames[i]); i--) {
+    accepted.add(surnames[i - 1]);
+  }
+  return accepted.has(last);
 }
 
 /** Lowercase, unaccented, punctuation-free words. */

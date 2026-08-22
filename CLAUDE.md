@@ -196,9 +196,15 @@ Citizen sign-in is **two steps**, because neither one is sufficient alone:
    The name is checked against the **registry**, never against the provider's display name: that
    one is self-declared and editable, so comparing with it would be theatre — a mismatch proves
    nothing (nicknames) and a match proves nothing (an attacker edits the field). What the check
-   buys is that the citizen must *know* the name behind the CPF. Matching is forgiving where names
-   really vary (accents, case, any surname rather than strictly the last) and strict on the first
-   name — `nameMatchesRegistry` in `src/lib/domain/names.ts`.
+   buys is that the citizen must *know* the name behind the CPF.
+
+   It asks for the first name and the **last** surname, and means it. Accepting any surname was
+   the first cut and it was wrong: the middle surname is exactly the one that circulates socially
+   — someone is publicly `Thiago Prado` while the record ends in `Cavalcanti` — so against the
+   realistic attacker (a relative, a colleague) the final surname is the part that lives on the
+   document rather than in conversation. Forgiving only where names are *written* differently:
+   accents, case, and generational suffixes (`SILVA JÚNIOR` takes either). `nameMatchesRegistry`
+   in `src/lib/domain/names.ts`.
 
 Voting adds a third check, **once per session** (`src/lib/auth/vote-challenge.ts`): before the
 first vote, the citizen answers with three digits of their CPF, given by position, plus the day,
