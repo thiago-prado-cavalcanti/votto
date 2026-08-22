@@ -7,8 +7,20 @@
  *
  * Everything is derived from `window.location.origin`, so it works on any
  * environment (localhost, votto.online) with no extra config.
+ *
+ * **Rendered through a portal into `<body>`, and it has to be.** `position:
+ * fixed` is only fixed to the viewport while no ancestor has a `transform`,
+ * `filter`, `backdrop-filter`, `perspective` or `contain` — any one of those
+ * makes that ancestor the containing block *and* a stacking context, which
+ * traps the overlay inside the page block it was opened from and leaves it
+ * painting under the blocks that follow. This site is full of such ancestors by
+ * design: every screen is wrapped in `Reveal`, whose entrance animates
+ * `transform` and `filter`, and the document carries a blended grain overlay.
+ * Raising `z-index` cannot fix that — a z-index only orders siblings inside the
+ * stacking context it belongs to. Leaving the page entirely does.
  */
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export type ShareKind = "tema" | "agente" | "partido";
 
@@ -37,20 +49,31 @@ export function ShareDialog({
   title: string;
   onClose: () => void;
 }) {
-  const [origin, setOrigin] = useState("");
   const [copied, setCopied] = useState<"link" | "embed" | null>(null);
-  const [canNativeShare, setCanNativeShare] = useState(false);
-
-  useEffect(() => {
-    setOrigin(window.location.origin);
-    setCanNativeShare(typeof navigator !== "undefined" && !!navigator.share);
-  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+
+    // Hold the page still underneath. A sheet that scrolls the article behind
+    // it reads as two documents fighting.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
   }, [onClose]);
+
+  // Rendered only from a click, so there is no server pass and no hydration to
+  // mismatch — the browser can be read straight during render. The guard is
+  // insurance: were this ever mounted open by default, reading `window` on the
+  // server would crash the page instead of merely losing the sheet.
+  if (typeof window === "undefined") return null;
+
+  const origin = window.location.origin;
+  const canNativeShare = !!navigator.share;
 
   const link = `${origin}/${DETAIL_PATH[kind]}/${kid}`;
   const embedSrc = `${origin}/embed/${kind}/${kid}`;
@@ -77,7 +100,7 @@ export function ShareDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
@@ -154,7 +177,8 @@ export function ShareDialog({
           multiline
         />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
