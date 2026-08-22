@@ -26,6 +26,13 @@ export interface CitizenSession {
   userKid: string;
   cpfHash: string;
   name: string;
+  /**
+   * Set once the citizen has answered the vote challenge
+   * (`@/lib/auth/vote-challenge`). It lives on the session rather than in a
+   * cookie of its own so that "once per session" is true by construction:
+   * it cannot outlive the session, and a fresh login always asks again.
+   */
+  voteConfirmed?: true;
 }
 
 type SessionPayload = AdminSession | CitizenSession;
@@ -53,6 +60,40 @@ export function sessionCookieOptions() {
 /** Sign a citizen session token (for setting the cookie on a NextResponse). */
 export function createCitizenSessionToken(s: CitizenSession): Promise<string> {
   return sign(s);
+}
+
+/**
+ * Re-issue the current citizen session with the vote challenge marked as
+ * answered.
+ *
+ * The original expiry is carried over rather than refreshed: confirming a vote
+ * should not silently extend how long the session lives.
+ */
+export async function markVoteConfirmed(session: CitizenSession): Promise<void> {
+  const store = await cookies();
+  const current = store.get(CITIZEN_COOKIE)?.value;
+
+  // Seconds left on the session, floored at a minute so a token about to expire
+  // still produces a usable cookie instead of an already-dead one.
+  let remaining = MAX_AGE;
+  if (current) {
+    try {
+      const { payload } = await jwtVerify(current, secret());
+      if (typeof payload.exp === "number") {
+        remaining = Math.max(60, payload.exp - Math.floor(Date.now() / 1000));
+      }
+    } catch {
+      // Unreadable: fall back to a full window rather than logging the citizen out.
+    }
+  }
+
+  const token = await new SignJWT({ ...session, voteConfirmed: true })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${remaining}s`)
+    .sign(secret());
+
+  store.set(CITIZEN_COOKIE, token, { ...sessionCookieOptions(), maxAge: remaining });
 }
 
 async function verify<T extends SessionPayload>(token: string): Promise<T | null> {

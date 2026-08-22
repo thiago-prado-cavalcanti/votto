@@ -143,9 +143,9 @@ Position users, public agents and parties on the classic left↔right political 
   original article, foreign key to Theme.
 - **Vote** — a vote on a Theme. Value: abstention / yes / no. Cast by a **User** or a **PublicAgent**.
   Unique: **one vote per CPF per Theme**.
-- **User** — citizen / voter. Fields: first name, last name, CPF (encrypted, see §5), birth
-  **year** only (age gate + anonymized demographics; the full date is never stored), and the
-  verification trail `cpfVerifiedAt` / `cpfVerificationSource`.
+- **User** — citizen / voter. Fields: first name, last name, CPF (encrypted, see §5), birth date
+  (encrypted — needed by the vote challenge), birth **year** in clear (age gate + anonymized
+  demographics), and the verification trail `cpfVerifiedAt` / `cpfVerificationSource`.
 - **SocialAccount** — a social identity (`provider` + the provider's `sub`) bound to a User. Many
   per User: linking Google and Apple to one CPF is one citizen, not two. Written only once a CPF
   has been confirmed. `subject` is internal, exactly like `externalRef` (§5).
@@ -190,8 +190,23 @@ Citizen sign-in is **two steps**, because neither one is sufficient alone:
 1. **Social provider** — Apple, Google or Meta (OIDC authorization-code + PKCE). Proves the person
    controls that account; says nothing about who they are in Brazil. One client
    (`src/lib/auth/social/oidc.ts`) driven by a registry (`src/lib/auth/social/providers.ts`).
-2. **Official CPF registry** — the citizen types CPF + birth date and
-   `src/lib/identity/validation.ts` confirms the pair against the Receita Federal.
+2. **Official CPF registry** — the citizen types **first name, last name, CPF and birth date**, and
+   `src/lib/identity/validation.ts` confirms them together against the Receita Federal.
+
+   The name is checked against the **registry**, never against the provider's display name: that
+   one is self-declared and editable, so comparing with it would be theatre — a mismatch proves
+   nothing (nicknames) and a match proves nothing (an attacker edits the field). What the check
+   buys is that the citizen must *know* the name behind the CPF. Matching is forgiving where names
+   really vary (accents, case, any surname rather than strictly the last) and strict on the first
+   name — `nameMatchesRegistry` in `src/lib/domain/names.ts`.
+
+Voting adds a third check, **once per session** (`src/lib/auth/vote-challenge.ts`): before the
+first vote, the citizen answers with three digits of their CPF, given by position, plus the day,
+month or year of their birth. The combination is drawn fresh each time. It is not a second
+password — it is what stops an unlocked phone or a forgotten session on a shared computer from
+voting in someone's name. The answer is recorded as a claim on the session token, so it dies with
+the session by construction. Three attempts per challenge, three challenges per session, then a
+fresh login.
 
 Identity reaches the database only through `signInCitizen`
 (`src/lib/auth/citizen-login.ts`), which owns the CPF privacy rules, and identity is always read
@@ -212,6 +227,9 @@ from the **signature-verified** id_token, never the query string.
   collapses conversion. It remains the most likely next step.
 - **No e-mail is stored** even though every provider offers one: it would put a second identifier
   beyond the name into a leak.
+- **The birth date is stored encrypted**, because the challenge asks for the day or the month; a
+  challenge that could only ask for the year would repeat the same two digits forever. Only the
+  **year** is readable in the database.
 - **Nothing is written before the CPF confirms.** The social identity waits in a signed, httpOnly
   cookie (`src/lib/auth/pending.ts`), which also carries an attempt counter — each attempt is a paid
   registry lookup, so the cap guards the budget as much as it guards against brute force.

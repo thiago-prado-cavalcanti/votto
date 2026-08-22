@@ -44,6 +44,12 @@ export interface VerifiedIdentity {
    * one less identifying field in a leak.
    */
   birthYear?: number;
+  /**
+   * Full birth date, already encrypted by the caller. Needed by the vote
+   * challenge, which asks for the day or the month; only `birthYear` is ever
+   * readable in the database.
+   */
+  birthDateEncrypted?: string;
   /** Which registry confirmed the CPF (`infosimples`, `serpro`, `mock`). */
   verificationSource?: string;
   /**
@@ -84,6 +90,7 @@ export async function signInCitizen(identity: VerifiedIdentity): Promise<string>
       cpfHash,
       cpfPrefix,
       birthYear: identity.birthYear,
+      birthDateEncrypted: identity.birthDateEncrypted,
       politicalConsentAt: identity.politicalConsentAt,
       ...verified,
     },
@@ -91,6 +98,7 @@ export async function signInCitizen(identity: VerifiedIdentity): Promise<string>
       firstName,
       lastName,
       birthYear: identity.birthYear,
+      birthDateEncrypted: identity.birthDateEncrypted,
       politicalConsentAt: identity.politicalConsentAt,
       ...verified,
     },

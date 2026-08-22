@@ -38,11 +38,12 @@ export default async function LinkCpfPage() {
           <CardBody className="flex flex-col gap-5">
             <div>
               <h1 className="text-[1.9rem] leading-tight text-navy-900">
-                Falta confirmar o seu CPF
+                Falta confirmar quem você é
               </h1>
               <p className="mt-2 text-sm text-[var(--color-muted)]">
-                Quase lá{greeting}. Conferimos o CPF diretamente no registro oficial da
-                Receita Federal — sem ele não há como garantir um voto por cidadão.
+                Quase lá{greeting}. Conferimos o seu nome, o CPF e a data de nascimento
+                juntos, no registro oficial da Receita Federal — é o que garante um voto
+                por cidadão.
               </p>
             </div>
 

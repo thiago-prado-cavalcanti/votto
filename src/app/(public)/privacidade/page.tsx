@@ -140,9 +140,14 @@ export default function PrivacyPage() {
                       "Em claro. Sozinhos, não identificam ninguém.",
                     ],
                     [
+                      "Data de nascimento",
+                      "Você digita; conferida na Receita",
+                      "Criptografada. Usada só para confirmar que é você na hora de votar.",
+                    ],
+                    [
                       "Ano de nascimento",
                       "Registro da Receita Federal",
-                      "Só o ano — nunca o dia e o mês.",
+                      "Em claro. Sozinho, não identifica ninguém.",
                     ],
                     [
                       "Identificador da sua conta social",
@@ -170,6 +175,13 @@ export default function PrivacyPage() {
               seu e-mail; não pedimos e não guardamos. Também não coletamos telefone,
               endereço, foto de perfil, lista de amigos nem senha — você não cria senha
               no Votto, então não há o que vazar.
+            </p>
+            <p>
+              <Key>Sobre a data de nascimento.</Key> Guardamos a data completa
+              criptografada porque ela é usada na confirmação do voto, que pede o dia,
+              o mês ou o ano. Em claro fica apenas o <Key>ano</Key>, que sozinho não
+              identifica ninguém e serve para conferir a idade mínima e para as
+              estatísticas anônimas.
             </p>
           </Clause>
 
@@ -210,7 +222,28 @@ export default function PrivacyPage() {
             </p>
           </Clause>
 
-          <Clause n={5} title="Com quem compartilhamos">
+          <Clause n={5} title="A confirmação na hora de votar">
+            <p>
+              Uma vez por sessão, antes do seu primeiro voto, pedimos{" "}
+              <Key>três dígitos do seu CPF</Key> — indicados pela posição — e{" "}
+              <Key>o dia, o mês ou o ano</Key> do seu nascimento. A combinação muda a
+              cada vez.
+            </p>
+            <p>
+              Isso não é burocracia nem uma segunda senha: é o que impede que alguém que
+              pegou o seu celular destravado, ou um computador compartilhado onde você
+              esqueceu a sessão aberta, vote no seu lugar. Depois de confirmar, todos os
+              seus votos naquela sessão seguem direto.
+            </p>
+            <p>
+              Nenhum desses dígitos é enviado a terceiros nem gravado em lugar nenhum —
+              a conferência acontece na memória do servidor, contra os campos
+              criptografados, e o resultado é apenas &ldquo;confere&rdquo; ou
+              &ldquo;não confere&rdquo;.
+            </p>
+          </Clause>
+
+          <Clause n={6} title="Com quem compartilhamos">
             <p>Três destinos, e só três:</p>
             <RuleList>
               <RuleItem>
@@ -237,7 +270,7 @@ export default function PrivacyPage() {
             </p>
           </Clause>
 
-          <Clause n={6} title="Cookies">
+          <Clause n={7} title="Cookies">
             <p>
               Usamos o mínimo. Nenhum cookie de publicidade, nenhum rastreador de
               terceiros além do Google Analytics.
@@ -258,7 +291,7 @@ export default function PrivacyPage() {
             </RuleList>
           </Clause>
 
-          <Clause n={7} title="Por quanto tempo guardamos">
+          <Clause n={8} title="Por quanto tempo guardamos">
             <p>
               Enquanto a sua conta existir. Se você pedir a exclusão, apagamos a conta,
               o vínculo com o provedor social e os seus votos, e os totais públicos são
@@ -271,7 +304,7 @@ export default function PrivacyPage() {
             </p>
           </Clause>
 
-          <Clause n={8} title="Seus direitos, e como exercê-los">
+          <Clause n={9} title="Seus direitos, e como exercê-los">
             <p>
               A LGPD (art. 18) garante a você, sobre os seus dados:{" "}
               <Key>confirmação e acesso</Key>, <Key>correção</Key>,{" "}
@@ -296,7 +329,7 @@ export default function PrivacyPage() {
             </p>
           </Clause>
 
-          <Clause n={9} title="Como protegemos">
+          <Clause n={10} title="Como protegemos">
             <p>
               O CPF é cifrado com AES-256-GCM e a chave fica fora do banco de dados. O
               código usado para impedir voto duplicado é um HMAC-SHA256 — irreversível
@@ -315,7 +348,7 @@ export default function PrivacyPage() {
             </p>
           </Clause>
 
-          <Clause n={10} title="Menores de 16 anos">
+          <Clause n={11} title="Menores de 16 anos">
             <p>
               O voto no Brasil é facultativo a partir dos 16 anos, e a plataforma segue a
               mesma régua: o cadastro é recusado para quem tem menos que isso, a partir
@@ -323,7 +356,7 @@ export default function PrivacyPage() {
             </p>
           </Clause>
 
-          <Clause n={11} title="Mudanças nesta política">
+          <Clause n={12} title="Mudanças nesta política">
             <p>
               Se algo mudar, a data no topo muda junto. Alterações que ampliem o uso dos
               seus dados serão comunicadas na plataforma antes de valer, e quando a lei

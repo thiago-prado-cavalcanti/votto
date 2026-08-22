@@ -19,7 +19,8 @@
 import { redirect } from "next/navigation";
 import { validateCpf, cpfProvider, type CpfSituation } from "@/lib/identity/validation";
 import { signInCitizen } from "@/lib/auth/citizen-login";
-import { splitPersonName } from "@/lib/domain/names";
+import { nameMatchesRegistry, splitPersonName } from "@/lib/domain/names";
+import { seal } from "@/lib/crypto/box";
 import { cookies } from "next/headers";
 import { CITIZEN_COOKIE, sessionCookieOptions } from "@/lib/auth/session";
 import {
@@ -120,8 +121,11 @@ export async function linkCpfAction(
 
   const cpf = String(formData.get("cpf") ?? "").trim();
   const typedDate = String(formData.get("birthDate") ?? "").trim();
-  if (!cpf || !typedDate) {
-    return { ok: false, error: "Informe o CPF e a data de nascimento." };
+  const typedFirstName = String(formData.get("firstName") ?? "").trim();
+  const typedLastName = String(formData.get("lastName") ?? "").trim();
+
+  if (!cpf || !typedDate || !typedFirstName || !typedLastName) {
+    return { ok: false, error: "Preencha todos os campos." };
   }
 
   const birthDate = toIsoDate(typedDate);
@@ -164,6 +168,15 @@ export async function linkCpfAction(
       };
   }
 
+  // The name is checked against the registry, never against the social
+  // provider's display name — that one is whatever the citizen typed into
+  // Google. This is a knowledge check against the authoritative source.
+  if (!nameMatchesRegistry({ firstName: typedFirstName, lastName: typedLastName }, result.name)) {
+    // Same wording as a CPF/date mismatch on purpose: telling the citizen
+    // *which* field was wrong tells an attacker which ones were right.
+    return { ok: false, error: "Os dados informados não conferem no registro oficial." };
+  }
+
   // ── Confirmed ──────────────────────────────────────────────────────────────
   const birthYear = result.birthDate.getUTCFullYear();
 
@@ -189,6 +202,9 @@ export async function linkCpfAction(
     firstName: firstName || pending.firstName,
     lastName: lastName || pending.lastName,
     birthYear,
+    // Encrypted, so the vote challenge can ask for the day or the month. Only
+    // the year is ever readable in the database (CLAUDE.md §5).
+    birthDateEncrypted: seal(result.birthDate.toISOString().slice(0, 10)),
     verificationSource: cpfProvider().name,
     politicalConsentAt: new Date(),
     social: { provider: STORED[pending.provider], subject: pending.subject },

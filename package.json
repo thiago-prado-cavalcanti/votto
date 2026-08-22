@@ -21,6 +21,8 @@
     "check:sources": "tsx scripts/check-sources.ts",
     "check:cpf": "tsx scripts/check-cpf.ts",
     "check:cpf:contract": "tsx scripts/checks/infosimples-contract.ts",
+    "check:identity": "tsx --tsconfig scripts/checks/tsconfig.json scripts/checks/citizen-identity.ts",
+    "check:vote": "tsx --tsconfig scripts/checks/tsconfig.json scripts/checks/vote-challenge.ts",
     "backfill": "tsx scripts/backfill.ts",
     "reprioritize": "tsx scripts/reprioritize.ts",
     "summarize": "tsx scripts/sync.ts ai:summaries",

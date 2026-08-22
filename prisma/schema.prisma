@@ -343,9 +343,17 @@ model User {
   cpfHash      String @unique
   cpfPrefix    String
 
-  /// Birth YEAR only — never the full date. The registry answers with the whole
-  /// date, but the year is all the platform needs (age gate, anonymized
-  /// demographics), and storing less is the rule (CLAUDE.md §5).
+  /// Full birth date, encrypted (AES-256-GCM), readable only in memory.
+  ///
+  /// Stored because the vote challenge asks for the day, the month or the year
+  /// — a challenge that could only ever ask for the year would repeat the same
+  /// two digits forever. It is never displayed, never leaves the system, and in
+  /// a leak it is unreadable, so the §5 promise ("nothing beyond the name")
+  /// still holds.
+  birthDateEncrypted    String?
+  /// Birth YEAR in clear. Kept alongside the encrypted date because the age
+  /// gate and the anonymized demographics need to be queryable in SQL, and a
+  /// year alone does not identify a person.
   birthYear             Int?
   /// When the CPF was last confirmed against the official registry.
   cpfVerifiedAt         DateTime?

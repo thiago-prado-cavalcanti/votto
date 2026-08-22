@@ -7,23 +7,9 @@
  *     comparing plaintext,
  *   - reduced to a 6-digit clear prefix for low-sensitivity display/analytics.
  */
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHmac,
-  randomBytes,
-} from "node:crypto";
+import { createHmac } from "node:crypto";
 import { env } from "@/lib/env";
-
-const ALGO = "aes-256-gcm";
-
-function encKey(): Buffer {
-  const key = Buffer.from(env.cpfEncKey, "base64");
-  if (key.length !== 32) {
-    throw new Error("CPF_ENC_KEY must be 32 bytes (base64-encoded).");
-  }
-  return key;
-}
+import { open, seal } from "@/lib/crypto/box";
 
 /** Remove all non-digits from a CPF string. */
 export function normalizeCpf(cpf: string): string {
@@ -43,25 +29,19 @@ export function isValidCpf(cpf: string): boolean {
   return calc(9) === parseInt(c[9], 10) && calc(10) === parseInt(c[10], 10);
 }
 
-/** Encrypt a CPF. Output format: base64(iv).base64(authTag).base64(ciphertext). */
+/** Encrypt a CPF. See `@/lib/crypto/box` for the format. */
 export function encryptCpf(cpf: string): string {
-  const data = normalizeCpf(cpf);
-  const iv = randomBytes(12);
-  const cipher = createCipheriv(ALGO, encKey(), iv);
-  const enc = Buffer.concat([cipher.update(data, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("base64")}.${tag.toString("base64")}.${enc.toString("base64")}`;
+  return seal(normalizeCpf(cpf));
 }
 
-/** Decrypt a CPF produced by `encryptCpf`. Authorized, rare use only. */
+/**
+ * Decrypt a CPF produced by `encryptCpf`.
+ *
+ * Two callers only: an authorized retrieval, and the vote challenge, which
+ * needs three digits by position. Never log the result.
+ */
 export function decryptCpf(payload: string): string {
-  const [ivB64, tagB64, dataB64] = payload.split(".");
-  const decipher = createDecipheriv(ALGO, encKey(), Buffer.from(ivB64, "base64"));
-  decipher.setAuthTag(Buffer.from(tagB64, "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(dataB64, "base64")),
-    decipher.final(),
-  ]).toString("utf8");
+  return open(payload);
 }
 
 /** Deterministic keyed hash for dedup / uniqueness (never reversible). */

@@ -37,6 +37,17 @@ export function CpfForm() {
         </p>
       ) : null}
 
+      {/* Name first: it is the field a citizen answers without thinking, and
+          opening with the document would make the form read as a bureaucracy. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Primeiro nome" htmlFor="firstName">
+          <Input id="firstName" name="firstName" required autoComplete="given-name" />
+        </Field>
+        <Field label="Último sobrenome" htmlFor="lastName">
+          <Input id="lastName" name="lastName" required autoComplete="family-name" />
+        </Field>
+      </div>
+
       <Field label="CPF" htmlFor="cpf" hint="Somente números ou com pontuação.">
         <Input
           id="cpf"
@@ -51,7 +62,7 @@ export function CpfForm() {
       <Field
         label="Data de nascimento"
         htmlFor="birthDate"
-        hint="A Receita Federal só confirma o CPF junto com a data de nascimento."
+        hint="Conferimos os quatro dados juntos no registro da Receita Federal."
       >
         <Input
           id="birthDate"
