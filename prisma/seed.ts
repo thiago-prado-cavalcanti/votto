@@ -763,12 +763,51 @@ const CITIZENS = [
   { ref: "seed:user:bruno", firstName: "Bruno", lastName: "Eleitor", cpf: "11144477735" },
 ];
 
-const ADMIN = {
+/**
+ * Development fallback for the administrator account.
+ *
+ * These values are in a PUBLIC repository, so they are a convenience for local
+ * work and nothing else. In production {@link adminCredentials} refuses to use
+ * them — see the reasoning there.
+ */
+const DEV_ADMIN = {
   firstName: "Admin",
   lastName: "Votto",
   email: "admin@votto.gov.br",
   password: "Votto@2026",
 };
+
+/**
+ * The administrator to seed, and where the credentials come from.
+ *
+ * `ADMIN_EMAIL` + `ADMIN_PASSWORD` when both are set; the development defaults
+ * otherwise. **In production, missing variables are a hard failure rather than a
+ * fallback.** The defaults live in a public repository, so seeding them onto a
+ * live deployment would publish a SUPER_ADMIN password — an account that can
+ * edit agents, parties and themes and trigger every sync job. Failing closed is
+ * the same rule the cron route applies to a missing `CRON_SECRET` and the mock
+ * IdP applies to `SOCIAL_MODE`: a half-configured deploy must not open a door.
+ */
+function adminCredentials(): { firstName: string; lastName: string; email: string; password: string; fromEnv: boolean } {
+  const email = process.env.ADMIN_EMAIL?.trim();
+  const password = process.env.ADMIN_PASSWORD;
+  const firstName = process.env.ADMIN_FIRST_NAME?.trim() || DEV_ADMIN.firstName;
+  const lastName = process.env.ADMIN_LAST_NAME?.trim() || DEV_ADMIN.lastName;
+
+  if (email && password) return { firstName, lastName, email, password, fromEnv: true };
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "ADMIN_EMAIL e ADMIN_PASSWORD são obrigatórios em produção.\n" +
+        "As credenciais padrão do seed estão num repositório público: semeá-las\n" +
+        "criaria um SUPER_ADMIN de senha conhecida. Defina as duas variáveis e\n" +
+        "rode de novo — rodar com elas definidas também redefine a senha de um\n" +
+        "administrador que já exista, que é o caminho de rotação.",
+    );
+  }
+
+  return { ...DEV_ADMIN, fromEnv: false };
+}
 
 /**
  * Remove seed-origin agents/parties left over from previous seed versions (e.g.
@@ -820,21 +859,53 @@ function parseMode(argv: string[]): SeedMode {
   return "demo";
 }
 
+/**
+ * Print how to log in — the e-mail always, the password only when it is the
+ * public development default.
+ *
+ * A password supplied through the environment is never echoed: this script runs
+ * on the server during a deploy, and stdout there is the deploy log. Whoever set
+ * `ADMIN_PASSWORD` already knows it; printing it would copy a live credential
+ * into a place nobody is watching.
+ */
+function reportAdmin(): void {
+  const admin = adminCredentials();
+  console.log("   Administrador (use para login):");
+  console.log(`     e-mail: ${admin.email}`);
+  if (admin.fromEnv) console.log("     senha:  (a definida em ADMIN_PASSWORD)");
+  else console.log(`     senha:  ${admin.password}   ← padrão público, só para desenvolvimento`);
+}
+
 /** Upsert the administrator. Present in every mode — it is the way in. */
 async function seedAdministrator(): Promise<void> {
-  const passwordHash = await hashPassword(ADMIN.password);
+  const admin = adminCredentials();
+  const passwordHash = await hashPassword(admin.password);
   await db.administrator.upsert({
-    where: { email: ADMIN.email },
+    where: { email: admin.email },
     create: {
       kid: kid("adm"),
-      firstName: ADMIN.firstName,
-      lastName: ADMIN.lastName,
-      email: ADMIN.email,
+      firstName: admin.firstName,
+      lastName: admin.lastName,
+      email: admin.email,
       passwordHash,
       role: AdminRole.SUPER_ADMIN,
     },
-    update: { firstName: ADMIN.firstName, lastName: ADMIN.lastName, role: AdminRole.SUPER_ADMIN },
+    // The password is rewritten only when it was supplied deliberately. That
+    // makes a re-run with ADMIN_PASSWORD set the rotation path — including for
+    // an account that was seeded earlier with the public default — while a
+    // routine demo re-seed never silently resets a password somebody chose.
+    update: {
+      firstName: admin.firstName,
+      lastName: admin.lastName,
+      role: AdminRole.SUPER_ADMIN,
+      ...(admin.fromEnv ? { passwordHash } : {}),
+    },
   });
+  console.log(
+    admin.fromEnv
+      ? `  administrador: ${admin.email} (credenciais do ambiente)`
+      : `  administrador: ${admin.email} (padrão de desenvolvimento — NÃO use em produção)`,
+  );
 }
 
 /**
@@ -901,9 +972,7 @@ async function main(): Promise<void> {
     if (mode === "purge-demo") await purgeDemoData();
     await seedAdministrator();
     console.log("✓ Seed concluído.");
-    console.log("   Administrador (use para login):");
-    console.log(`     e-mail: ${ADMIN.email}`);
-    console.log(`     senha:  ${ADMIN.password}`);
+    reportAdmin();
     console.log("");
     console.log("   Dados oficiais: `npm run sync all` (ou aguarde o worker semanal).");
     return;
@@ -1028,9 +1097,7 @@ async function main(): Promise<void> {
   console.log(`   • Votos agentes: ${agentVoteCount}`);
   console.log(`   • Cidadãos:   ${CITIZENS.length} (votos: ${userVoteCount})`);
   console.log("");
-  console.log("   Administrador (use para login):");
-  console.log(`     e-mail: ${ADMIN.email}`);
-  console.log(`     senha:  ${ADMIN.password}`);
+  reportAdmin();
 }
 
 main()
