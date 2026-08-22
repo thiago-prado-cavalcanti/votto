@@ -53,6 +53,15 @@ left arm of the mark, the party/positioning accents.
 - `--color-ochre` `#c07f2c` — **highlight**: stars, the middle alignment band, mid-spectrum.
 - `--color-ochre-ink` `#7d5218` — ochre as *type*. Pure ochre on warm paper is ~2.7:1, so any
   ochre text or ochre-on-tint label uses this instead.
+- **Type on filled pigment is `white`, not a paper tone.** The warm off-whites are for surfaces;
+  a word sitting *on* terracota needs the full range. `accent-50` `#fbf3e8` on `accent-500`
+  measures **4.46:1**, under the 4.5:1 AA floor for body text — white reaches **4.91:1**, and
+  **5.92:1** on the `accent-600` hover. The same holds for brick (`--color-negative`). This is why
+  `Button` variants `primary` and `danger` carry `text-white`.
+
+  The one exception is the **ballot**, where a filled option keeps `navy-50` `#faf7f0`: brick is
+  a shade darker than terracota, so it measures 5.52:1 there and passes comfortably, and the vote
+  pigments are a closed system that should not borrow from the button palette.
 
 ### Surfaces & semantics
 

@@ -35,7 +35,7 @@ export function EmbedShell({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-card bg-accent-500 text-sm font-semibold tracking-tight text-navy-900 transition hover:bg-accent-600"
+        className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-card bg-accent-500 text-sm font-semibold tracking-tight text-white transition hover:bg-accent-600"
       >
         {cta}
         <span aria-hidden>→</span>

@@ -46,13 +46,19 @@ type ButtonSize = "sm" | "md" | "lg";
 const buttonBase =
   "inline-flex items-center justify-center gap-2 rounded-card font-semibold tracking-tight transition-colors active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
 
+/**
+ * Text on a filled pigment is **white**, not the warm off-white of the paper
+ * palette. `accent-50` (#fbf3e8) on terracota measures 4.46:1 — under the 4.5:1
+ * WCAG AA floor for body text — while white reaches 4.91:1. The paper tones are
+ * for surfaces; a word sitting *on* pigment needs the full range.
+ */
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-accent-500 text-accent-50 hover:bg-accent-600",
+  primary: "bg-accent-500 text-white hover:bg-accent-600",
   secondary: "bg-colonial-600 text-colonial-50 hover:bg-colonial-700",
   dark: "bg-navy-900 text-navy-50 hover:bg-navy-800",
   outline: "border border-navy-300 bg-transparent text-navy-900 hover:border-navy-900 hover:bg-navy-100",
   ghost: "text-navy-800 hover:bg-navy-100",
-  danger: "bg-[var(--color-negative)] text-accent-50 hover:opacity-90",
+  danger: "bg-[var(--color-negative)] text-white hover:opacity-90",
   // For ink backgrounds (footer, dark bands): a light hairline on nothing.
   inverse: "border border-navy-50/35 text-navy-50 hover:border-navy-50 hover:bg-navy-50/10",
 };
