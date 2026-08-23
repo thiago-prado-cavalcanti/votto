@@ -43,6 +43,14 @@ export const DEFAULT_BATCH = 300;
 export const MIN_AI_PRIORITY = 30;
 
 /**
+ * Empty attempts in a row, with nothing written, before the batch gives up.
+ *
+ * Ten is well past what a run of genuinely awkward bills produces and well short
+ * of the three hundred a broken key burns through in two minutes.
+ */
+const REFUSAL_STREAK_LIMIT = 10;
+
+/**
  * Which themes the AI pass is willing to pay for.
  *
  * The pass used to accept every ACTIVE theme without a summary, which made its
@@ -222,6 +230,8 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
 
   const themes = [...voted, ...upcoming];
 
+  let consecutiveRefusals = 0;
+
   for (const theme of themes) {
     c.seen++;
     if (c.seen % PROGRESS_INTERVAL === 0) {
@@ -242,6 +252,20 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
     await sleep(REQUEST_DELAY);
 
     if (!brief) {
+      consecutiveRefusals++;
+      // A run whose every attempt comes back empty is not a run that met three
+      // hundred unusual bills; it is a run that is not reaching the model at
+      // all — a shape `summarizeTheme` cannot always see from one call, because
+      // not every failure arrives as a typed API error. Stopping here keeps the
+      // damage to the themes already benched instead of the whole batch.
+      if (consecutiveRefusals >= REFUSAL_STREAK_LIMIT && c.upserted === 0) {
+        throw new Error(
+          `${consecutiveRefusals} temas seguidos sem resposta do modelo e nenhum gravado — ` +
+            "a passagem foi interrompida em vez de marcar o lote inteiro para revisão em 30 dias. " +
+            "Verifique a chave e o saldo da conta Anthropic.",
+        );
+      }
+
       // Record the attempt, not a result. `aiUpdatedAt` therefore means "when
       // the AI last TRIED", which is what the selection above filters on — a
       // theme the model refuses is set aside for a month rather than re-sent
@@ -250,6 +274,7 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
       await db.theme.update({ where: { id: theme.id }, data: { aiUpdatedAt: new Date() } });
       continue;
     }
+    consecutiveRefusals = 0;
 
     // A classificação só é escrita quando nenhum editor tocou o tema: um
     // julgamento humano nunca é sobrescrito por uma passagem de modelo.

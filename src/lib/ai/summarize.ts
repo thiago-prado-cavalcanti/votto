@@ -322,9 +322,36 @@ export async function summarizeTheme(input: ThemeBriefInput): Promise<ThemeBrief
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
     );
     return call ? parseBrief(call.input) : null;
-  } catch {
+  } catch (err) {
+    // A model that declines ONE bill and an API that is refusing EVERY call are
+    // opposite facts, and swallowing both as `null` made them identical to the
+    // caller — which then benched each theme for a month (`aiUpdatedAt`) as if
+    // the bill were the problem.
+    //
+    // Measured: the account ran out of credit and 300 themes were set aside for
+    // thirty days in two minutes, every call failing in ~390ms. The panel
+    // recorded "0 registros atualizados · OK". The themes lost were the voted
+    // ones the positioning index had just been reordered to prioritise.
+    //
+    // So an error that says nothing about this particular bill is rethrown, and
+    // the batch stops. Anything else — a refusal, a malformed tool call — stays
+    // `null`, because there the bill really is the problem.
+    if (err instanceof Anthropic.APIError && isSystemic(err.status)) throw err;
     return null;
   }
+}
+
+/**
+ * Whether an HTTP status means "this request was impossible", not "this bill".
+ *
+ * 401/403 (key), 402 and 400-with-credit (billing), 429 (rate), 5xx (theirs).
+ * A plain 400 is deliberately included: the credit-exhaustion error arrives as
+ * one, and there is no request we could build for any bill that would succeed
+ * while it stands.
+ */
+function isSystemic(status: number | undefined): boolean {
+  if (status === undefined) return true; // network/timeout: not about the bill
+  return status === 400 || status === 401 || status === 402 || status === 403 || status === 429 || status >= 500;
 }
 
 /** Clamp a model-supplied 0..1 value. */

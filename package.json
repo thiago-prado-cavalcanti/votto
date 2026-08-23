@@ -35,7 +35,8 @@
     "sync": "tsx scripts/sync.ts",
     "sync:all": "tsx scripts/sync.ts all",
     "worker": "tsx scripts/worker.ts",
-    "sync:plan": "tsx scripts/sync.ts --dry"
+    "sync:plan": "tsx scripts/sync.ts --dry",
+    "unbench:summaries": "tsx scripts/unbench-summaries.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
