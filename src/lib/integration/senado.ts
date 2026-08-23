@@ -23,6 +23,7 @@
 import {
   billTitle,
   counters,
+  dateWindows,
   fetchJson,
   mergeDuplicateParties,
   parseDate,
@@ -678,6 +679,17 @@ async function senatorIdsByRef(): Promise<Map<string, string>> {
  * bills they decided. Secret ballots are skipped: the service publishes only
  * totals for those, and a per-senator position is exactly what we need.
  */
+/**
+ * Largest window `/votacao` accepts, in days.
+ *
+ * Measured against the live endpoint, not guessed: 365 days returns 96 votações
+ * with HTTP 200; **545 and anything above return HTTP 400**. The Câmara's cap is
+ * three months and was already documented; this one was not, and its absence cost
+ * a real import — a four-year request came back refused and the job reported
+ * "0 registros atualizados · OK".
+ */
+const MAX_VOTE_WINDOW_DAYS = 365;
+
 export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
   const c = counters();
   const days = opts.days ?? 30;
@@ -685,15 +697,30 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
   const from = new Date(to);
   from.setDate(from.getDate() - days);
 
-  const start = from.toISOString().slice(0, 10);
   const end = to.toISOString().slice(0, 10);
 
-  const votacoes = await tryFetch<SenadoVotacao[]>(
-    `/votacao?dataInicio=${start}&dataFim=${end}`,
-  );
-  await sleep(REQUEST_DELAY);
-  if (!Array.isArray(votacoes)) {
-    return { itemsSeen: 0, itemsUpserted: 0, watermark: end };
+  // Chunked, because `/votacao` refuses more than a year. It was a single
+  // request until a four-year look-back came back 400 and this job called that
+  // success.
+  const votacoes: SenadoVotacao[] = [];
+  for (const w of dateWindows(from, to, MAX_VOTE_WINDOW_DAYS)) {
+    const page = await tryFetch<SenadoVotacao[]>(
+      `/votacao?dataInicio=${w.start}&dataFim=${w.end}`,
+    );
+    await sleep(REQUEST_DELAY);
+
+    // A refused window is a failure, not an empty one. `tryFetch` returns null
+    // for a 400, a timeout and a parse error alike, and returning zero counts for
+    // that made the panel print "0 registros atualizados · OK" over an import
+    // that never happened — indistinguishable from a quiet week. Throwing puts
+    // the reason in the job's failure note, where an operator reads it.
+    if (!Array.isArray(page)) {
+      throw new Error(
+        `A fonte recusou a janela ${w.start}..${w.end} de /votacao. ` +
+          `O teto do endpoint é ${MAX_VOTE_WINDOW_DAYS} dias por requisição.`,
+      );
+    }
+    votacoes.push(...page);
   }
 
   const agentIdByRef = await senatorIdsByRef();

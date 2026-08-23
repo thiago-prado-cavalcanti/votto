@@ -744,6 +744,10 @@ Verified against the live APIs; `npm run check:sources` re-checks them.
   (sometimes 404).
 - Câmara `votacoes` rejects date ranges wider than **3 months** — chunk any look-back.
 - Senado `processo?numdias=` is capped at **30 days**.
+- Senado `votacao?dataInicio=&dataFim=` is capped at **one year** — 365 days returns 200, 545 and
+  above return 400. Undocumented until it cost an import: `tryFetch` turns every failure into `null`
+  and `syncVotes` returned zero counts for it, so a refused four-year request reached the panel as
+  "0 registros atualizados · OK". The window is now chunked and a refused chunk throws.
 - A party must exist **once** across both houses: the Senado importer reuses a party already
   imported by the Câmara when the acronym matches.
 - Câmara `deputados/{id}/despesas` returns `[]` **without `idLegislatura`** — with HTTP 200, which is

@@ -213,6 +213,19 @@ function checkHelpers(): void {
   );
   check(`nenhuma janela excede o limite de 3 meses da Câmara (máx ${widest}d)`, widest < 92);
 
+  // O Senado tem o seu próprio teto, e ele é maior — um ano. Medido contra o
+  // endpoint vivo: 365 dias devolve 200, 545 devolve 400. Ficou sem asserção até
+  // custar uma importação de quatro anos que voltou recusada e foi registrada
+  // como "0 registros atualizados · OK".
+  const senadoWindows = dateWindows(new Date("2022-08-24"), new Date("2026-08-23"), 365);
+  const senadoWidest = Math.max(
+    ...senadoWindows.map((w) => (Date.parse(w.end) - Date.parse(w.start)) / 86_400_000),
+  );
+  check(
+    `nenhuma janela excede o limite de 1 ano do Senado (máx ${senadoWidest}d, ${senadoWindows.length} janelas para 4 anos)`,
+    senadoWidest < 366,
+  );
+
   check("parseDate aceita data simples", parseDate("2026-07-15")?.toISOString().startsWith("2026-07-15") === true);
   check("parseDate aceita data-hora", parseDate("2026-07-15T14:00") instanceof Date);
   check("parseDate rejeita vazio e lixo", parseDate(null) === null && parseDate("lixo") === null);
