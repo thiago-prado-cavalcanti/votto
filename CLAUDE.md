@@ -125,87 +125,231 @@ asserting a past vote, the citizen declares, in the present and revocably, who r
 
 ### 3.2 Political Positioning Index (secondary feature)
 
-Position users, public agents and parties on the classic left↔right political spectrum, using a
-**5-point scale**:
+Where a voting record falls on two value axes, taken from the **Chapel Hill Expert Survey** so the
+output is checkable against an external measure:
 
-> Esquerda · Centro-esquerda · Centro · Centro-direita · Direita
+| Axis | Poles | CHES equivalent |
+|---|---|---|
+| **economic** | Estado ↔ Mercado | LRECON — privatisation, tax, regulation, spending, pensions |
+| **social** | Ordem ↔ Liberdades | GALTAN — personal freedoms against order, tradition, moral authority |
 
-- Each theme is tagged with value dimensions on two underlying axes — **economic** (Estado ↔ Mercado)
-  and **social** (Comunidade ↔ Indivíduo), each weighted −1..1.
-- A person's votes are aggregated per axis (YES pushes toward the tag, NO away, ABSTENTION ignored),
-  normalized to −100..100, then combined into a single **spectrum** score (economic-weighted) that
-  maps to one of the five bands. Implementation: `src/lib/indexes/positioning.ts`.
-- The two axes are retained for a supporting two-axis positioning chart.
+The social axis was relabelled, not re-signed: it read `Comunidade ↔ Indivíduo`, and "Comunidade"
+invites coding communitarianism — a third thing that correlates with neither pole. Tags already
+stored stay valid.
 
-> **The five-band verdict is NOT displayed anywhere today.** The maths is only as good as the
-> themes' axis tags, and those are not filled in yet (§11) — running on near-empty weights it was
-> placing PL at the centre. A wrong band stated in confident type is worse than no band at all, so
-> `PositionBadge` and `SpectrumBar` are unmounted (both files kept, with a note) and the band is
-> gone from the cards, the detail pages, the embeds and the OG cards. What remains is the two-axis
-> **figure**, which shows a shape rather than pronouncing a sentence. Put the band back only once
-> theme tagging exists and the output has been checked against parties whose position is not in
-> dispute.
+**The index is a batch job** (`metrics:positioning`), not a per-person computation, and that is
+forced by the maths: weighting a theme by the division it actually produced needs the whole house's
+vote on it, and shrinking a party toward the mean needs every party's distribution. Same reason
+`metrics:quality` is a job while `Theme.priority` is written by the importers.
 
-### 3.3 Quality Index
+#### What the rebuild fixed
 
-Alignment asks whether an agent agrees **with you**. Quality asks whether they are **doing the job**
-— a reading that owes nothing to who anyone agrees with. A parliamentarian who never turns up,
+The first version was a weighted mean of `vote × theme weight` — arithmetically the open **8values**
+quiz, which publishes code and no method. Four defects, each now answered by a named piece
+(`src/lib/indexes/positioning.ts`):
+
+- **Missing data read as centre.** No tagged themes gave `economic: 0`, the coordinate of a perfect
+  centrist. *That* was the "PL at Centro" regression — not bad weights, absent data printed as a
+  measurement. Coverage is now measured (`effectiveItems`) and below the floor the axis is `null`,
+  the same discipline `qualityScore` applies.
+- **Every theme weighed the same, including the ones nobody split over.** An item's weight is its
+  **discrimination** and it is measurable, not guessable: `discrimination()` reads the real division,
+  so a unanimous vote is worth zero. This is also what neutralises agenda composition — a run of
+  bills passed by acclamation no longer pushes the whole house toward the pole they were tagged with.
+- **The first dimension of Brazilian roll calls is not ideology.** Zucco & Lauderdale (*LSQ* 36(3),
+  2011): it is **governo↔oposição**. Measured raw, the first principal component correlates −0.96
+  with governismo and +0.49 with the survey scale, putting PSOL to the right of PSDB — because PSOL
+  opposes the government from the left. Better theme tagging cannot fix this: the coalition signal
+  is in the votes, not the ementas. `contamination` discounts the Executive's agenda item by item
+  (the Câmara publishes the `Governo` bloc's orientation), and the falsification gate below catches
+  what is left.
+- **The `0.7·economic + 0.3·social` collapse was invented.** No source for those weights; RILE
+  weighs its two sides equally and CHES refuses to collapse at all. The index has two axes and
+  publishes two. A single number would have to be *fitted* against an external reference, never
+  asserted.
+
+#### Three gates, and nothing is published unless all three pass
+
+Per house, in `src/lib/integration/positioning.ts`:
+
+1. **Coverage** — enough agents with a reading, over enough effective items.
+2. **Falsification against governismo** — the agents' economic reading is correlated with their own
+   `governismo`. Above `MAX_GOVERNMENT_CORRELATION` (0.50) the index is measuring support for the
+   Executive and calling it ideology, so the house is blocked. This is the test the literature says
+   an index like this silently fails.
+3. **External anchor** — party ordering on the economic axis against expert surveys
+   (`src/lib/domain/anchors.ts`), by Spearman, needing `MIN_ANCHOR_CORRELATION` (**0.85**) over
+   `MIN_ANCHOR_COVERAGE` (60%) of seats. An index built from votes and validated against the same
+   votes is not validated; it is circular (Jackson & Kingdon, *AJPS* 36, 1992). The bar comes from
+   outside: Brazilian survey measures agree with each other at **0.947–0.988**, while manifesto
+   analysis — the one family the literature already treats as measuring something else — sits at
+   0.575 against CHES. 0.85 is what puts Votto in the first family rather than the second, and it is
+   reachable: an anchored rotation over the Câmara's real roll calls measured 0.86 out of sample.
+
+A fourth gate decides only whether the *second* axis is a number. **In Brazil the two axes barely
+separate**: Martínez-Gallardo et al. (*Party Politics*, 2023) ran a CFA on the CHES items and a
+second factor buys **+0.234 CFI in Europe against +0.045 in Latin America**, with the latent
+correlation at **0.95 there vs 0.58 here**; across the eleven Brazilian parties in CHES-LA,
+r(economic, social) = **0.94**. Above `MAX_AXIS_CORRELATION` (0.85) the social axis keeps feeding the
+figure and stops being published as a reading of its own. The residual is real — it separates the
+economically-liberal right (PSDB, NOVO) from the moral-authoritarian right (PL, Republicanos, PSC) —
+but it is a tenth of the variance carried by two parties: a shape, not a second verdict.
+
+**The Senate gets no roll-call positioning, and the gate is mechanical.** It published **14 nominal
+roll calls with a tally in 18 months**, median minority 4.1%, 36% of them under the 2.5% cut every
+method discards — against a settled minimum of 20 votes to scale a *single* member. The cause is
+regimental: RISF art. 293, II makes the leader's vote stand for the bench in the symbolic process,
+so in most Senate decisions senators cast no individual vote at all. `MIN_HOUSE_ITEMS` catches this
+without naming the house.
+
+The anchor is **Bolognesi et al. (2022)** — 515 political scientists placing 32 parties — with
+**BLS-9** (Power & Zucco) as a second ruler that agrees at 0.979. A party with no published anchor
+is simply left out of the correlation: interpolating a value inside the ruler that validates the
+index would make it validate the interpolation.
+
+**Party readings are pooled, not averaged.** Benches run from 1 to 90, and a simple mean publishes
+one person's eccentricity as a party's position. `src/lib/indexes/pooling.ts` does empirical-Bayes
+shrinkage toward the house mean with Efron & Morris *limited translation* — the shift never exceeds
+one standard error of the observed mean, which bounds the injustice done to a genuinely extreme
+party (the Clemente problem) to a figure that can be printed on the page. `Party.cohesion` is the
+Hix–Noury–Roland Agreement Index, **not Rice** (Rice ignores abstention, so a bench abstaining in
+disciplined block scores as "completely divided"), corrected for the size bias Desposato documented.
+
+> **The five-band verdict is still NOT displayed.** The gates decide whether the *axes* may be
+> published; `bandGate` additionally refuses a band whose 95% interval straddles a cut point, since
+> each band is 40 points wide and a label decided by noise is worse than none. `PositionBadge` and
+> `SpectrumBar` remain unmounted. What the record pages show is `PositioningPlate`: the two axis
+> readings with the raw count of classified bills, the margin, and the single most influential bill
+> when one alone moves the number — the Voteview convention that the fit statistic travels with the
+> estimate.
+
+### 3.3 Performance política (quality index)
+
+Alignment asks whether an agent agrees **with you**. This asks whether they are **doing the job** —
+a reading that owes nothing to who anyone agrees with. A parliamentarian who never turns up,
 proposes nothing and spends the whole quota can still be 100% aligned with someone who thinks as
 they do; that is the gap this closes.
 
-A 0–100 per agent, from four weighted pillars, all built from the houses' own published record:
+Built to the OECD/JRC *Handbook on Constructing Composite Indicators* and the JRC 10-Step Pocket
+Guide, because the number is published against a named person and has to survive being argued with.
+`src/lib/indexes/quality.ts` is the whole of the maths and is pure — no database, no cache, no clock.
 
-| Pillar | Weight | Source | Why weighted there |
-|---|---|---|---|
-| Assiduidade | 0.30 | roll-call ledger ÷ sittings held while in the seat | the floor of the office — the one duty every mandate shares |
-| Proposições | 0.25 | `idDeputadoAutor` / `codigoParlamentarAutor`, PL/PEC/PLP/PDL only | initiative; outcome counts twice, filing is the cheap half |
-| Custeio do mandato | 0.25 | CEAP / CEAPS, per month in office | what the mandate consumes to operate |
-| Relatorias | 0.20 | `Theme.rapporteurId` (Câmara) / `processo/relatoria` (Senado) | **lowest on purpose**: a relatoria is *assigned by the leadership*, so it measures standing as much as merit — and on the Câmara side it is a floor, not a count |
+**Three pillars, a third each**, all from the houses' own published record:
 
-**Custeio is the parliamentary quota and nothing else.** Office upkeep, travel, fuel, food,
-publicity, security. Emendas parlamentares are excluded **by design**: a deputy who secured a
-billion reais for schools in their state is not an expensive deputy, and an index that conflated the
-two would say the opposite of the truth. The pillar is never labelled "verba pública" or "economia".
+| Pillar | Source | Normalisation |
+|---|---|---|
+| Assiduidade | `RollCall`/`RollCallVote` ÷ sittings held while in the seat | goalposts 0,50 → 1,00 |
+| Relatorias e proposições | `idDeputadoAutor` / `codigoParlamentarAutor` (PL/PEC/PLP/PDL only) + `Theme.rapporteurId` / `processo/relatoria` | `log1p(rate/α) / log1p(target/α)` per month in office |
+| Custo político | CEAP / CEAPS ÷ the published per-state ceiling | goalposts 1,10 → 0,50, reverse-coded |
 
-**Every pillar is a percentile inside a peer group**, not an absolute score — house for the first
-three, house **+ UF** for cost (the quota's ceiling is geographic; a UF with fewer than five members
-falls back to its region). This is the §8 comparability rule doing the same work it does for
-`priority`: roll-call participation clusters near 95% for everyone, so a raw ratio would carry no
-information; and the Câmara's rapporteur count is a floor by construction, which only stays fair
-because deputies are ranked against deputies. Ties take the midrank, so the large block with zero
-relatorias shares one score instead of being spread in array order.
+Relatorias and proposições are **one** pillar, not two: they are the same thing — what the member put
+through the house — and separating them punished the Câmara twice, since it publishes only a bill's
+last rapporteur and relatoria alone could be measured for 75 of 594 members.
 
-The cost of ranking is that it manufactures a uniform distribution, and the mitigation is not in the
-maths: **the UI always prints the raw figure beside the bar** ("92% · 312 de 340 votações"). The
-percentile drives the index; the plain number is what a citizen reads.
+**Fixed goalposts, frozen and published — never a comparison with peers.** Two earlier versions
+normalised inside a cohort (percentile, then proportion-to-the-best) and both were measured to be
+unusable: proportion-to-the-best silently rewrote the weights (nominally a third each, measured
+19/60/21), handed one member control of everyone's score (the cheapest mandate in the Câmara,
+R$ 1.094/month and certainly a partial record, was the benchmark 593 deputies were measured against —
+the median deputy scored **2 of 100** on cost), and published ±27 points of pure sampling noise in a
+five-member cohort. So the index does what the HDI, the EPI and the SDG Index do. **A member's
+reading changes when their own conduct changes, and at no other time.** The Handbook is explicit
+about the alternative (p. 28): normalising by the group leader *"is based on extreme values which
+could be unreliable outliers."*
 
-**A pillar that cannot be measured is `null`, and its weight is redistributed.** Below
-`MIN_COVERAGE` (half the total weight) the whole score is `null` rather than a number built on half
-a picture — the §3.2 discipline again. `PublicAgent.qualityScore` is therefore nullable with no
-default: an agent we could not measure must show **no reading**, because a zero reads as an
-accusation. Attendance additionally refuses to score when official leave covers more than 40% of the
-window, which is what stops "attended the only sitting they could have attended".
+**Production is read on a log scale** because the JRC screening rule fires: |skewness| > 2 together
+with kurtosis > 3,5, and the Câmara's production rate measured **7,20 and 70,81**. Winsorising cannot
+rescue it — capping the five most extreme members still leaves skew at 3,6. `log1p(x/α)` rather than
+`log(x+1)`: exactly 0 at x = 0, and α is a published rate with units rather than an arbitrary
+constant. The consequence is deliberate and stated on the page: the 400th bill counts for less than
+the first.
 
-**Expanding the pillar set** is one entry in the registry in `src/lib/indexes/quality.ts` plus its
-raw columns on `AgentMetrics`. Two conditions on any new factor: **both houses publish it or neither
-is scored on it**, and it is **`null` when unknown, never zero**. (Plenary presence is the standing
+**Filing saturates before the pillar does.** Filing a bill costs a signature; carrying one through a
+house, or being handed a relatoria, does not — so `authored` is capped at `filingCapRate(house)`,
+derived from that house's own goalposts so that **filings alone reach exactly 80 and stop**, in both
+houses, despite their different α/target ratios. Outcome (`advanced`) and relatoria are uncapped and
+are added on top. The rule is one sentence and checkable on the page: *protocolar projetos leva um
+parlamentar até "acima da média", nunca até o topo.* The idea is the Ranking dos Políticos' — their
+production bonus saturates at six approved items — applied to a continuous scale so ordering above the
+cap survives.
+
+**Cost is a utilisation rate, not reais.** The quota ceiling is published per state and per house and
+varies by a factor of 2,4 (`src/lib/domain/quota-ceilings.ts`), because it pays the flights home;
+ranking reais ranks geography. Dividing by it is bounded, comparable across states *and* houses, and
+needs no cohort at all. Two things about that table are load-bearing and must not be quietly
+"improved":
+
+- **The Câmara half is verified twice over.** Every value is exactly ×1,13750 the 2023 table (Ato da
+  Mesa 244/2026), and all 27 match the Ranking dos Políticos' independently-published table.
+- **The Senate half is what the Senate publishes, and it is from 2017.** Re-verified against the live
+  PDF on 2026-08-23. The Ranking dos Políticos publishes a 2026 Senate table 19–96% higher, credited
+  to "Senado Federal"; it is **not** a Senate table — its 27 values are reproduced to the centavo by
+  `max(the 2017 table × 1,192477, CEAP × 0,879121)`, with 23 of 27 states on the second branch at a
+  ratio constant to eight decimal places. It is a reconstruction presented as a source and is
+  therefore **not adopted**: publishing somebody's model of the ceiling as the ceiling is the same
+  error as publishing an estimate as official. The consequence — senators read against a floor that
+  is probably low — is stated rather than hidden, `npm run requality` prints median utilisation per
+  house so its size is visible, and `check:sources` hashes the PDF so the day the Senate republishes
+  is the day we find out.
+
+**Custo político is the parliamentary quota and nothing else.** Office upkeep, travel, fuel, food,
+publicity, security. Emendas parlamentares are excluded **by design**: a deputy who secured a billion
+reais for schools in their state is not an expensive deputy, and an index that conflated the two
+would say the opposite of the truth. The pillar is never labelled "verba pública" or "economia".
+
+**The pillars combine by weighted GEOMETRIC mean**, `exp(Σ wᵢ·ln xᵢ / Σ wᵢ)`. An arithmetic mean is
+fully compensatory: it scored a member who never attends, one who never legislates and one who spends
+the whole quota at an identical, respectable 63. Handbook §6.10 shows additive aggregation requires
+preference independence, which these pillars fail — the value of one more bill is not independent of
+whether the member turns up. The HDI changed for exactly this reason in 2010. A `PILLAR_FLOOR` of 1
+exists because a geometric mean dies at zero, which would collapse every distinct way of failing into
+the same "0".
+
+**A pillar that cannot be measured is `null`, and its weight is redistributed.** Below `MIN_COVERAGE`
+(half the total weight) the whole score is `null` rather than a number built on half a picture — the
+§3.2 discipline again. `PublicAgent.qualityScore` is therefore nullable with no default: an agent we
+could not measure must show **no reading**, because a zero reads as an accusation. Attendance
+additionally refuses to score when official leave covers more than 40% of the window (what stops
+"attended the only sitting they could have attended"), and cost refuses when `documents === 0` —
+a month the house has not published yet is indistinguishable from R$ 0 spent, and reading that as
+exemplary frugality is exactly backwards. (The Ranking dos Políticos' manual scores that case **10 of
+10**, which is the clearest single defect in it.)
+
+**The methodology is versioned, and the version is enforced.** Fixed goalposts stop a score moving
+when *someone else* changes; `QUALITY_METHODOLOGY` stops it moving silently when *we* do. Every
+recompute stamps `version` into `qualityPillars`, the info sheet prints it, and
+`methodologyFingerprint()` — a hash of the goalposts, the weights, the pillar set and the tuning
+constants — is asserted against the recorded value by `npm run check:sources`. **Changing any of
+those without bumping `version`, `changedAt` and `fingerprint` fails the check.** This is the half of
+the Ranking dos Políticos' discipline worth copying (they freeze each year's notes under the rules in
+force at publication); we have no annual cycle to freeze, so we date the change instead.
+
+**Expanding the pillar set** is one entry in the registry in `src/lib/indexes/quality.ts` plus its raw
+columns on `AgentMetrics`. Two conditions on any new factor: **both houses publish it or neither is
+scored on it**, and it is **`null` when unknown, never zero**. (Plenary presence is the standing
 example of a factor that fails the first test — only the Câmara publishes it.)
 
 **Presiding is attendance, not absence.** Both houses bar whoever is in the chair from voting in an
 open ballot and mark them with a code of their own (Câmara `"Artigo 17"`, Senado
 `"Presidente (art. 51 RISF)"`). `mapVote` drops those, correctly — they are not a position — but
-reading the missing vote as a missing member is the opposite of what happened. Measured on live
-data before `RollCall.presidingAgentId` existed, the index put the President of the Senate in the
-**1st percentile of attendance and 8th out of 100 overall**: the worst senator in Brazil, for having
-presided 39 of 46 sittings. A sitting an agent presided is taken out of their denominator, exactly
-as a day of official leave is.
+reading the missing vote as a missing member is the opposite of what happened. Measured on live data
+before `RollCall.presidingAgentId` existed, the index put the President of the Senate in the **1st
+percentile of attendance and 8th out of 100 overall**: the worst senator in Brazil, for having
+presided 39 of 46 sittings. A sitting an agent presided is taken out of their denominator, exactly as
+a day of official leave is. (The Ranking dos Políticos solves the same problem by dropping the two
+house presidents from its ranking entirely; keeping them rankable is better, and finding the bug is
+what proved the problem real.)
 
 Attendance comes from a ledger of its own, `RollCall`/`RollCallVote`, **not** from `Vote`. `Vote` is
 unique on `(agentId, themeId)` and is rewritten when a later roll call touches the same bill, because
 it holds the agent's *standing position* — which is what the alignment index needs. Two roll calls on
 one bill collapse into one row there, so it can never answer "how many sittings did they attend".
-This is written down because it is exactly the kind of thing a future reader would try to
-"simplify" back into `Vote`.
+This is written down because it is exactly the kind of thing a future reader would try to "simplify"
+back into `Vote`.
+
+**The raw figure is always printed beside the bar** ("92% · 312 de 340 votações"). The goalpost drives
+the index; the plain number is what a citizen reads and what lets the score be defended document by
+document.
 
 Retuning needs no re-import: every input is a stored column, so `npm run requality [-- --dry]` is the
 twin of `npm run reprioritize`. Bands (Muito acima / Acima / Na média / Abaixo da média) are
@@ -231,9 +375,16 @@ comparative, never evaluative, and their cut points are **provisional** — see 
   (false once the mandate ends — the record and its votes are kept, see §8). Belongs to a **Party**.
   Agent CPF is **not** imported even where a source publishes it: the source's own id already
   establishes identity, so collecting it would add risk for nothing.
+  Carries the computed indexes: `qualityScore` (§3.3) and, from §3.2, `positionEconomic`,
+  `positionSocial`, `positionDetail` (the per-axis reading — items, margin, most influential bill,
+  methodology stamp), `positionComputedAt` and `governismo`. All nullable with no default: "not
+  measured" must stay distinguishable from "measured at zero", which on the economic axis is the
+  coordinate of a perfect centrist. `governismo` is written even for a house the §3.2 gates blocked
+  — it is a count, not an inference.
 - **Party** — first/display name, description, logo, official leader/website/head count, plus
   denormalized counts (number of deputies, governors, councillors, etc., kept for fast dashboards).
-  A party exists **once** across houses, keyed by acronym.
+  A party exists **once** across houses, keyed by acronym. Carries the same positioning columns as
+  **PublicAgent** — pooled from its members, never averaged (§3.2) — plus `cohesion`.
 - **Theme** — political amendments, laws, etc. Fields: name, summary. Has many **Articles**.
   Imported themes additionally carry their official record: `identifier` (e.g. "PL 3085/2026"),
   `house`, `externalUrl`, `situation`, `urgency` (procedural regime), `priority` (0–100, see §8),
@@ -259,6 +410,10 @@ comparative, never evaluative, and their cut points are **provisional** — see 
   unique on `(agentId, themeId)` and holds the *standing position* the alignment index reads, so two
   roll calls on one bill collapse into a single row there. Written by the existing vote jobs from
   responses they already download — no extra request. Internal only, no `kid`.
+  Also holds `governmentPosition` / `oppositionPosition`: how the `Governo` and `Oposição` blocs were
+  instructed to vote on that sitting. It is what `governismo` is counted from and what the §3.2
+  contamination discount subtracts item by item — the coalition signal lives in the votes, not in the
+  bills' text, so there is nowhere else to read it from.
 - **AgentService** — a stretch of a mandate, `EXERCISE` or `LEAVE`, as the house published it. The
   attendance denominator subtracts official leave: a deputy licensed to serve as a state secretary is
   not absent from votes held while they were legitimately away.
@@ -632,11 +787,13 @@ There is now **one command**, `src/lib/integration/pipeline.ts`, and every surfa
 
 - **Order is declared, not scheduled.** Each job carries `after` (ordering only — a failure upstream
   costs detail) and `needs` (the job would publish a *wrong* figure without it, so a failed
-  dependency holds it back for the next run). `needs` appears exactly once, on `metrics:quality`,
-  because its pillars are percentiles inside a house: half a roll-call import does not give a
-  thinner reading, it tells every agent they are in a cohort that is not theirs. The topological
-  sort is **stable** — a registry already in a valid order comes out exactly as the file reads, and
-  the sort only intervenes where the file is wrong.
+  dependency holds it back for the next run). `needs` appears twice, on the two batch indexes, and
+  both times on the vote jobs — because both read the *whole cohort*, not one agent. Half a
+  roll-call import does not give `metrics:quality` a thinner reading, it tells every agent they are
+  in a cohort that is not theirs; and it does not give `metrics:positioning` a coarser one, it gives
+  every theme the wrong weight, since an item's weight is the division it produced on the floor.
+  The topological sort is **stable** — a registry already in a valid order comes out exactly as the
+  file reads, and the sort only intervenes where the file is wrong.
 - **A job that succeeded inside `FRESH_FOR_DAYS` (7) is skipped.** The houses publish daily, but the
   legislative week is the unit anything changes in, and re-importing an untouched window costs
   thousands of requests to write rows that are already there. This is also what makes the chain safe
@@ -663,11 +820,14 @@ There is now **one command**, `src/lib/integration/pipeline.ts`, and every surfa
   link back to the source page; `ImportRun` logs every attempt.
 - **Resilience:** rate-limit, retry with backoff, tolerate source downtime without data loss. An
   agent run that returns nothing never retires the whole house.
-- **One index is computed in batch, not at write time.** Scoring one agent for the quality index
-  needs the whole cohort's distribution, which is why `metrics:quality` is a job while
-  `Theme.priority` is written by the importers. It refuses to write a house whose sitting members are
-  less than 70% measured: percentiles over a partial import tell every agent they are in a cohort
-  they are not in.
+- **Two indexes are computed in batch, not at write time.** `metrics:positioning` needs the whole
+  cohort's distribution; `metrics:quality` no longer does — its goalposts are fixed — but it still
+  reads a year of roll calls, service spans and quota documents per agent, which is a sweep and not a
+  write-time computation. Both are jobs while `Theme.priority` is written by the importers. Both
+  refuse to publish a house they could not measure properly: quality below 70% of sitting members
+  measured (a half-imported window does not give a thinner reading, it gives one whose attendance
+  denominator is wrong for everybody), positioning when any of its three gates fails (§3.2). Both are retunable without re-importing — `npm run requality` and
+  `npm run reposition` recompute from stored columns, the way `reprioritize` does.
 - **Mandates end, history doesn't:** agents dropped from the official roster get `inOffice = false`
   instead of being deleted — their votes are what the alignment index is built from.
 - **Contract check:** `npm run check:sources` asserts every field the importers read is still present
@@ -728,7 +888,11 @@ be), but the reference is a printed record, not a fintech app.
 - The **animated `AlignmentRadar`** is the brand made visible — and, until per-area alignment is
   computed, it is illustration, not a chart (see §11). `PositioningChart` is its **still form**:
   the same mass, hairlines and hand-drawn petal (geometry shared in `src/lib/viz/figure.ts`),
-  leaning toward the quadrant a voting record points at.
+  leaning toward the quadrant a voting record points at. Unlike the radar it is **not**
+  illustration — it draws a measured reading, and on a record page it never appears alone:
+  `PositioningPlate` prints the two axis figures, the count of classified bills, the margin and the
+  most influential bill beside it (§3.2), so the shape can never be read as more precision than
+  was measured.
 - **A page is composed, not animated.** Blocks arrive with the scroll as ink settling on paper:
   the opener's rule draws itself, index bars enter from the left, the masthead rule fills with
   terracota as the document is read. One vocabulary (`src/components/public/motion.tsx` + the
@@ -754,14 +918,35 @@ be), but the reference is a printed record, not a fintech app.
 
 ## 11. Open Questions / To Validate
 
-- **Make the Political Positioning Index trustworthy before showing its band again** (§3.2). Order
-  of work: tag themes on the two axes, then re-tune the economic/social weighting and the band
-  thresholds, then validate against parties whose position is not in dispute — PL reading as
-  "Centro" is the regression test.
+- **Recalibrate the positioning floors against a real histogram** (§3.2). The mechanism is built and
+  it refuses to publish on its own; what is still guessed are the cut points. `MIN_EFFECTIVE_ITEMS`
+  is the one to settle first — its own docstring argues for eight and the constant says four, and it
+  decides whether an axis is published at all. Then the band thresholds, once bands are on the table
+  again. Run `npm run reposition -- --dry` against real data, the way `requality -- --dry` is meant
+  to be run.
+- **Watch the three gates on live data before quoting any positioning figure.** "PL at Centro" is no
+  longer the regression test — it was absent data printed as a measurement, and that path is closed.
+  The test now is whether the anchor correlation clears **0.85** over 60% of seats and the governismo
+  correlation stays under 0.50 on the real bench. Until a house passes, it publishes nothing, which
+  is the intended failure mode and not a bug to work around.
+- **`CODING_RUNS = 1` is a known debt, not a conclusion** (`src/lib/ai/summarize.ts`). The audit
+  protocol in [`docs/posicionamento.md`](docs/posicionamento.md) calls for two independent codings
+  with acceptance only where the signs agree — Gunes & Florczak measured 83% accuracy on the 65%
+  slice where two models agreed, against 58–83% overall. Raising it to 2 doubles the AI cost of a
+  pass over hundreds of bills, so it is a product decision. While it is 1, every tag stores
+  `consistency: null` and the methodology page says so.
+- **Expect the social axis to be suppressed as a number, and check that it is.** `MAX_AXIS_CORRELATION`
+  fires when the two axes correlate above 0.85, which is the *expected* Brazilian result (CHES-LA
+  measures 0.94), not an anomaly. What is worth watching in `npm run reposition -- --dry` is the
+  opposite case: if the measured correlation comes in far *below* the literature's, the tags are more
+  likely to be noisy than the country to be unusual.
 - Exact similarity formula and theme weighting for the **Alignment Index**.
-- Theme → positioning-dimension tagging model. The official classification now imported
-  (`Theme.classifications`) is the obvious input to automate this — currently unused by the
-  positioning index.
+- **Theme → axis tagging at scale.** The AI pass (`ai:summaries`) proposes the two-axis tags, and
+  everything in §3.2 is downstream of their quality: an axis with too few classified bills is `null`
+  by design, so thin tagging shows up as no reading rather than a wrong one. The official
+  classification (`Theme.classifications`) is still the obvious input to cross-check it against, and
+  is still unused. Inter-coder reliability (Krippendorff's alpha on the direction, which is a
+  three-class nominal judgement) has not been measured.
 - Tune the **priority** weights in `src/lib/domain/priority.ts` against real editorial judgement.
 - **Provider credentials:** register the app with Google, Apple and Meta and fill the `.env`
   (click-by-click: `docs/login-social-passo-a-passo.md`; rationale: `docs/integracao.md` §5). Google is the cheapest to get working and has the widest reach —
@@ -780,13 +965,23 @@ be), but the reference is a printed record, not a fintech app.
   Revisit if base readings start being quoted as representative of a state.
 - **The base index is recomputed whole** on a 120s cache (`base:agents:v1`, dropped on follow). The
   replacement at volume is a materialized per-agent aggregate updated incrementally on each vote.
-- **Calibrate the quality index's band cut points against a real load** (§3.3). Over a simulated
-  bench of 563 the composite spread 7…100 with a median of 50 — a healthy ranking — but 51% landed
-  between 40 and 60, because averaging four independent percentiles pulls mass to the centre. Run
-  `npm run requality -- --dry` on real data and either move the cuts to the observed quantiles
-  (~62/52/42) or rank the composite itself; the second is cleaner but costs the property that the
-  headline number is the weighted mean of the four figures printed under it. Until then the labels
-  are comparative, which keeps a concentrated distribution honest.
+- **Calibrate the quality index's band cut points against a real load** (§3.3). The bands
+  (80/60/40) predate fixed goalposts and the geometric mean, and the geometric mean pulls the
+  composite *down* rather than to the centre, so the old worry (mass piling at 50) is not the current
+  one. Re-read `npm run requality -- --dry` against the observed histogram before touching them.
+  Whatever they become, the labels stay comparative: "Muito acima da média" is a claim the arithmetic
+  can support and "Excelente" is not.
+- **The Senate's CEAPS ceiling table is from 2017** and no newer per-state table exists at any Senate
+  address (§3.3). Senators' cost is therefore read against a floor that is probably low. `npm run
+  requality` prints median utilisation per house so the gap is measurable — if the Senate's median
+  sits far above the Câmara's, the ceiling is what is wrong, not the senators. Do **not** adopt the
+  Ranking dos Políticos' 2026 table: it is `max(2017 × 1,192477, CEAP × 0,879121)`, a reconstruction
+  credited to the Senate. `check:sources` hashes the PDF so a republish surfaces immediately.
+- **Privileges, leadership posts and final convictions** are three dimensions of conduct the Ranking
+  dos Políticos measures and we do not (auxílio-moradia, passaporte diplomático para familiares,
+  aposentadoria especial; presidências e lideranças; condenações transitadas em julgado). None are in
+  the open APIs — they collect them by hand, by LAI and from a paid legal-data platform. Candidate
+  pillars, subject to the §3.3 both-houses rule.
 - **Emendas parlamentares executed as a fifth quality pillar** — the positive counterpart of custeio,
   and the reason custeio had to be scoped so narrowly. Neither house's open data carries it; it would
   come from the Portal da Transparência / SIOP. Only worth building if it can cover both houses.

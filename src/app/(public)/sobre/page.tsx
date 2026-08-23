@@ -36,6 +36,7 @@ import {
   AlignmentLedger,
   QualityPillars,
   PositioningAxes,
+  PositioningWeights,
 } from "@/components/public/AboutIndex";
 import { Key, RuleList, RuleItem, DocLink } from "@/components/public/LegalDoc";
 import { db } from "@/lib/db";
@@ -342,7 +343,7 @@ export default async function AboutPage() {
               sits between the two that do. */}
           <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
             <div>
-              <h3 className="text-[1.55rem] leading-tight">Índice de Qualidade</h3>
+              <h3 className="text-[1.55rem] leading-tight">Performance política</h3>
               <p className="mt-2 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
                 Se essa pessoa está fazendo o trabalho
               </p>
@@ -358,8 +359,10 @@ export default async function AboutPage() {
                   Um parlamentar que quase não comparece, não propõe nada e consome a cota
                   inteira pode estar 100% alinhado com quem pensa como ele. O alinhamento
                   não enxerga isso; era para isso que faltava um segundo número. Ele sai
-                  de quatro pilares, todos tirados do registro que as próprias casas
-                  publicam.
+                  de três medidas de peso igual, todas tiradas do registro que as próprias
+                  casas publicam, combinadas pelo método que a OCDE e o Centro Comum de
+                  Investigação da União Europeia publicam para índices compostos — o mesmo
+                  que sustenta o Índice de Desenvolvimento Humano.
                 </p>
               </Prose>
             </div>
@@ -376,20 +379,34 @@ export default async function AboutPage() {
             <div className="mt-4 max-w-2xl text-[0.95rem] leading-[1.7] text-navy-700">
               <RuleList>
                 <RuleItem>
-                  <Key>Cada pilar é uma posição entre os pares, não uma nota.</Key>{" "}
-                  Presença em votação no Brasil se concentra perto de 95% para quase todo
-                  mundo: publicar essa razão crua faria o pilar não informar nada. O que
-                  entra na conta é onde a pessoa está em relação aos colegas — deputado
-                  com deputado, senador com senador, e o custeio comparado dentro do
-                  próprio estado, porque o teto da cota é geográfico.
+                  <Key>A régua é fixa e publicada, não o melhor colega.</Key> Cada medida
+                  é comparada com uma meta congelada: comparecer a todas as votações vale
+                  100, usar metade da cota a que se tem direito vale 100. Isso tem uma
+                  consequência que é o motivo inteiro da escolha —{" "}
+                  <Key>a nota de um parlamentar só muda quando ele muda.</Key> Na versão
+                  anterior, medida contra o melhor da turma, bastava um colega apresentar o
+                  dobro de projetos para a nota de todos os outros cair, sem que ninguém
+                  tivesse feito nada diferente.
                 </RuleItem>
                 <RuleItem>
-                  <Key>O número bruto vem sempre junto.</Key> Comparar entre pares tem um
-                  custo conhecido: metade de qualquer parlamento fica abaixo de 50, por
-                  definição, e a distância entre o 40º e o 60º pode ser duas sessões. Por
-                  isso a barra nunca aparece sozinha —{" "}
-                  <span className="vt-num">92%</span> · 312 de 340 votações. A posição
-                  forma o índice; o número é o que você lê.
+                  <Key>O número bruto vem sempre junto.</Key> A barra nunca aparece
+                  sozinha —{" "}<span className="vt-num">92%</span> · 312 de 340 votações.
+                  A meta forma o índice; o número é o que você lê, e é o que permite
+                  conferir a conta documento por documento.
+                </RuleItem>
+                <RuleItem>
+                  <Key>Protocolar projetos não leva ao topo.</Key> Apresentar um projeto
+                  custa uma assinatura; fazê-lo andar, não. Por isso a apresentação satura:
+                  sozinha, ela chega a 80 de 100 nessa medida e para. Os últimos 20 pontos
+                  exigem desfecho — projeto que avançou — ou relatoria. É a defesa contra
+                  encher o gabinete de proposições que ninguém vai votar.
+                </RuleItem>
+                <RuleItem>
+                  <Key>Falhar numa medida não se compra com as outras.</Key> As três notas
+                  entram numa média geométrica. Numa média simples, quem nunca aparece,
+                  quem nunca legisla e quem gasta a cota inteira terminavam todos com a
+                  mesma nota confortável — é o mesmo motivo pelo qual o Índice de
+                  Desenvolvimento Humano trocou de média em 2010.
                 </RuleItem>
                 <RuleItem>
                   <Key>O que não dá para medir não vira zero.</Key> Um pilar sem dados sai
@@ -401,9 +418,17 @@ export default async function AboutPage() {
                 <RuleItem>
                   <Key>As faixas são comparativas, nunca avaliativas.</Key> &ldquo;Acima
                   da média&rdquo;, &ldquo;na média&rdquo; — e não &ldquo;excelente&rdquo;
-                  ou &ldquo;ruim&rdquo;. O número é uma posição entre pares, e é
-                  exatamente isso que as palavras dizem. Um veredito sobre uma pessoa com
-                  nome e sobrenome é a última coisa que este índice pode enunciar de leve.
+                  ou &ldquo;ruim&rdquo;. O que o número mede é atividade registrada, não
+                  virtude, e as palavras dizem exatamente isso. Um veredito sobre uma
+                  pessoa com nome e sobrenome é a última coisa que este índice pode
+                  enunciar de leve.
+                </RuleItem>
+                <RuleItem>
+                  <Key>Toda mudança de regra é datada.</Key> Cada nota carrega a edição da
+                  metodologia que a produziu, e a edição só muda quando um peso, uma meta
+                  ou uma constante muda — o que é verificado automaticamente, não
+                  lembrado. Assim dá para distinguir uma nota que se moveu porque o
+                  parlamentar mudou de uma que se moveu porque nós mudamos.
                 </RuleItem>
               </RuleList>
             </div>
@@ -421,7 +446,11 @@ export default async function AboutPage() {
             <div className="mt-3 flex flex-col gap-3 text-[0.95rem] leading-[1.7] text-navy-700">
               <p>
                 O pilar mede o que o mandato consome para funcionar: escritório, viagem,
-                combustível, alimentação, divulgação, segurança.
+                combustível, alimentação, divulgação, segurança. E mede em{" "}
+                <Key>fração da cota a que aquele parlamentar tem direito</Key>, não em
+                reais: o teto vai de R$ 41,6 mil no Distrito Federal a R$ 58,5 mil em
+                Roraima, porque paga as passagens de volta para casa. Ranquear por reais
+                ranqueia a distância de Brasília.
               </p>
               <p>
                 <Key>Emenda parlamentar fica de fora de propósito.</Key> Um deputado que
@@ -434,7 +463,12 @@ export default async function AboutPage() {
             </div>
           </Reveal>
 
-          {/* Posicionamento — the honest half. */}
+          {/* ── Posicionamento ──────────────────────────────────────────
+              A seção mais longa das três, e é proporcional: é o índice que
+              esteve errado, e a página que explica os índices não pode passar
+              por cima disso em dois parágrafos. A ordem é a da confiança que
+              cada parte já ganhou — o que ele mede, como pesa, o que ele se
+              recusa a dizer, e só então de onde vem a régua. */}
           <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
             <div>
               <h3 className="text-[1.55rem] leading-tight">
@@ -446,15 +480,23 @@ export default async function AboutPage() {
 
               <Prose>
                 <p>
-                  O segundo índice não compara ninguém com ninguém: descreve uma
-                  trajetória de votos em dois eixos de valor. Cada tema recebe um peso
-                  nesses eixos; votar Sim empurra a pessoa na direção do peso, votar Não
-                  empurra na direção contrária, e o Neutro não move nada.
+                  O terceiro índice não compara ninguém com ninguém: descreve uma
+                  trajetória de votos em dois eixos de valor. Votar Sim empurra a pessoa
+                  na direção em que a proposição foi classificada, votar Não empurra na
+                  direção contrária, e o Neutro não move nada.
                 </p>
                 <p>
-                  O resultado é a <Key>figura</Key> que aparece na página de cada agente e
-                  de cada partido — uma forma inclinada para o quadrante que os votos
-                  apontam. É de propósito que seja uma forma, e não uma nota.
+                  As definições dos dois eixos não são nossas. São as do{" "}
+                  <Key>Chapel Hill Expert Survey</Key>, traduzidas e não adaptadas — a
+                  régua com que a ciência política posiciona partidos há vinte e cinco
+                  anos. Usar a definição de outra gente é o que permite conferir o nosso
+                  resultado contra o dela, em vez de contra nós mesmos.
+                </p>
+                <p>
+                  Este índice foi <Key>reconstruído do zero</Key>. A versão anterior era
+                  uma média simples de voto vezes peso — a mesma conta dos testes de
+                  posicionamento que circulam na internet, e com os mesmos defeitos. O
+                  que está abaixo é o que mudou e por quê.
                 </p>
               </Prose>
             </div>
@@ -464,38 +506,239 @@ export default async function AboutPage() {
             </Reveal>
           </div>
 
-          {/* The one panel on the page that lifts off the paper, because it is
-              the one thing a reader must not skim past — the same treatment the
-              legal documents give their opening summary. Not a terracota rule:
-              that pigment is the ballot's, and borrowing it here would make a
-              disclosure read as an action. */}
+          {/* Peso por votação — a correção mais importante e a mais invisível. */}
+          <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
+            <div>
+              <h4 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                Nem toda votação vale a mesma coisa
+              </h4>
+              <Prose>
+                <p>
+                  Antes, todas valiam. Um projeto aprovado por 470 a 21 mexia na posição de
+                  cada deputado tanto quanto um decidido por 260 a 231 — e como a maior
+                  parte do que a Câmara aprova é aprovada por quase todo mundo, o índice
+                  media <Key>a composição da pauta</Key>, não as pessoas.
+                </p>
+                <p>
+                  Agora o peso de uma proposição é <Key>o quanto ela dividiu a casa</Key>.
+                  Uma votação em que ninguém discordou não separa ninguém e vale zero. Um
+                  quarto das votações nominais da Câmara em 2025 está nessa faixa.
+                </p>
+              </Prose>
+            </div>
+
+            <Reveal variant="figure" delay={120}>
+              <PositioningWeights />
+            </Reveal>
+          </div>
+
+          {/* Governismo — o achado que reorganizou o índice inteiro. Caixa, não
+              lista: é a coisa que um leitor não pode passar batido, e é também a
+              que mais soa contraintuitiva antes de ser explicada. */}
           <Reveal
             variant="fade"
-            className="mt-10 max-w-2xl rounded-card border border-line bg-surface p-6 sm:p-7"
+            className="mt-12 max-w-2xl rounded-card border border-line bg-surface p-6 sm:p-7"
           >
             <h4 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
-              Por que não dizemos &ldquo;esquerda&rdquo; ou &ldquo;direita&rdquo;
+              No Brasil, votação nominal mede governo e oposição antes de medir
+              esquerda e direita
             </h4>
             <div className="mt-3 flex flex-col gap-3 text-[0.95rem] leading-[1.7] text-navy-700">
               <p>
-                A conta que reduz esses dois eixos a uma das cinco faixas do espectro
-                existe e está pronta. Ela <Key>não está publicada</Key>, e isso é uma
-                escolha, não um esquecimento.
+                Isto é um resultado consolidado da ciência política brasileira, não uma
+                opinião nossa. Quando se extrai a principal linha de divisão das votações
+                da Câmara, o que aparece não é esquerda contra direita: é{" "}
+                <Key>quem está com o governo contra quem está contra</Key>.
               </p>
               <p>
-                O resultado dela depende inteiramente de os temas estarem bem
-                classificados nos dois eixos, e essa classificação ainda está incompleta.
-                Rodando sobre pesos quase vazios, ela chegou a colocar no centro partidos
-                cuja posição não está em disputa por ninguém. Um veredito errado impresso
-                com confiança é pior do que veredito nenhum.
+                Nós medimos isso nas nossas próprias fontes, em 87 votações nominais entre
+                2024 e 2025. A principal linha de divisão correlaciona{" "}
+                <span className="vt-num">−0,96</span> com apoio ao governo e apenas{" "}
+                <span className="vt-num">+0,49</span> com a escala de esquerda↔direita que
+                a literatura usa. Ela colocava o PSOL em 14º de 18, à direita do PSDB —
+                porque o PSOL se opõe ao governo Lula <em>pela esquerda</em>, e a conta lê
+                oposição como direita.
               </p>
               <p>
-                A faixa volta quando a classificação dos temas existir e o resultado for
-                conferido contra casos que não admitem dúvida. Até lá fica a figura, que
-                mostra uma inclinação sem pronunciar uma sentença.
+                Classificar melhor as proposições não resolve: o sinal de coalizão está
+                nos votos, não nas ementas. Então fazemos duas coisas. As votações em que
+                a liderança do governo orientou a bancada{" "}
+                <Key>têm o peso descontado</Key> — a Câmara publica essas orientações, e
+                nós as importamos. E antes de qualquer coisa ser publicada, o índice{" "}
+                <Key>é testado contra si mesmo</Key>: se a posição econômica que ele
+                calcula ainda correlacionar demais com apoio ao governo, nada é publicado.
+                Um índice de governismo com rótulo de ideologia é um erro silencioso por
+                construção, e essa é a porta que o torna barulhento.
               </p>
             </div>
           </Reveal>
+
+          <div className="mt-10">
+            <h4 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+              O que faz esse número ser honesto
+            </h4>
+            <div className="mt-4 max-w-2xl text-[0.95rem] leading-[1.7] text-navy-700">
+              <RuleList>
+                <RuleItem>
+                  <Key>Sem dado, não há leitura — e não há centro.</Key> Este era o defeito
+                  mais grave da versão anterior, e o mais fácil de não notar: quem não
+                  tinha nenhuma proposição classificada saía com zero nos dois eixos, que é
+                  exatamente a coordenada de um centrista perfeito. Um partido que ninguém
+                  chamaria de centrista aparecia no centro por falta de dado. Hoje a página
+                  não mostra figura nenhuma nesse caso, e diz por quê.
+                </RuleItem>
+                <RuleItem>
+                  <Key>Proposição que não mede posição fica de fora, por regra
+                  publicada.</Key> Homenagem, data comemorativa, denominação de rodovia,
+                  requerimento de urgência, destaque, peça orçamentária. Quase 59% das
+                  votações do Plenário da Câmara em 2025 são de rito, não de mérito. O
+                  filtro é <em>mecânico</em> de propósito: no instante em que alguém aqui
+                  escolhesse a dedo quais projetos contam, o Votto passaria a ter uma
+                  ideologia — e a única defesa contra isso é não haver escolha para fazer.
+                </RuleItem>
+                <RuleItem>
+                  <Key>A margem vem junto do número.</Key> Uma posição de −40 com margem de
+                  ±25 e uma de −40 com margem de ±6 são afirmações diferentes. Ao lado de
+                  cada eixo está quantas proposições o sustentam e, quando uma sozinha
+                  desloca a leitura em mais de cinco pontos, o aviso de que ela existe.
+                </RuleItem>
+                <RuleItem>
+                  <Key>O Senado não recebe posicionamento, e o motivo é aritmético.</Key>{" "}
+                  Em dezoito meses ele publicou <span className="vt-num">14</span> votações
+                  nominais com placar, a maioria quase unânime. O regimento é a causa: na
+                  maior parte das decisões do Senado, o voto do líder vale pelo da bancada
+                  e ninguém vota individualmente. Catorze votações não posicionam nem uma
+                  pessoa.
+                </RuleItem>
+                <RuleItem>
+                  <Key>Abstenção não move nada.</Key> No parlamento, abstenção e obstrução
+                  são manobras de regimento sob orientação de bancada — não são opinião
+                  sobre o mérito, e tratá-las como opinião seria inventar uma.
+                </RuleItem>
+              </RuleList>
+            </div>
+          </div>
+
+          {/* Partidos — o que o usuário pediu explicitamente, e a parte com mais
+              decisão de método por linha. */}
+          <div className="mt-12">
+            <h4 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+              E os partidos
+            </h4>
+            <Prose>
+              <p>
+                Um partido não vota. Tudo o que se pode dizer dele vem dos seus
+                parlamentares, e a pergunta é como somá-los. A resposta ingênua — a média
+                — quebra nos dois extremos: uma bancada de noventa fica à mercê de quem
+                mais votou dentro dela, e uma bancada de <em>um</em> publica a
+                excentricidade de uma pessoa como se fosse a posição de um partido.
+              </p>
+              <p>
+                O que usamos é o mesmo mecanismo por trás da nota do IMDb, e a frase é
+                literal: <Key>todo partido é pontuado como se tivesse alguns membros a
+                mais, parados na média da casa</Key>. Uma bancada de noventa mal os sente.
+                Uma bancada de um é quase só eles. A diferença para o IMDb é que lá esse
+                número de membros imaginários é escolhido, e aqui ele é calculado a partir
+                do quanto os partidos de fato se espalham.
+              </p>
+              <p>
+                Isso tem um custo conhecido, e ele é o partido genuinamente extremo, que é
+                puxado para o meio junto com os demais. Por isso o deslocamento é{" "}
+                <Key>limitado</Key>: nenhuma bancada é movida mais que uma margem de erro
+                da sua própria média. E a média original aparece na página ao lado da
+                ajustada — encolher é uma decisão de método, e uma decisão de método que
+                muda o número de um partido tem de estar visível onde o número está.
+              </p>
+              <p>
+                Ao lado da posição vem <Key>o quanto a bancada se espalha</Key>. Um partido
+                em zero porque todos os seus membros estão em zero e um partido em zero
+                porque metade está em cada extremo são fatos opostos com o mesmo número, e
+                imprimir só a média afirma o primeiro. Na prática a diferença é enorme:
+                há bancadas que votam juntas em quase toda votação e há bancadas em que
+                isso acontece em dois terços delas.
+              </p>
+            </Prose>
+          </div>
+
+          {/* Por que ainda não há faixa — a promessa que a página não faz. */}
+          <Reveal
+            variant="fade"
+            className="mt-12 max-w-2xl rounded-card border border-line bg-surface p-6 sm:p-7"
+          >
+            <h4 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+              Por que continuamos sem dizer &ldquo;esquerda&rdquo; ou
+              &ldquo;direita&rdquo;
+            </h4>
+            <div className="mt-3 flex flex-col gap-3 text-[0.95rem] leading-[1.7] text-navy-700">
+              <p>
+                A conta que reduz os dois eixos a uma das cinco faixas do espectro existe e
+                está pronta. Ela <Key>não está publicada</Key>, e isso é uma escolha, não
+                um esquecimento.
+              </p>
+              <p>
+                Para uma faixa aparecer, três portas têm de abrir: a pessoa precisa ter
+                proposições classificadas suficientes; o índice inteiro precisa ter passado
+                no teste contra governismo e na comparação com as réguas externas; e — a
+                que mais barra — <Key>a margem de erro precisa caber dentro de uma única
+                faixa</Key>. Com cinco faixas em duzentos pontos, cada uma tem quarenta; uma
+                margem maior que isso significa que o rótulo seria decidido por ruído, e
+                não pela pessoa.
+              </p>
+              <p>
+                Há também um precedente que vale mais que qualquer argumento nosso. Em
+                setembro de 2024 o Reino Unido aboliu a nota única das escolas — a palavra
+                que resumia toda uma inspeção — por ser &ldquo;redutora&rdquo; e &ldquo;de
+                baixa informação para as famílias e alto risco para as escolas&rdquo;,
+                depois de um inquérito ligar o processo à morte de uma diretora. Quatro
+                notas separadas substituíram a palavra única.
+              </p>
+              <p>
+                Repare também em quem <em>dá</em> nota de faixa por aí. Os testes de
+                posicionamento que atribuem um rótulo são, sem exceção, os que não
+                publicam método — um deles responde, quando perguntado como calcula:
+                &ldquo;temos política estrita contra divulgar essa informação&rdquo;. As
+                ferramentas eleitorais levadas a sério na Alemanha, na Holanda, na Suíça e
+                no Canadá publicam um número e uma ordem, e nenhuma delas batiza categoria.
+              </p>
+            </div>
+          </Reveal>
+
+          {/* De onde vem a régua — as fontes, linkadas. É a prática de confiança
+              mais barata que existe, e a que quase nenhum produto do gênero faz. */}
+          <div className="mt-10 max-w-2xl">
+            <h4 className="font-sans text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+              Contra o que isso é conferido
+            </h4>
+            <div className="mt-4 flex flex-col gap-3 text-[0.95rem] leading-[1.7] text-navy-700">
+              <p>
+                Um índice feito de votos e conferido contra os mesmos votos não está
+                conferido — está andando em círculo. Por isso a ordenação que sai daqui é
+                comparada com duas medidas construídas por outras pessoas, por outro
+                método, antes de nós.
+              </p>
+              <p>
+                A primeira é a classificação ideológica dos partidos brasileiros feita por{" "}
+                <span className="vt-num">515</span> cientistas políticos em 2022 —{" "}
+                <DocLink href="https://doi.org/10.7910/DVN/MFIXKW" external>
+                  microdados abertos
+                </DocLink>
+                . A segunda é o{" "}
+                <DocLink href="https://doi.org/10.7910/DVN/6KVTUV" external>
+                  Brazilian Legislative Survey
+                </DocLink>
+                , que pergunta a parlamentares federais, sob anonimato, onde cada partido
+                está. As medidas desse tipo concordam entre si acima de{" "}
+                <span className="vt-num">0,94</span>; se a nossa não chegar perto disso,
+                nada é publicado.
+              </p>
+              <p>
+                Há um caso que serve de prova dos nove, e ele é público: o PL é o partido
+                mais à direita do Brasil em todas as réguas disponíveis. Qualquer versão
+                deste índice que o coloque no centro está errada, e é assim que a gente
+                descobre.
+              </p>
+            </div>
+          </div>
         </section>
 
         {/* ── Princípios ──────────────────────────────────────────────── */}

@@ -66,17 +66,20 @@ const clamp = (n: number) => Math.max(-1, Math.min(1, n / 100));
 export function PositioningChart({
   economic,
   social,
-  basis,
 }: {
-  economic: number;
-  social: number;
-  basis: number;
+  /** −100..100, ou `null` quando a cobertura não alcançou o piso. */
+  economic: number | null;
+  social: number | null;
 }) {
-  const hasReading = basis > 0;
+  // Os dois eixos, ou nenhum. Desenhar a figura com um eixo faltando obrigaria
+  // a tratá-lo como zero, que é a coordenada do centro — e afirmar centro por
+  // falta de medida é exatamente o erro que o índice foi reconstruído para não
+  // cometer (CLAUDE.md §3.2).
+  const hasReading = economic !== null && social !== null;
 
   // Axis units, then pulled back inside the rim if the corner overshoots it.
-  const ex = clamp(economic);
-  const sy = clamp(social);
+  const ex = clamp(economic ?? 0);
+  const sy = clamp(social ?? 0);
   const len = Math.hypot(ex, sy);
   const k = len > 1 ? 1 / len : 1;
   const x = ex * k;

@@ -18,7 +18,7 @@ import { Container, Badge } from "@/components/ui";
 import { RecordIntro, SectionHead } from "@/components/public/Section";
 import { ReadingPlate } from "@/components/public/ReadingPlate";
 import { ThemeBriefList, type ThemeBriefItem } from "@/components/public/ThemeBrief";
-import { PositioningChart } from "@/components/public/PositioningChart";
+import { PositioningPlate } from "@/components/public/PositioningPlate";
 import { QualityPlate } from "@/components/public/QualityPlate";
 import { PerformanceInfo } from "@/components/public/PerformanceInfo";
 import { parseQualityPillars } from "@/lib/domain/quality";
@@ -38,7 +38,6 @@ import {
 import { citizenFollows, followSlot } from "@/lib/domain/follows";
 import { publicReading, followersNote } from "@/lib/domain/reading";
 import { agentTypeLabel, agentTypeProseLabel, voteValueLabel } from "@/lib/labels";
-import { POSITIONING_AXES } from "@/lib/indexes/positioning";
 import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -417,28 +416,12 @@ export default async function AgentDetailPage({
           <Reveal as="aside" variant="fade" delay={120}>
             <h2 className="text-xl text-navy-900">Posicionamento</h2>
             <div className="mt-4">
-              <PositioningChart
+              <PositioningPlate
                 economic={position.economic}
                 social={position.social}
-                basis={position.basis}
+                detail={position.detail}
               />
             </div>
-            {position.basis > 0 ? (
-              <dl className="mt-3 space-y-1 text-xs text-[var(--color-muted)]">
-                <div className="flex justify-between">
-                  <dt>
-                    {POSITIONING_AXES.economic.negative} ↔ {POSITIONING_AXES.economic.positive}
-                  </dt>
-                  <dd className="font-medium text-navy-800">{position.economic}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt>
-                    {POSITIONING_AXES.social.negative} ↔ {POSITIONING_AXES.social.positive}
-                  </dt>
-                  <dd className="font-medium text-navy-800">{position.social}</dd>
-                </div>
-              </dl>
-            ) : null}
           </Reveal>
           </div>
         </div>

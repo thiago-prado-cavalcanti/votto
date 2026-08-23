@@ -169,6 +169,14 @@ interface CamaraTema {
   relevancia?: number;
 }
 
+/** Uma linha de `/votacoes/{id}/orientacoes`. */
+interface CamaraOrientacao {
+  /** Sigla da bancada — inclui os pseudo-blocos `Governo`, `Oposição`, `Maioria`, `Minoria`. */
+  siglaPartidoBloco?: string;
+  /** "Sim", "Não", "Liberado", "Obstrução". */
+  orientacaoVoto?: string;
+}
+
 interface CamaraVoto {
   tipoVoto?: string;
   dataRegistroVoto?: string;
@@ -819,7 +827,8 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
         }
 
         const occurredAt = parseDate(v.dataHoraRegistro ?? v.data);
-        await recordVotos(v.id, themeId, votos, occurredAt, agentIdByRef, c);
+        const orientation = await fetchOrientacoes(v.id);
+        await recordVotos(v.id, themeId, votos, occurredAt, agentIdByRef, c, orientation);
       }
     }
   }
@@ -829,6 +838,71 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
     itemsUpserted: c.upserted,
     watermark: to.toISOString().slice(0, 10),
   };
+}
+
+/**
+ * Orientação de bancada dos pseudo-blocos `Governo` e `Oposição` numa votação.
+ *
+ * A Câmara publica, em `/votacoes/{id}/orientacoes`, o que cada bancada pediu
+ * aos seus — e junto das siglas reais aparecem quatro pseudo-blocos: `Governo`,
+ * `Oposição`, `Maioria` e `Minoria`. São eles que dizem onde estava a linha
+ * governo↔oposição naquela votação.
+ *
+ * Isso não é um detalhe de completude. A primeira dimensão recuperada das
+ * votações nominais brasileiras é essa linha, não esquerda↔direita (Zucco &
+ * Lauderdale, *LSQ* 36(3), 2011): medida sobre 87 votações de 2024–2025, ela
+ * correlaciona −0,96 com governismo e +0,49 com a escala do Brazilian
+ * Legislative Survey, e coloca o PSOL à direita do PSDB. Sem baixar esta
+ * resposta não há como descontar a pauta do Executivo nem como rodar o teste que
+ * impede o índice de posicionamento de publicar governismo com nome de
+ * ideologia.
+ *
+ * Um pedido a mais por votação nominal — ~80 por ano na Câmara.
+ */
+async function fetchOrientacoes(
+  votacaoId: string,
+): Promise<{ government: VoteValue | null; opposition: VoteValue | null }> {
+  try {
+    const res = await fetchJson<{ dados?: CamaraOrientacao[] }>(
+      `${BASE}/votacoes/${encodeURIComponent(votacaoId)}/orientacoes`,
+    );
+    await sleep(REQUEST_DELAY);
+    const rows = Array.isArray(res.dados) ? res.dados : [];
+    const bloc = (...names: string[]) =>
+      rows.find((r) => names.includes(fold(r.siglaPartidoBloco)))?.orientacaoVoto;
+    return {
+      government: mapOrientation(bloc("governo")),
+      opposition: mapOrientation(bloc("oposicao")),
+    };
+  } catch {
+    // Uma votação sem orientação publicada não é um erro: é uma votação em que
+    // a bancada foi liberada, ou uma cuja orientação a casa não registrou.
+    return { government: null, opposition: null };
+  }
+}
+
+/**
+ * Mapear uma orientação de bancada nos nossos três valores.
+ *
+ * `Liberado` vira `null` de propósito, e a diferença é a que sustenta o
+ * controle: uma bancada liberada é o governo dizendo que aquela votação **não**
+ * é da linha governo↔oposição, e tratá-la como posição inverteria o sinal do
+ * desconto.
+ */
+function mapOrientation(orientation: string | undefined): VoteValue | null {
+  const t = fold(orientation);
+  if (t === "sim") return VoteValue.YES;
+  if (t === "nao") return VoteValue.NO;
+  return null;
+}
+
+/** Minúsculas sem acento — as siglas de bloco chegam como "Oposição". */
+function fold(value: string | undefined): string {
+  return (value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 /** Fetch a votação's nominal votes, treating any failure as "no roll call". */
@@ -873,6 +947,10 @@ async function recordVotos(
   occurredAt: Date | null,
   agentIdByRef: Map<string, string>,
   c: Counters,
+  orientation: { government: VoteValue | null; opposition: VoteValue | null } = {
+    government: null,
+    opposition: null,
+  },
 ): Promise<void> {
   const participants: Array<{ agentId: string; value: VoteValue }> = [];
   let presidingAgentId: string | null = null;
@@ -938,6 +1016,8 @@ async function recordVotos(
       themeId,
       participants,
       presidingAgentId,
+      governmentPosition: orientation.government,
+      oppositionPosition: orientation.opposition,
     });
   }
 }

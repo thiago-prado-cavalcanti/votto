@@ -14,7 +14,6 @@ import {
   partyBaseAlignments,
 } from "@/lib/indexes/alignment";
 import { publicReading } from "@/lib/domain/reading";
-import { getAgentPosition, getPartyPosition } from "@/lib/domain/positions";
 import { agentTypeLabel } from "@/lib/labels";
 import { themeCardImage, agentCardImage, partyCardImage } from "@/lib/widgets/images";
 
@@ -67,10 +66,9 @@ async function buildImage(type: string, kid: string): Promise<Response | null> {
     // The same reading the site publishes: the agent's own base where they have
     // one, the electorate where they do not. A shared card that disagreed with
     // the page it links to would be worse than no card.
-    const [engagement, base, position] = await Promise.all([
+    const [engagement, base] = await Promise.all([
       agentElectorateAlignments(),
       agentBaseAlignments(),
-      getAgentPosition(agent.id),
     ]);
     const location = [agent.municipality, agent.state].filter(Boolean).join(" · ");
     const subtitleParts = [agentTypeLabel[agent.type]];
@@ -88,10 +86,9 @@ async function buildImage(type: string, kid: string): Promise<Response | null> {
   // partido
   const party = await db.party.findUnique({ where: { kid } });
   if (!party || party.status !== "ACTIVE") return null;
-  const [engagement, base, position] = await Promise.all([
+  const [engagement, base] = await Promise.all([
     partyElectorateAlignments(),
     partyBaseAlignments(),
-    getPartyPosition(party.id),
   ]);
   const acronym = party.acronym ?? party.name.slice(0, 3).toUpperCase();
   return partyCardImage({

@@ -31,7 +31,13 @@ import {
   qualityBand,
   QUALITY_PILLARS,
   type QualityInputs,
+  QUALITY_METHODOLOGY,
+  methodologyFingerprint,
+  filingCapRate,
 } from "@/lib/indexes/quality";
+import { allCeilings, quotaCeiling, SENADO_CEILING_SOURCE } from "@/lib/domain/quota-ceilings";
+import { AgentType } from "@/generated/prisma";
+import { createHash } from "node:crypto";
 import { isDeliberativeSession, serviceSpansFromHistory } from "@/lib/integration/camara";
 import { PIPELINE_SCHEDULE, SYNC_JOBS, findJob, type SyncJobDefinition } from "@/lib/integration/jobs";
 import {
@@ -502,6 +508,36 @@ async function checkCamaraRollCall(): Promise<void> {
     distribution[key] = (distribution[key] ?? 0) + 1;
   }
   note(`distribuição de votos: ${JSON.stringify(distribution)}`);
+
+  // ── Orientação de bancada, e o pseudo-bloco `Governo` ────────────────────
+  //
+  // O controle inteiro do índice de posicionamento pendura aqui. A primeira
+  // dimensão das votações nominais brasileiras é governo↔oposição e não
+  // esquerda↔direita (Zucco & Lauderdale 2011), então sem saber onde essa linha
+  // estava o índice não tem como afirmar que não é ela com outro nome — e a
+  // ausência é silenciosa: um `/orientacoes` vazio é indistinguível de "a
+  // bancada foi liberada".
+  const orientations = await getOrNull<Page<Row>>(
+    `${CAMARA}/votacoes/${encodeURIComponent(String(rollCall.votacao.id))}/orientacoes`,
+  );
+  const rows = orientations?.dados ?? [];
+  check(
+    `/votacoes/{id}/orientacoes responde${rows.length ? ` (${rows.length} bancadas)` : ""}`,
+    rows.length > 0,
+    "sem orientação nesta votação — pode ser bancada liberada; confira outra antes de concluir",
+  );
+  if (rows.length > 0) {
+    check(
+      "orientação traz siglaPartidoBloco e orientacaoVoto",
+      rows.every((r) => r.siglaPartidoBloco != null && r.orientacaoVoto != null),
+    );
+    const blocs = new Set(rows.map((r) => String(r.siglaPartidoBloco)));
+    check(
+      `pseudo-bloco "Governo" continua entre as bancadas orientadas (${[...blocs].slice(0, 8).join(", ")})`,
+      blocs.has("Governo"),
+      "sem o pseudo-bloco Governo o governismo não é mensurável e o índice de posicionamento não publica",
+    );
+  }
 }
 
 // ─── 4. Senado Federal ───────────────────────────────────────────────────────
@@ -782,6 +818,63 @@ function checkQualityHelpers(): void {
     "'Alteração de partido' não move ninguém para dentro nem para fora",
     exercise.length === 2,
   );
+
+  // ── Teto de protocolo: volume não compra o topo do pilar ──────────────────
+  // A regressão que isto guarda é a "fábrica de projetos": o log já faz o
+  // 400º projeto valer menos que o 1º, mas satura no alvo, e o alvo é
+  // alcançável só protocolando.
+  const filedOnly = (n: number, house: "CAMARA" | "SENADO" = "CAMARA") =>
+    pillar("production", full({
+      authorship: { authored: n, advanced: 0, months: 40 },
+      rapporteurship: { count: 0, months: 40 },
+    }), house) ?? 0;
+
+  for (const house of ["CAMARA", "SENADO"] as const) {
+    check(
+      `${house}: só protocolo satura em 80 (${filedOnly(100_000, house)})`,
+      filedOnly(100_000, house) === 80,
+      "protocolar projetos voltou a levar ao topo do pilar — o teto de protocolo caiu",
+    );
+    // O teto tem que cair no MESMO ponto da escala nas duas casas, apesar de
+    // alpha/target diferirem: é por isso que ele é derivado, não constante.
+    check(
+      `${house}: teto derivado dos próprios goalposts (${filingCapRate(house).toFixed(2)}/mês)`,
+      filingCapRate(house) > 0 && filingCapRate(house) < GOALPOSTS.production[house].target,
+    );
+  }
+  const capped = filedOnly(100_000);
+  check(
+    `desfecho passa do teto de protocolo (${capped} → ${pillar("production", full({ authorship: { authored: 100_000, advanced: 60, months: 40 }, rapporteurship: { count: 0, months: 40 } }))})`,
+    (pillar("production", full({
+      authorship: { authored: 100_000, advanced: 60, months: 40 },
+      rapporteurship: { count: 0, months: 40 },
+    })) ?? 0) > capped,
+    "o teto passou a limitar também desfecho e relatoria — os últimos 20 pontos ficaram inalcançáveis",
+  );
+  check(
+    "relatoria passa do teto de protocolo",
+    (pillar("production", full({
+      authorship: { authored: 100_000, advanced: 0, months: 40 },
+      rapporteurship: { count: 60, months: 40 },
+    })) ?? 0) > capped,
+  );
+  // Abaixo do teto nada muda: o cap não pode achatar quem produz pouco.
+  check(
+    "abaixo do teto o pilar continua ordenando",
+    filedOnly(40) < filedOnly(80) && filedOnly(80) < filedOnly(120),
+  );
+
+  // ── Versão da metodologia ─────────────────────────────────────────────────
+  // Goalposts fixos garantem que a nota não se move quando OUTRA PESSOA muda.
+  // Isto garante a outra metade: que ela não se mova quando NÓS mudamos sem
+  // dizer. Alterar peso, goalpost ou constante sem incrementar a versão para
+  // aqui.
+  check(
+    `metodologia ${QUALITY_METHODOLOGY.version} confere com o fingerprint (${methodologyFingerprint()})`,
+    methodologyFingerprint() === QUALITY_METHODOLOGY.fingerprint,
+    `pesos/goalposts/constantes mudaram sem bump de versão — ajuste QUALITY_METHODOLOGY ` +
+      `(version, changedAt, fingerprint: "${methodologyFingerprint()}")`,
+  );
 }
 
 // ─── 4b. Quality index sources ───────────────────────────────────────────────
@@ -1051,6 +1144,88 @@ async function checkQualitySources(): Promise<void> {
   }
 }
 
+// ─── 4c. Quota ceilings ──────────────────────────────────────────────────────
+
+/**
+ * Guard the table the cost pillar divides by.
+ *
+ * Everything else in this file watches an API. This watches a **PDF**, because
+ * the Senate's per-state ceiling is published as one, and it is the single input
+ * most capable of being silently wrong: it carries no version, no endpoint and
+ * no changelog, and when it moves every senator's cost reading moves with it in
+ * a direction nobody would notice from the numbers.
+ *
+ * The Câmara half needs no fetch — its table is derivable from a published Ato
+ * da Mesa and every value is exactly ×1,13750 the 2023 one, so the internal
+ * check below is stronger than a download would be.
+ */
+async function checkQuotaCeilings(): Promise<void> {
+  console.log("\n[4c] Teto da cota parlamentar (CEAP / CEAPS)");
+
+  // Range guard: the whole table, in one assertion. A transcription slip of a
+  // decimal point is the realistic failure, and it lands far outside this band.
+  const ceilings = allCeilings();
+  check(
+    `54 tetos publicados, todos entre R$ 20 mil e R$ 60 mil (${ceilings.length})`,
+    ceilings.length === 54 && ceilings.every((v) => v > 20_000 && v < 60_000),
+    "algum teto saiu da faixa plausível — provável erro de transcrição",
+  );
+
+  // The geographic spread is the reason this table exists. If it ever collapses,
+  // dividing by the ceiling stops buying anything and the pillar is back to
+  // ranking reais.
+  const camara = [AgentType.FEDERAL_DEPUTY, AgentType.SENATOR].map((type) => {
+    const values = ["DF", "RR", "AM", "SP"].map((uf) => quotaCeiling(type, uf) ?? 0);
+    return Math.max(...values) / Math.min(...values);
+  });
+  check(
+    `o teto ainda varia por UF (×${camara.map((r) => r.toFixed(2)).join(" / ×")})`,
+    camara.every((ratio) => ratio > 1.2),
+    "os tetos ficaram uniformes — dividir por eles deixou de corrigir a geografia",
+  );
+  check(
+    "DF é o teto mais baixo nas duas casas",
+    (quotaCeiling(AgentType.FEDERAL_DEPUTY, "DF") ?? Infinity) ===
+      Math.min(...ceilings.filter((v) => v > 40_000)) ||
+      (quotaCeiling(AgentType.SENATOR, "DF") ?? Infinity) === Math.min(...ceilings),
+    "o teto mais baixo deixou de ser Brasília — a tabela provavelmente foi trocada de casa",
+  );
+
+  // The document itself. A byte hash rather than parsed values: the file is a
+  // 2013 Word export whose text sits in object streams no dependency-free parser
+  // here can read, and the failure that matters — "the Senate changed it and
+  // nobody noticed" — is caught either way.
+  try {
+    const res = await fetch(SENADO_CEILING_SOURCE.url, {
+      headers: { "user-agent": "votto-check-sources" },
+    });
+    check(`CEAPS: o PDF do Senado ainda responde (${res.status})`, res.ok);
+    if (res.ok) {
+      const body = Buffer.from(await res.arrayBuffer());
+      const sha = createHash("sha256").update(body).digest("hex");
+      check(
+        `CEAPS: o documento não mudou desde ${SENADO_CEILING_SOURCE.verifiedAt} (${body.length.toLocaleString("pt-BR")} bytes)`,
+        sha === SENADO_CEILING_SOURCE.sha256,
+        "o Senado republicou a tabela da CEAPS — reconfira os 27 valores em " +
+          "src/lib/domain/quota-ceilings.ts e atualize SENADO_CEILING_SOURCE. " +
+          `sha256 atual: ${sha}`,
+      );
+    }
+  } catch (err) {
+    check(
+      "CEAPS: o PDF do Senado ainda responde",
+      false,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  note(
+    `a tabela do Senado é de ${SENADO_CEILING_SOURCE.publishedAt} — nove anos. ` +
+      "Não há tabela por UF mais recente em nenhum endereço do Senado; a do " +
+      "Ranking dos Políticos (2026) é reconstruída, não publicada.",
+  );
+}
+
 async function main(): Promise<void> {
   checkHelpers();
   checkQualityHelpers();
@@ -1058,6 +1233,7 @@ async function main(): Promise<void> {
   await checkCamara();
   await checkSenado();
   await checkQualitySources();
+  await checkQuotaCeilings();
   await checkSocialProviders();
 
   console.log(

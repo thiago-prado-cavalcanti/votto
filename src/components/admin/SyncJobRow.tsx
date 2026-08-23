@@ -42,7 +42,28 @@ export interface SyncJobView {
   lastOk: boolean | null;
   lastNote: string | null;
   lastItemsUpserted: number;
+  /**
+   * The job's resume cursor — but only when it is a sentence rather than a date.
+   *
+   * `metrics:quality` writes its refusal there ("não gravado — CAMARA sem
+   * custeio…"), which is the single most useful line the panel can show about
+   * that job, and it was displayed nowhere: the row read "OK · 0 registros
+   * atualizados" with no way to learn why. The incremental jobs store an ISO
+   * date here instead, which is noise, so the page filters those out.
+   */
+  note: string | null;
   runningSince: string | null;
+  /**
+   * The chain holds its own lock right now, so a job showing `runningSince` is
+   * almost certainly the step it is on — not a corpse.
+   *
+   * The distinction is the whole point: "Liberar lock" reads like a stop button
+   * and is not one. Released on a live job it stops nothing and removes the only
+   * guard against a second concurrent import of the same window — which for the
+   * theme jobs means concurrent tally updates on the same Theme. The panel used
+   * to offer that button beside a job the chain was actively running.
+   */
+  chainRunning: boolean;
   /**
    * The job's default look-back in days, when it takes one.
    *
@@ -56,7 +77,13 @@ export interface SyncJobView {
 
 /** Colour and wording for the job's last outcome. */
 function StatusBadge({ job }: { job: SyncJobView }) {
-  if (job.runningSince) return <Badge tone="neutral">Em execução desde {job.runningSince}</Badge>;
+  if (job.runningSince) {
+    return (
+      <Badge tone="neutral">
+        {job.chainRunning ? "Em execução pela cadeia" : "Em execução"} desde {job.runningSince}
+      </Badge>
+    );
+  }
   if (job.lastOk === null) return <Badge tone="gray">Nunca executado</Badge>;
   if (job.lastOk) return <Badge tone="positive">OK · {job.lastFinishedAt}</Badge>;
   return <Badge tone="negative">Falhou · {job.lastFinishedAt}</Badge>;
@@ -78,9 +105,12 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-ink">
+            {/* The space is not decorative: the number and the label are only
+                separated by margin, so a screen reader (and any copy-paste)
+                would otherwise read "01Câmara — partidos". */}
             <span className="mr-2 font-mono text-xs text-[var(--color-muted)]">
               {String(job.position).padStart(2, "0")}
-            </span>
+            </span>{" "}
             {job.label}
           </p>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">{job.description}</p>
@@ -107,11 +137,18 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
             >
               {job.upToDate ? "Na próxima: pulado" : "Na próxima: executado"}
             </span>
+            {" "}
             <span className="ml-2 text-[var(--color-muted)]">{job.planReason}</span>
           </p>
         </div>
         <StatusBadge job={job} />
       </div>
+
+      {job.note ? (
+        <p className="rounded-card bg-[#f1efe8] px-3 py-2 text-xs text-[var(--color-muted)]">
+          {job.note}
+        </p>
+      ) : null}
 
       {/* `runJob` clears `lastNote` on every success, so a note on a job that
           last succeeded can only mean the chain held it back or an operator
@@ -172,13 +209,23 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
           </SubmitButton>
         </form>
 
-        {job.runningSince ? (
+        {/* Only where the lock can actually be a corpse. While the chain is
+            running, the control that stops things is "Interromper" on the chain
+            — releasing the job's lock would stop nothing and unguard the run. */}
+        {job.runningSince && !job.chainRunning ? (
           <form action={lockAction}>
             <input type="hidden" name="job" value={job.name} />
             <Button type="submit" size="sm" variant="ghost">
               Liberar lock
             </Button>
           </form>
+        ) : null}
+        {job.runningSince && job.chainRunning ? (
+          <p className="text-xs text-[var(--color-muted)]">
+            A cadeia está neste job agora. Para parar, use <span className="text-ink">Interromper</span>{" "}
+            acima — liberar o lock daqui não interrompe o import, só remove a proteção contra uma
+            segunda execução simultânea.
+          </p>
         ) : null}
       </div>
     </li>

@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Container, Card, CardBody, AlignmentMeter } from "@/components/ui";
-import { PositioningChart } from "@/components/public/PositioningChart";
+import { PositioningPlate } from "@/components/public/PositioningPlate";
 import { AgentCard } from "@/components/public/AgentCard";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
@@ -17,7 +17,6 @@ import { toPublicParty, toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { getPartyPosition } from "@/lib/domain/positions";
 import { partyQualityScores } from "@/lib/domain/quality";
-import { POSITIONING_AXES } from "@/lib/indexes/positioning";
 import {
   citizenAgentAlignments,
   citizenPartyAlignments,
@@ -250,28 +249,13 @@ export default async function PartyDetailPage({
           <div>
             <h2 className="text-xl text-navy-900">Posicionamento</h2>
             <div className="mt-4">
-              <PositioningChart
+              <PositioningPlate
                 economic={position.economic}
                 social={position.social}
-                basis={position.basis}
+                detail={position.detail}
+                party={position.party}
               />
             </div>
-            {position.basis > 0 ? (
-              <dl className="mt-3 space-y-1 text-xs text-[var(--color-muted)]">
-                <div className="flex justify-between">
-                  <dt>
-                    {POSITIONING_AXES.economic.negative} ↔ {POSITIONING_AXES.economic.positive}
-                  </dt>
-                  <dd className="font-medium text-navy-800">{position.economic}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt>
-                    {POSITIONING_AXES.social.negative} ↔ {POSITIONING_AXES.social.positive}
-                  </dt>
-                  <dd className="font-medium text-navy-800">{position.social}</dd>
-                </div>
-              </dl>
-            ) : null}
           </div>
         </Reveal>
       </div>

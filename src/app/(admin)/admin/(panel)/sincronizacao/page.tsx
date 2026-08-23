@@ -23,6 +23,25 @@ import { env } from "@/lib/env";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sincronização" };
 
+/**
+ * A watermark worth printing.
+ *
+ * The incremental jobs store a resume cursor there — a bare `2026-08-22`, which
+ * tells an operator nothing. The batch indexes store a sentence explaining why
+ * they refused to write. Only the second kind reaches the page.
+ */
+function explanatoryWatermark(watermark: string | null | undefined): string | null {
+  if (!watermark) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(watermark.trim()) ? null : watermark;
+}
+
+/** `37 min` / `2h 14min`, for how long a run has been open. */
+function elapsed(from: Date, to: Date): string {
+  const minutes = Math.max(0, Math.round((to.getTime() - from.getTime()) / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}min`;
+}
+
 export default async function SyncPage() {
   // The plan is the same computation the chain runs, so the panel cannot drift
   // from what pressing the button would actually do.
@@ -34,6 +53,7 @@ export default async function SyncPage() {
   ]);
 
   const stateByName = new Map(states.map((s) => [s.name, s]));
+  const chainRunning = Boolean(chain?.runningSince);
   const now = new Date();
 
   const jobs: SyncJobView[] = plan.map((step, index) => {
@@ -51,7 +71,9 @@ export default async function SyncPage() {
       lastOk: state?.lastFinishedAt ? state.lastOk : null,
       lastNote: state?.lastNote ?? null,
       lastItemsUpserted: state?.lastItemsUpserted ?? 0,
+      note: explanatoryWatermark(state?.watermark),
       runningSince: state?.runningSince ? formatZoned(state.runningSince) : null,
+      chainRunning,
       // Only jobs that declare a window take one; the rest always import the
       // full current roster or the whole year.
       defaultDays: step.job.defaults.days ?? null,
@@ -141,9 +163,15 @@ export default async function SyncPage() {
                         {run.job === PIPELINE_JOB ? "Sincronização completa" : (run.job ?? run.source)}
                       </p>
                       <p className="text-xs text-[var(--color-muted)]">
-                        {formatZoned(run.startedAt)} ·{" "}
+                        {formatZoned(run.startedAt)}
+                        {/* A run still open needs its age, not just its counts: a
+                            job that emits progress every 25 records shows zero
+                            for its first stretch, and zero with no elapsed time
+                            beside it is what makes a healthy import look dead. */}
+                        {run.finishedAt === null ? ` · há ${elapsed(run.startedAt, now)}` : ""} ·{" "}
                         {run.itemsUpserted.toLocaleString("pt-BR")} atualizados de{" "}
                         {run.itemsSeen.toLocaleString("pt-BR")} vistos
+                        {run.finishedAt === null ? " (parcial)" : ""}
                         {run.note ? ` · ${run.note}` : ""}
                       </p>
                     </div>

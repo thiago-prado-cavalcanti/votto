@@ -33,14 +33,18 @@
  *     *wrong* figure without it, not merely a thinner one. A failed `needs`
  *     dependency holds the dependent back, and the chain says so.
  *
- * `needs` is used exactly once, by `metrics:quality`: it ranks each agent inside
- * their house, so an import that delivered half the roll calls does not give a
- * thinner reading — it tells every agent they are in a cohort they are not in.
+ * `needs` is used by the two batch indexes and nothing else, both times on the
+ * vote jobs, because both read the whole cohort rather than one agent:
+ * `metrics:quality` ranks each agent inside their house, so half a roll-call
+ * import tells every agent they are in a cohort they are not in; and
+ * `metrics:positioning` weighs each theme by the division it produced on the
+ * floor, so the same half import hands every theme the wrong weight.
  */
 import * as camara from "@/lib/integration/camara";
 import * as senado from "@/lib/integration/senado";
 import { syncSummaries } from "@/lib/integration/summaries";
 import { syncQuality } from "@/lib/integration/quality";
+import { syncPositioning } from "@/lib/integration/positioning";
 import type { SyncOptions, SyncResult, SyncStep } from "@/lib/integration/importer";
 import { ImportSource } from "@/generated/prisma";
 
@@ -265,6 +269,24 @@ export const SYNC_JOBS: SyncJobDefinition[] = [
     after: ["camara:mandate", "senado:mandate", "camara:expenses", "senado:expenses"],
     defaults: {},
     run: syncQuality,
+  },
+  {
+    name: "metrics:positioning",
+    source: ImportSource.MANUAL,
+    label: "Posicionamento",
+    description:
+      "Recalcula o posicionamento nos dois eixos de cada agente e de cada partido, e o governismo. Sem rede.",
+    // O segundo `needs` do registro, e pela mesma razão do primeiro: o peso de
+    // um tema é a divisão que ele produziu no plenário, então um import parcial
+    // de votações não dá uma leitura mais fina — dá pesos errados para todo
+    // mundo. E é dos jobs de votação que vem a orientação do bloco Governo, sem
+    // a qual o teste de falseamento contra o governismo não pode nem rodar.
+    needs: ["camara:votes", "senado:votes"],
+    // Depois dos resumos porque é a passagem de IA que classifica os temas nos
+    // dois eixos, e um tema sem classificação não entra no índice.
+    after: ["ai:summaries", "metrics:quality"],
+    defaults: {},
+    run: syncPositioning,
   },
 ];
 

@@ -17,6 +17,7 @@ import type { CSSProperties } from "react";
 import { Badge } from "@/components/ui";
 import { alignmentInk } from "@/lib/domain/tone";
 import { QUALITY_PILLARS } from "@/lib/indexes/quality";
+import { POSITIONING_AXES } from "@/lib/indexes/positioning";
 
 /** One vote in the ledger, as the tag the rest of the site prints it as. */
 function VoteMark({ value }: { value: "YES" | "NO" | "ABSTENTION" }) {
@@ -232,33 +233,149 @@ function Axis({
 }
 
 /**
- * The two axes the positioning index is built on, named and explained.
+ * Os dois eixos em que o posicionamento é medido, nomeados e definidos.
  *
- * Deliberately *not* a left↔right scale: the single spectrum score exists in the
- * code but is not published (CLAUDE.md §3.2), and a figure that showed it here
- * would promise a verdict the platform has decided not to pronounce yet.
+ * As definições são **lidas de `POSITIONING_AXES`**, não reescritas aqui — mesma
+ * disciplina que `QualityPillars` já segue com o registro de pilares, e pelo
+ * mesmo motivo: a cópia local dos rótulos de qualidade divergiu na primeira
+ * renomeação. Aqui a chance de divergir é maior ainda, porque as definições são
+ * traduções literais do Chapel Hill Expert Survey e o valor delas está em serem
+ * exatamente aquilo.
+ *
+ * Deliberadamente **não** é uma escala esquerda↔direita: o veredito de cinco
+ * faixas existe no código e não é publicado (CLAUDE.md §3.2), e uma figura que o
+ * mostrasse aqui prometeria uma sentença que a plataforma decidiu não pronunciar.
  */
 export function PositioningAxes() {
   return (
     <figure className="border-t-2 border-navy-900">
-      <figcaption className="pb-1 pt-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-navy-600">
-        Os dois eixos de valor
+      <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-1 pt-2.5">
+        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-navy-600">
+          Os dois eixos de valor
+        </span>
+        <span className="text-xs text-[var(--color-muted)]">
+          Definições do Chapel Hill Expert Survey
+        </span>
       </figcaption>
 
       <Axis
-        label="Eixo econômico"
-        negative="Estado"
-        positive="Mercado"
-        question="O quanto uma decisão entrega ao poder público, e o quanto entrega à iniciativa privada."
+        label={POSITIONING_AXES.economic.label}
+        negative={POSITIONING_AXES.economic.negative}
+        positive={POSITIONING_AXES.economic.positive}
+        question={POSITIONING_AXES.economic.definition}
         delay={360}
       />
       <Axis
-        label="Eixo social"
-        negative="Comunidade"
-        positive="Indivíduo"
-        question="O quanto ela protege o coletivo, e o quanto protege a escolha de cada um."
+        label={POSITIONING_AXES.social.label}
+        negative={POSITIONING_AXES.social.negative}
+        positive={POSITIONING_AXES.social.positive}
+        question={POSITIONING_AXES.social.definition}
         delay={480}
       />
+    </figure>
+  );
+}
+
+/**
+ * O peso de uma proposição, mostrado como a conta que ele é.
+ *
+ * Existe porque a correção mais importante do índice é invisível numa frase: um
+ * tema em que a Câmara votou 470 a 21 não separa ninguém, e antes ele pesava
+ * tanto quanto um votado 260 a 231. A tabela mostra o mesmo voto valendo coisas
+ * diferentes conforme a votação que o cercou — que é a ideia toda, e é
+ * conferível com um lápis.
+ *
+ * Os placares são reais em forma, não em identidade: são as três formas que uma
+ * votação da Câmara assume (aclamação, disputa, pauta do Executivo), e o que a
+ * tabela afirma é a REGRA, não um caso.
+ */
+const WEIGHTS: Array<{
+  shape: string;
+  tally: string;
+  discrimination: string;
+  government: string;
+  weight: string;
+}> = [
+  {
+    shape: "Aprovada por aclamação",
+    tally: "470 × 21",
+    discrimination: "0,09",
+    government: "—",
+    weight: "0",
+  },
+  {
+    shape: "Disputada, sem orientação do governo",
+    tally: "260 × 231",
+    discrimination: "0,94",
+    government: "0,10",
+    weight: "0,85",
+  },
+  {
+    shape: "Disputada, na pauta do Executivo",
+    tally: "290 × 190",
+    discrimination: "0,79",
+    government: "0,88",
+    weight: "0,09",
+  },
+];
+
+export function PositioningWeights() {
+  return (
+    <figure className="border-t-2 border-navy-900">
+      <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-3 pt-2.5">
+        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-navy-600">
+          Quanto vale uma votação
+        </span>
+        <span className="text-xs text-[var(--color-muted)]">O mesmo voto, três placares</span>
+      </figcaption>
+
+      <div className="-mx-1 overflow-x-auto px-1">
+        <table className="w-full min-w-[27rem] border-collapse text-left">
+          <thead>
+            <tr className="border-t border-line">
+              <th className="py-2 pr-4 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-navy-500">
+                Como a casa votou
+              </th>
+              <th className="py-2 pr-3 text-right text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-navy-500">
+                Divide?
+              </th>
+              <th className="py-2 pr-3 text-right text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-navy-500">
+                É do governo?
+              </th>
+              <th className="py-2 text-right text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-navy-500">
+                Peso
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {WEIGHTS.map((row) => (
+              <tr key={row.shape} className="border-t border-line align-middle">
+                <td className="py-2.5 pr-4 text-[0.86rem] leading-snug text-navy-700">
+                  {row.shape}
+                  <span className="vt-num ml-2 text-[0.78rem] text-[var(--color-muted)]">
+                    {row.tally}
+                  </span>
+                </td>
+                <td className="vt-num py-2.5 pr-3 text-right text-[0.92rem] text-navy-800">
+                  {row.discrimination}
+                </td>
+                <td className="vt-num py-2.5 pr-3 text-right text-[0.92rem] text-navy-800">
+                  {row.government}
+                </td>
+                <td className="vt-num py-2.5 text-right text-[1.05rem] leading-none text-navy-900">
+                  {row.weight}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="border-t-2 border-navy-900 pt-4 text-[0.82rem] leading-relaxed text-[var(--color-muted)]">
+        Uma votação que quase ninguém disputou não diz onde alguém está. Uma que a
+        coalizão decidiu diz de que lado do governo a pessoa está — que é uma coisa
+        real, mas é outra coisa.
+      </p>
     </figure>
   );
 }

@@ -20,7 +20,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { QUALITY_PILLARS } from "@/lib/indexes/quality";
+import { QUALITY_METHODOLOGY, QUALITY_PILLARS } from "@/lib/indexes/quality";
 
 export function PerformanceInfo() {
   const [open, setOpen] = useState(false);
@@ -109,7 +109,7 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
         </dl>
 
         <h3 className="mt-6 text-[0.6875rem] font-semibold uppercase tracking-[0.2em] text-navy-500">
-          Três coisas que vale saber
+          O que vale saber
         </h3>
 
         <dl className="mt-3 divide-y divide-[var(--color-line)] border-y border-line">
@@ -129,6 +129,14 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
             todo o resto no rodapé — e foi o que aconteceu na versão anterior, em que o
             deputado mediano marcava 5 de 100. A consequência é deliberada: o primeiro
             projeto conta mais que o quadringentésimo.
+          </Point>
+          <Point term="Protocolar projetos não leva ao topo">
+            Apresentar um projeto custa uma assinatura; fazer um projeto andar, não.
+            Por isso a apresentação satura: sozinha, ela chega a{" "}
+            <strong className="font-medium text-navy-900">80 de 100</strong> nessa
+            medida e para. Os últimos vinte pontos só vêm de desfecho — projeto que
+            avançou de verdade — ou de relatoria. É a defesa contra encher o gabinete
+            de proposições que ninguém vai votar.
           </Point>
           <Point term="Custo político é fração da cota, não reais">
             O teto da cota varia de R$ 41,6 mil no Distrito Federal a R$ 58,5 mil em
@@ -152,9 +160,25 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
           </Point>
         </dl>
 
+        {/* The edition, stated rather than implied. Fixed goalposts stop a score
+            moving when somebody else changes; this is what lets a reader tell
+            that a score moved because WE changed the rules. */}
+        <p className="mt-5 text-[0.8rem] leading-[1.55] text-navy-500">
+          Metodologia{" "}
+          <span className="vt-num text-navy-700">{QUALITY_METHODOLOGY.version}</span>, em
+          vigor desde{" "}
+          {new Date(`${QUALITY_METHODOLOGY.changedAt}T12:00:00`).toLocaleDateString("pt-BR", {
+            day: "2-digit",
+            month: "long",
+            year: "numeric",
+          })}
+          . Pesos, metas e regras de corte só mudam com uma edição nova — e toda nota
+          guarda a edição que a calculou.
+        </p>
+
         <button
           onClick={onClose}
-          className="mt-6 w-full rounded-card border border-navy-300 px-4 py-2.5 text-sm font-medium text-navy-800 transition-colors hover:border-navy-600 hover:text-navy-900"
+          className="mt-5 w-full rounded-card border border-navy-300 px-4 py-2.5 text-sm font-medium text-navy-800 transition-colors hover:border-navy-600 hover:text-navy-900"
         >
           Entendi
         </button>
@@ -169,7 +193,7 @@ const EXPLANATION: Record<string, string> = {
   attendance:
     "Votações nominais a que compareceu, entre as que aconteceram enquanto ocupava a cadeira. Afastamento oficial é descontado, e sessão que ele mesmo presidiu também — quem preside está impedido de votar.",
   production:
-    "O que o parlamentar pôs para andar na casa: projetos que apresentou, contando só os que legislam de fato (PL, PEC, PLP, PDL) e não requerimentos, mais os que relatou. Os que avançaram contam em dobro.",
+    "O que o parlamentar pôs para andar na casa: projetos que apresentou, contando só os que legislam de fato (PL, PEC, PLP, PDL) e não requerimentos, mais os que relatou. Os que avançaram contam em dobro, e só apresentar tem teto.",
   cost: "Fatia da cota parlamentar a que tem direito que foi efetivamente usada. Aqui, gastar menos pontua mais.",
 };
 

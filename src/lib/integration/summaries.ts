@@ -13,7 +13,12 @@
  *
  * Runs after the theme jobs so it enriches what they just brought in.
  */
-import { summarizeTheme } from "@/lib/ai/summarize";
+import {
+  summarizeTheme,
+  CODING_RUNS,
+  CODING_TEMPERATURE,
+  type ThemeBrief,
+} from "@/lib/ai/summarize";
 import { db } from "@/lib/db";
 import { env, isAiEnabled } from "@/lib/env";
 import {
@@ -40,8 +45,24 @@ const REQUEST_DELAY = 150;
  */
 const RETRY_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Below this model-reported confidence the axes are dropped as noise. */
+/**
+ * Abaixo desta confiança o eixo é descartado como ruído.
+ *
+ * Agora **por eixo**, não por proposição: uma reforma tributária pode ter
+ * direção econômica óbvia e nenhuma carga de costumes, e a versão anterior
+ * descartava ou aceitava os dois juntos por um único número.
+ */
 const MIN_AXIS_CONFIDENCE = 0.35;
+
+/**
+ * Versão do formato da classificação gravada em `Theme.dimensions`.
+ *
+ * Lida por `parseDimensions` em `src/lib/indexes/positioning.ts`, que continua
+ * aceitando o formato 1 (dois números soltos) e o marca como `legacy` — é assim
+ * que `npm run reposition` consegue dizer que fatia do índice ainda repousa
+ * sobre tags que fundem direção e magnitude.
+ */
+const DIMENSIONS_VERSION = 2;
 
 /** Read the classification labels stored on a theme, for extra model context. */
 function classificationLabels(value: Prisma.JsonValue | null): string[] {
@@ -127,11 +148,9 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
       continue;
     }
 
-    // Axes are written only when the model is reasonably sure AND no editor has
-    // tagged the theme. A low-confidence guess would pull every citizen's
-    // position toward noise, which is worse than leaving the theme untagged.
-    const acceptAxes =
-      brief.confidence >= MIN_AXIS_CONFIDENCE && theme.dimensionsSource !== "EDITOR";
+    // A classificação só é escrita quando nenhum editor tocou o tema: um
+    // julgamento humano nunca é sobrescrito por uma passagem de modelo.
+    const acceptAxes = theme.dimensionsSource !== "EDITOR";
 
     await db.theme.update({
       where: { id: theme.id },
@@ -140,16 +159,59 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
         plainSummary: brief.plainSummary,
         aiModel: env.anthropicSummaryModel,
         aiUpdatedAt: new Date(),
-        ...(acceptAxes
-          ? {
-              dimensions: { economic: brief.economic, social: brief.social },
-              dimensionsSource: "AI",
-            }
-          : {}),
+        ...(acceptAxes ? { dimensions: buildDimensions(brief), dimensionsSource: "AI" } : {}),
       },
     });
     c.upserted++;
   }
 
   return { itemsSeen: c.seen, itemsUpserted: c.upserted };
+}
+
+/**
+ * Montar a classificação gravada a partir do que o modelo devolveu.
+ *
+ * Duas decisões carregam peso aqui:
+ *
+ * - **Uma exclusão é gravada, não descartada.** "Esta proposição é uma
+ *   homenagem" é informação: sem ela, a próxima passagem paga de novo pela mesma
+ *   conclusão, e o índice não tem como dizer quantas proposições saíram e por
+ *   quê — que é metade do que torna um filtro mecânico defensável contra a
+ *   acusação de escolher votações a dedo.
+ * - **Um eixo abaixo do piso de confiança vira `null`, e o outro sobrevive.**
+ *   Antes um único número de confiança decidia os dois juntos, então uma reforma
+ *   tributária com direção econômica evidente perdia a classificação inteira por
+ *   causa da dúvida sobre costumes.
+ */
+function buildDimensions(brief: ThemeBrief): Prisma.InputJsonValue {
+  const keep = (axis: { direction: number; magnitude: number; confidence: number } | null) =>
+    axis && axis.confidence >= MIN_AXIS_CONFIDENCE ? axis : null;
+
+  const economic = keep(brief.economic);
+  const social = keep(brief.social);
+
+  // Sem nenhum eixo confiável e sem motivo declarado, o motivo é a dúvida —
+  // dito explicitamente para que a revisão humana tenha o que filtrar.
+  const reason = brief.exclusion ?? (economic || social ? null : "ambiguous");
+
+  return {
+    version: DIMENSIONS_VERSION,
+    scoreable: reason === null && Boolean(economic || social),
+    reason,
+    economic,
+    social,
+    salience: brief.salience,
+    yesMeans: brief.yesMeans || null,
+    evidence: brief.evidence,
+    coding: {
+      model: env.anthropicSummaryModel,
+      temperature: CODING_TEMPERATURE,
+      runs: CODING_RUNS,
+      // `null` enquanto houver uma única passagem: consistência entre execuções
+      // é uma medida, e com uma execução não há o que medir. O protocolo de
+      // auditoria (docs/posicionamento.md) exige duas antes de a faixa voltar.
+      consistency: CODING_RUNS > 1 ? 1 : null,
+      humanReviewed: false,
+    },
+  };
 }

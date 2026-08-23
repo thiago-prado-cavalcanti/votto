@@ -20,6 +20,7 @@ import {
   isAdvancedSituation,
   describeCohort,
   QUALITY_PILLARS,
+  QUALITY_METHODOLOGY,
   type Quality,
   type QualityHouse,
   type QualityInputs,
@@ -126,6 +127,17 @@ export async function recomputeQualityIndex(
     name: string;
     score: number | null;
     pillars: Quality["pillars"];
+    house: House;
+    /**
+     * Share of the published ceiling drawn per month, or null when the cost
+     * pillar had nothing to read.
+     *
+     * Carried out purely as a **diagnostic**: the Senate's ceiling table is nine
+     * years old (`quota-ceilings.ts`), so senators' utilisation is expected to
+     * read high, and a median that drifts toward or past 1.0 for one house and
+     * not the other is how a stale table shows itself. Nothing scores on it.
+     */
+    costUtilisation: number | null;
   }>;
   /** Shape of each (pillar, cohort) — the diagnostic `requality` prints. */
   shapes: Array<{ pillar: string; cohort: string; shape: NonNullable<ReturnType<typeof describeCohort>> }>;
@@ -333,6 +345,17 @@ export async function recomputeQualityIndex(
     name: string;
     score: number | null;
     pillars: Quality["pillars"];
+    house: House;
+    /**
+     * Share of the published ceiling drawn per month, or null when the cost
+     * pillar had nothing to read.
+     *
+     * Carried out purely as a **diagnostic**: the Senate's ceiling table is nine
+     * years old (`quota-ceilings.ts`), so senators' utilisation is expected to
+     * read high, and a median that drifts toward or past 1.0 for one house and
+     * not the other is how a stale table shows itself. Nothing scores on it.
+     */
+    costUtilisation: number | null;
   }> = [];
   const byId = new Map(agents.map((a) => [a.id, a]));
 
@@ -342,7 +365,19 @@ export async function recomputeQualityIndex(
 
     const quality = computeQuality(row.inputs, houseKey(row.house));
     const name = `${agent.firstName} ${agent.lastName}`.trim();
-    scored.push({ id: row.id, kid: agent.kid, name, score: quality.score, pillars: quality.pillars });
+    const cost = row.inputs.cost;
+    scored.push({
+      id: row.id,
+      kid: agent.kid,
+      name,
+      score: quality.score,
+      pillars: quality.pillars,
+      house: row.house,
+      costUtilisation:
+        cost && cost.ceiling && cost.months > 0 && cost.documents > 0
+          ? cost.spent / cost.months / cost.ceiling
+          : null,
+    });
 
     if (opts.dryRun || !measurableHouses.has(row.house)) continue;
     await db.publicAgent.update({
@@ -353,7 +388,14 @@ export async function recomputeQualityIndex(
         // the reading at render time instead of replaying a string frozen at
         // recompute. Without them a wording or rounding fix only reaches a
         // citizen after the next full recompute.
-        qualityPillars: { pillars: quality.pillars, inputs: row.inputs } as unknown as object,
+        // `version` stamps which edition of the methodology produced this row, so
+        // a score that moved because WE changed the rules is distinguishable
+        // from one that moved because the member did. See QUALITY_METHODOLOGY.
+        qualityPillars: {
+          version: QUALITY_METHODOLOGY.version,
+          pillars: quality.pillars,
+          inputs: row.inputs,
+        } as unknown as object,
         qualityComputedAt: new Date(),
       },
     });

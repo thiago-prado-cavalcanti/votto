@@ -20,6 +20,8 @@ import "./load-env";
 import { db } from "@/lib/db";
 import { recomputeQualityIndex } from "@/lib/integration/quality";
 import {
+  GOALPOSTS,
+  QUALITY_METHODOLOGY,
   QUALITY_PILLARS,
   qualityBand,
   qualityBandLabel,
@@ -73,7 +75,10 @@ async function main(): Promise<void> {
 
   const { scored, shapes, skippedHouses, blockedBy } = await recomputeQualityIndex({ dryRun });
 
-  console.log(`▶ ${scored.length.toLocaleString("pt-BR")} agentes em exercício\n`);
+  console.log(
+    `▶ ${scored.length.toLocaleString("pt-BR")} agentes em exercício · ` +
+      `metodologia ${QUALITY_METHODOLOGY.version} (${QUALITY_METHODOLOGY.changedAt})\n`,
+  );
   console.log(render("Antes:", tally(before.map((a) => a.qualityScore)), before.length));
   console.log("");
   console.log(
@@ -162,6 +167,34 @@ async function main(): Promise<void> {
           `max/med=${(shape.max / (shape.median || 1)).toFixed(1)}×${flag}`,
       );
     }
+  }
+
+  // Utilização da cota por casa. Diagnóstico, não nota — existe porque a tabela
+  // da CEAPS que o Senado publica é de 2017 (`domain/quota-ceilings.ts`), então
+  // a utilização dos senadores é lida contra um teto provavelmente baixo. O
+  // sintoma é a mediana do Senado destoar da mediana da Câmara: as duas casas
+  // gastam contra tetos diferentes, mas não há razão para que a FRAÇÃO que
+  // consomem seja sistematicamente diferente. Se destoar, o teto está errado —
+  // não os senadores.
+  console.log("\n  Utilização da cota, por casa (diagnóstico do teto):");
+  for (const house of ["CAMARA", "SENADO"] as const) {
+    const values = scored
+      .filter((s) => s.house === house)
+      .map((s) => s.costUtilisation)
+      .filter((v): v is number => v !== null)
+      .sort((a, b) => a - b);
+    if (values.length === 0) {
+      console.log(`    ${house.padEnd(8)} sem medição de custo`);
+      continue;
+    }
+    const at = (q: number) => values[Math.min(values.length - 1, Math.floor(values.length * q))];
+    const pinned = values.filter((v) => v >= GOALPOSTS.cost.floor).length;
+    const flag = pinned / values.length > 0.25 ? "  ⚠ teto provavelmente defasado" : "";
+    console.log(
+      `    ${house.padEnd(8)} n=${String(values.length).padStart(3)} · ` +
+        `mediana ${(at(0.5) * 100).toFixed(0)}% · p10 ${(at(0.1) * 100).toFixed(0)}% · ` +
+        `p90 ${(at(0.9) * 100).toFixed(0)}% · ${((pinned / values.length) * 100).toFixed(0)}% no piso${flag}`,
+    );
   }
 
   if (dryRun) console.log("\n  (--dry: nada foi gravado)");

@@ -33,7 +33,7 @@ export function parseQualityPillars(value: unknown): QualityPillarResult[] {
   // of pillars carrying pre-formatted strings; it is still read so pages keep
   // working between a deploy and the next recompute.
   const wrapper = value && typeof value === "object" && !Array.isArray(value)
-    ? (value as { pillars?: unknown; inputs?: unknown })
+    ? (value as { pillars?: unknown; inputs?: unknown; version?: unknown })
     : null;
   const list = Array.isArray(value) ? value : Array.isArray(wrapper?.pillars) ? wrapper.pillars : [];
   const inputs = wrapper?.inputs as QualityInputs | undefined;
@@ -68,6 +68,20 @@ export function parseQualityPillars(value: unknown): QualityPillarResult[] {
           : null),
     };
   });
+}
+
+/**
+ * Which edition of the methodology produced a stored score.
+ *
+ * Null for a row written before editions were stamped (`QUALITY_METHODOLOGY`),
+ * which is a true statement — we do not know, so the page says nothing rather
+ * than claiming the current edition for a number the current edition never
+ * computed.
+ */
+export function parseQualityVersion(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const version = (value as { version?: unknown }).version;
+  return typeof version === "string" && version.length > 0 ? version : null;
 }
 
 /**

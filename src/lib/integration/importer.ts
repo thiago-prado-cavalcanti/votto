@@ -778,11 +778,42 @@ export interface RollCallInput {
    * nor the absentees (they were there) — see `RollCall.presidingAgentId`.
    */
   presidingAgentId?: string | null;
+  /**
+   * Orientação de bancada dos pseudo-blocos `Governo` e `Oposição`, quando a
+   * casa as publica (Câmara `/votacoes/{id}/orientacoes`).
+   *
+   * Elas não dizem como ninguém votou — dizem o que a liderança pediu. É
+   * exatamente isso que as torna o controle de que o índice de posicionamento
+   * precisa: a primeira dimensão das votações nominais brasileiras é
+   * governo↔oposição, e sem saber onde essa linha estava não há como afirmar que
+   * um eixo econômico não é ela com outro nome (Zucco & Lauderdale 2011).
+   *
+   * `undefined` e `null` significam a mesma coisa aqui — não publicada — e é
+   * diferente de bancada liberada, que também chega como null. As duas juntas
+   * apenas dizem que essa votação não serve para medir contaminação.
+   */
+  governmentPosition?: VoteValue | null;
+  oppositionPosition?: VoteValue | null;
 }
 
 export async function recordRollCall(input: RollCallInput): Promise<number> {
-  const { source, externalRef, house, occurredAt, themeId, participants, presidingAgentId } = input;
+  const {
+    source,
+    externalRef,
+    house,
+    occurredAt,
+    themeId,
+    participants,
+    presidingAgentId,
+    governmentPosition,
+    oppositionPosition,
+  } = input;
   if (participants.length === 0) return 0;
+
+  const orientation = {
+    governmentPosition: governmentPosition ?? null,
+    oppositionPosition: oppositionPosition ?? null,
+  };
 
   const rollCall = await db.rollCall.upsert({
     where: { source_externalRef: { source, externalRef } },
@@ -793,8 +824,14 @@ export async function recordRollCall(input: RollCallInput): Promise<number> {
       occurredAt,
       themeId: themeId ?? null,
       presidingAgentId: presidingAgentId ?? null,
+      ...orientation,
     },
-    update: { occurredAt, themeId: themeId ?? null, presidingAgentId: presidingAgentId ?? null },
+    update: {
+      occurredAt,
+      themeId: themeId ?? null,
+      presidingAgentId: presidingAgentId ?? null,
+      ...orientation,
+    },
     select: { id: true },
   });
 

@@ -20,9 +20,12 @@
  * drawing 79% spends R$16,737. In reais the careful one looks worse. Only the
  * rate reads it correctly.
  *
- * No Brazilian index does this. Every published ranking of parliamentary
- * spending found — Congresso em Foco, Poder360, Meu Congresso Nacional — ranks
- * absolute reais and inherits the geographic bias undisclosed.
+ * One other Brazilian index does this: the Ranking dos Políticos scores
+ * `(1 - gasto/teto) x 10` against the same per-state ceilings (Manual de
+ * Metodologia 2026, p. 15-16). An earlier version of this comment claimed no
+ * Brazilian index did, which was wrong. The rankings that do inherit the
+ * geographic bias undisclosed are the ones built on absolute reais — Congresso
+ * em Foco, Poder360, Meu Congresso Nacional.
  *
  * ── Provenance ──────────────────────────────────────────────────────────────
  * Câmara (CEAP): Ato da Mesa nº 43/2009, Anexo Único, as updated by Ato da Mesa
@@ -46,14 +49,56 @@
  *    larger than this table says, and they read as spending a higher share of it
  *    than they do. Correcting it needs the roster of posts per month, which is
  *    not imported yet.
- * 2. **The Senate table is the one the Senate publishes**, whose PDF metadata
- *    dates to 2017 while the house has applied increases since. No current
- *    per-state Senate table could be retrieved from any Senate source, and a
- *    compounded estimate would be presented as official when it is not. The
- *    senators' rate is therefore read against a floor that is probably low,
- *    which flatters nobody and understates everybody equally.
+ * 2. **The Senate table is the one the Senate publishes, and it is nine years
+ *    old.** Re-verified against the live source on 2026-08-23: the PDF below
+ *    still carries these exact 27 values, and its own metadata still reads
+ *    `Microsoft Word 2013 / CreationDate 2017-06-19`. It is stale, and no
+ *    current per-state Senate table exists at any Senate address.
+ *
+ *    The Ranking dos Políticos publishes a 2026 Senate table 19-96% higher than
+ *    this one, credited to "Senado Federal". It is **not** a Senate table: its
+ *    27 values are reproduced exactly (to the centavo) by
+ *
+ *        CEAPS_2026 = max(this table x 1.192477, CEAP_2026 x 0.879121)
+ *
+ *    — 23 of 27 states sit on the second branch at a ratio constant to eight
+ *    decimal places, which no independently-set fee schedule does. It is a
+ *    reconstruction presented as a source, so it is not adopted here: publishing
+ *    somebody's model of the ceiling as the ceiling is the same error as
+ *    publishing an estimate as official, which is what this note already
+ *    refused to do.
+ *
+ *    The consequence is real and stated rather than hidden: senators' cost is
+ *    read against a floor that is probably low, so their utilisation rate reads
+ *    high and the pillar understates them. `npm run requality` prints median
+ *    utilisation per house precisely so the size of that gap is visible, and
+ *    `npm run check:sources` fails the day the Senate republishes the document.
  */
 import { AgentType } from "@/generated/prisma";
+
+/**
+ * The Senate document `SENADO_CEILING` was transcribed from, and its fingerprint
+ * at transcription time.
+ *
+ * `npm run check:sources` re-downloads it and compares. The hash is over the
+ * whole PDF rather than its parsed values because the file is a 2013 Word export
+ * whose text lives in object streams that no dependency-free parser here can
+ * read — but the failure mode that matters is "the Senate changed the document
+ * and nobody noticed", and a byte hash catches that. It is byte-stable across
+ * repeated downloads (verified three times, 2026-08-23).
+ *
+ * A republish that only re-stamps the timestamp will also fail this check. That
+ * is the correct outcome: it costs one look at the PDF, and the alternative is
+ * scoring 81 named senators against a ceiling that moved.
+ */
+export const SENADO_CEILING_SOURCE = {
+  url: "https://www12.senado.leg.br/transparencia/leg/pdf/CotaExercicioAtivParlamSenadores.pdf",
+  sha256: "92d258e2a9f6817ea116ff18b47d8a2e163ab46d3fcefac00c96a69468b8e88c",
+  bytes: 200_272,
+  /** The document's own CreationDate, not ours. */
+  publishedAt: "2017-06-19",
+  verifiedAt: "2026-08-23",
+} as const;
 
 /** Câmara dos Deputados — CEAP, R$/month by state. */
 const CAMARA_CEILING: Record<string, number> = {
@@ -90,7 +135,13 @@ export function quotaCeiling(type: AgentType, state: string | null): number | nu
   return null;
 }
 
-/** Every ceiling in the table, for the contract check that guards its range. */
+/**
+ * Every ceiling in both tables, for the contract check that guards their range
+ * (`checkQuotaCeilings` in `scripts/check-sources.ts`).
+ *
+ * The doc comment here used to promise that check while nothing called this
+ * function. It does now.
+ */
 export function allCeilings(): number[] {
   return [...Object.values(CAMARA_CEILING), ...Object.values(SENADO_CEILING)];
 }

@@ -1,0 +1,126 @@
+/**
+ * Checagem da matemática do índice de posicionamento (CLAUDE.md §3.2).
+ *
+ *   npm run check:positioning
+ *
+ * Sem banco e sem rede: só as funções puras, contra casos construídos à mão em
+ * que a resposta certa é conhecida de antemão. Gêmeo de `check:identity` e
+ * `check:vote`, e existe pelo mesmo motivo — este índice publica um número ao
+ * lado do nome de uma pessoa real, e as propriedades que o tornam defensável são
+ * propriedades que dá para afirmar num teste:
+ *
+ *   - cobertura insuficiente devolve `null`, **nunca 0** (zero é a coordenada de
+ *     um centrista, e foi assim que partidos incontroversos foram parar no
+ *     centro);
+ *   - uma votação unânime pesa zero;
+ *   - o encolhimento partidário nunca desloca uma bancada mais que um erro
+ *     padrão da própria média (o limitador do problema Clemente);
+ *   - a coesão usa o índice de concordância e não o de Rice, então abstenção em
+ *     bloco não é lida como colapso.
+ *
+ * Um `✗` aqui é uma regressão numa promessa publicada, não um detalhe de
+ * implementação.
+ */
+import {
+  computePosition, discrimination, itemWeight, parseDimensions, bandGate,
+  type ScorableVote,
+} from "@/lib/indexes/positioning";
+import { pool, betweenVariance, agreementIndex, excessCohesion, expectedRandomAgreement } from "@/lib/indexes/pooling";
+import { spearman, pearson, anchorFor } from "@/lib/domain/anchors";
+
+let fails = 0;
+const ok = (name: string, cond: boolean, extra = "") => {
+  if (!cond) { fails++; console.log(`  ✗ ${name} ${extra}`); } else console.log(`  ✓ ${name} ${extra}`);
+};
+
+console.log("\nDiscriminação");
+ok("unânime = 0", discrimination({ yes: 470, no: 0, contamination: null }) === 0);
+ok("90×10 ≈ 0,20", Math.abs(discrimination({ yes: 90, no: 10, contamination: null }) - 0.2) < 1e-9);
+ok("meio a meio = 1", discrimination({ yes: 50, no: 50, contamination: null }) === 1);
+
+console.log("\nPeso do item");
+const tag = { direction: 1 as const, magnitude: 1, confidence: 1 };
+ok("abaixo do corte de discriminação → 0", itemWeight(tag, { yes: 95, no: 5, contamination: 0 }) === 0);
+ok("contaminação total → 0", itemWeight(tag, { yes: 50, no: 50, contamination: 1 }) === 0);
+ok("contaminação desconhecida não zera", itemWeight(tag, { yes: 50, no: 50, contamination: null }) === 1);
+
+console.log("\nFormato das tags");
+const v1 = parseDimensions({ economic: -0.8, social: 0 });
+ok("formato 1 vira legacy", v1.legacy && v1.scoreable && v1.economic?.direction === -1 && v1.social === null);
+const v2 = parseDimensions({ version: 2, scoreable: true, reason: null,
+  economic: { direction: 1, magnitude: 0.5, confidence: 0.9 }, social: null, salience: 0.3 });
+ok("formato 2 lido", !v2.legacy && v2.economic?.magnitude === 0.5);
+ok("excluído não pontua", parseDimensions({ version: 2, reason: "honorific", economic: { direction: 1 } }).scoreable === false);
+
+console.log("\nPosição");
+const mk = (i: number, value: "YES" | "NO", dir: -1 | 1, yes: number, no: number): ScorableVote => ({
+  value, themeKey: `t${i}`, stats: { yes, no, contamination: 0 },
+  dimensions: parseDimensions({ version: 2, scoreable: true, reason: null,
+    economic: { direction: dir, magnitude: 1, confidence: 1 }, social: null, salience: 0.5 }),
+});
+// Seis votações divididas, todas marcadas +1, todas votadas SIM → +100.
+const allYes = Array.from({ length: 6 }, (_, i) => mk(i, "YES", 1, 50, 50));
+const p1 = computePosition(allYes);
+ok("coerente = +100", p1.economic.value === 100, `(${p1.economic.value})`);
+ok("eixo sem tag fica null", p1.social.value === null);
+// Metade e metade → 0, mas COM leitura (é medida, não ausência).
+const split = [...Array.from({ length: 3 }, (_, i) => mk(i, "YES", 1, 50, 50)),
+               ...Array.from({ length: 3 }, (_, i) => mk(i + 3, "NO", 1, 50, 50))];
+const p2 = computePosition(split);
+ok("dividido = 0 COM leitura", p2.economic.value === 0 && p2.economic.items === 6);
+// Cobertura insuficiente → null, não 0.
+const thin = [mk(0, "YES", 1, 50, 50), mk(1, "YES", 1, 50, 50)];
+ok("cobertura fina → null (não 0)", computePosition(thin).economic.value === null);
+// Só votações unânimes → null.
+const unanimous = Array.from({ length: 20 }, (_, i) => mk(i, "YES", 1, 490, 10));
+ok("só unânimes → null", computePosition(unanimous).economic.value === null);
+// Abstenção não move.
+const withAbs = [...allYes, { ...mk(9, "YES", -1, 50, 50), value: "ABSTENTION" as const }];
+ok("abstenção não move", computePosition(withAbs).economic.value === 100);
+// Influência é detectada.
+const oneOff = [...Array.from({ length: 5 }, (_, i) => mk(i, "YES", 1, 50, 50)), mk(5, "NO", 1, 50, 50)];
+const p3 = computePosition(oneOff);
+ok("item mais influente identificado", p3.economic.influence !== null, `(${p3.economic.influence?.themeKey}, ${p3.economic.influence?.delta})`);
+
+console.log("\nFaixa");
+ok("sem validação, sem faixa", bandGate({ value: 80, standardError: 3, items: 40, effectiveItems: 40, influence: null }, false).blocked === "unvalidated");
+ok("margem larga atravessa corte", bandGate({ value: 48, standardError: 12, items: 40, effectiveItems: 40, influence: null }, true).blocked === "separation");
+ok("margem estreita passa", bandGate({ value: 80, standardError: 3, items: 40, effectiveItems: 40, influence: null }, true).band?.key === "direita");
+
+console.log("\nAgregação partidária");
+const members = (n: number, value: number, se: number) => Array.from({ length: n }, () => ({ value, standardError: se }));
+const tau2 = 625; // τ = 25
+const big = pool(members(90, -12, 40), 0, tau2)!;
+const solo = pool(members(1, -80, 40), 0, tau2)!;
+ok("bancada grande quase não encolhe", Math.abs(big.value - big.observed) <= 2, `(${big.observed} → ${big.value}, B=${big.reliability})`);
+ok("bancada de um encolhe muito", Math.abs(solo.value) < Math.abs(solo.observed), `(${solo.observed} → ${solo.value}, B=${solo.reliability})`);
+ok("translação limitada a 1 EP", Math.abs(solo.value - solo.observed) <= solo.standardError + 1, `(desloc ${Math.abs(solo.value - solo.observed)}, EP ${solo.standardError})`);
+ok("média observada preservada", solo.observed === -80);
+const spreadOut = pool([...members(5, -60, 20), ...members(5, 60, 20)], 0, tau2)!;
+ok("bancada dividida tem dispersão alta", spreadOut.dispersion > 40, `(ψ=${spreadOut.dispersion})`);
+ok("bancada unida tem dispersão baixa", pool(members(10, -30, 20), 0, tau2)!.dispersion < 10);
+
+console.log("\nCoesão");
+ok("AI: 10/10/100 = 0,750 (Rice diria 0)", Math.abs(agreementIndex({ yes: 10, no: 10, abstention: 100 })! - 0.75) < 1e-9);
+ok("AI: 10/10/10 = 0", Math.abs(agreementIndex({ yes: 10, no: 10, abstention: 10 })!) < 1e-9);
+ok("AI: unânime = 1", agreementIndex({ yes: 40, no: 0, abstention: 0 }) === 1);
+// A tabela publicada é de Rice; AI = 0,75·Rice + 0,25 sem abstenções.
+const fromRice = (r: number) => 0.75 * r + 0.25;
+ok("acaso n=2: bate com Rice 0,500", Math.abs(expectedRandomAgreement(2) - fromRice(0.5)) < 0.005, `(AI ${expectedRandomAgreement(2).toFixed(3)})`);
+ok("acaso n=90: bate com Rice 0,084", Math.abs(expectedRandomAgreement(90) - fromRice(0.084)) < 0.005, `(AI ${expectedRandomAgreement(90).toFixed(3)})`);
+ok("acaso decresce com o tamanho", expectedRandomAgreement(2) > expectedRandomAgreement(10) && expectedRandomAgreement(10) > expectedRandomAgreement(90));
+ok("bancada de um não recebe coesão", excessCohesion(1, 1) === null);
+ok("coesão em excesso desconta o tamanho", (excessCohesion(0.9, 2) ?? 0) < (excessCohesion(0.9, 90) ?? 0));
+
+console.log("\nÂncoras");
+ok("PL à direita", (anchorFor("PL") ?? 0) > 0.7, `(${anchorFor("PL")})`);
+ok("PSOL à esquerda", (anchorFor("PSOL") ?? 0) < -0.7, `(${anchorFor("PSOL")})`);
+ok("UNIÃO agora tem âncora", anchorFor("União Brasil") !== null || anchorFor("UNIÃO") !== null, `(${anchorFor("UNIÃO")})`);
+ok("PCdoB normaliza", anchorFor("PCdoB") !== null);
+ok("spearman perfeito = 1", Math.abs(spearman([{a:1,b:1},{a:2,b:2},{a:3,b:3},{a:4,b:4}])! - 1) < 1e-9);
+ok("spearman invertido = −1", Math.abs(spearman([{a:1,b:4},{a:2,b:3},{a:3,b:2},{a:4,b:1}])! + 1) < 1e-9);
+ok("pearson perfeito = 1", Math.abs(pearson([{a:1,b:2},{a:2,b:4},{a:3,b:6}])! - 1) < 1e-9);
+ok("betweenVariance ≥ 0", betweenVariance(members(5, 10, 5), 25) >= 0);
+
+console.log(fails === 0 ? "\n✓ tudo passou\n" : `\n✗ ${fails} falha(s)\n`);
+process.exit(fails === 0 ? 0 : 1);

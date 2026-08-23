@@ -121,6 +121,22 @@ model Party {
   websiteUrl  String?
   memberCount Int?
 
+  // ── Posicionamento agregado (CLAUDE.md §3.2) ───────────────────────────────
+  /// Leitura do partido em cada eixo, −100..100, encolhida em direção à média
+  /// da casa (`src/lib/indexes/pooling.ts`) e limitada a um erro padrão de
+  /// deslocamento. NUNCA a média crua: uma bancada de um publicaria a
+  /// excentricidade de uma pessoa como a posição de um partido.
+  positionEconomic Int?
+  positionSocial   Int?
+  /// Média observada antes de encolher, confiabilidade, dispersão interna, a
+  /// tira de membros e a coesão em excesso sobre o acaso.
+  positionDetail   Json?
+  positionComputedAt DateTime?
+  /// Coesão em excesso sobre o acaso (0–100), pelo índice de concordância de
+  /// Hix, Noury & Roland corrigido pelo tamanho da bancada. NULL para bancada
+  /// de um, onde a coesão é 1 por construção e não informa nada.
+  cohesion         Int?
+
   // Provenance for idempotent imports.
   source      ImportSource @default(MANUAL)
   externalRef String?
@@ -203,6 +219,33 @@ model PublicAgent {
   qualityPillars    Json?
   qualityComputedAt DateTime?
 
+  // ── Posicionamento (CLAUDE.md §3.2) ────────────────────────────────────────
+  /// Leitura do eixo econômico (Estado − / Mercado +), −100..100.
+  ///
+  /// NULL, nunca 0, quando a cobertura de temas classificados não alcança o
+  /// piso (`MIN_EFFECTIVE_ITEMS` em `src/lib/indexes/positioning.ts`). Zero é a
+  /// coordenada de um centrista perfeito, então publicar zero por falta de dado
+  /// é publicar uma posição que ninguém mediu — foi exatamente isso que colocou
+  /// partidos de posição incontroversa no centro.
+  positionEconomic Int?
+  /// Leitura do eixo social (Ordem − / Liberdades +), −100..100. Mesma regra.
+  positionSocial   Int?
+  /// O que sustenta as duas leituras: erro padrão e cobertura por eixo, a
+  /// proposição de maior influência, a fatia de tags no formato antigo e as
+  /// portas de faixa. Guardado como JSON porque é diagnóstico — nada aqui é
+  /// ordenado em SQL.
+  positionDetail   Json?
+  positionComputedAt DateTime?
+
+  /// Governismo (0–100): fatia das votações em que o agente votou com a
+  /// orientação do bloco `Governo`.
+  ///
+  /// É o controle do índice de posicionamento antes de ser uma leitura: a
+  /// primeira dimensão das votações nominais brasileiras é governo↔oposição, e
+  /// sem medi-la não há como afirmar que o eixo econômico não é ela com outro
+  /// nome (Zucco & Lauderdale 2011). NULL quando a casa não publica orientação.
+  governismo       Int?
+
   /// Accent- and case-folded haystack for the public search box, maintained by
   /// Postgres as a `GENERATED ... STORED` column — see
   /// `docs/migrations/0010_search.sql` for the expression and
@@ -237,6 +280,7 @@ model PublicAgent {
   @@index([partyId])
   @@index([inOffice])
   @@index([qualityScore])
+  @@index([positionEconomic])
   @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
@@ -452,6 +496,17 @@ model RollCall {
   /// leave is taken out.
   presidingAgentId String?
   presiding        PublicAgent? @relation("RollCallPresiding", fields: [presidingAgentId], references: [id], onDelete: SetNull)
+
+  /// Orientação do bloco `Governo` nesta votação, quando a casa a publica
+  /// (Câmara `/votacoes/{id}/orientacoes`). NULL significa "não publicada", que
+  /// é diferente de "o governo liberou a bancada" — `Liberado` também vira
+  /// NULL, e as duas coisas juntas apenas dizem que a votação não pode ser
+  /// usada para medir contaminação governista.
+  governmentPosition VoteValue?
+  /// A mesma coisa para o bloco `Oposição`. As duas juntas é que dizem se a
+  /// votação foi decidida ao longo da linha governo↔oposição: quando ambas
+  /// orientam igual, essa linha não estava cortando.
+  oppositionPosition VoteValue?
 
   source      ImportSource
   /// Câmara `votacao.id`, Senado `codigoSessaoVotacao`. Internal only.

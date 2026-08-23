@@ -159,6 +159,26 @@ const MIN_MONTHS = 6;
 export const MIN_COVERAGE = 0.5;
 
 /**
+ * The most that **filings alone** can score on the production pillar.
+ *
+ * Filing a bill costs a signature. Carrying one through a house, or being handed
+ * a relatoria, does not — so a pillar that reads them at the same rate can be
+ * topped up with volume, which is the "fábrica de projetos" failure. The log
+ * already makes the 400th bill worth less than the first, but it saturates at
+ * the goalpost target, and the target is reachable on filings alone.
+ *
+ * So filings saturate first, at 80 — the top of the "Acima da média" band. The
+ * rule is one sentence and checkable on the page: **protocolar projetos leva um
+ * parlamentar até 'acima da média', nunca até o topo. Os últimos 20 pontos
+ * exigem desfecho ou relatoria.**
+ *
+ * The idea is the Ranking dos Políticos' (their production bonus saturates at
+ * six approved items), applied to a continuous scale rather than a hard cap, so
+ * ordering above the cap is preserved for the half that is hard to fake.
+ */
+const FILING_ONLY_MAX = 80;
+
+/**
  * Floor applied to every pillar before the geometric mean.
  *
  * A geometric mean is zero if any factor is zero, which would collapse every
@@ -270,7 +290,7 @@ export const QUALITY_PILLARS: QualityPillar[] = [
     // to fake is the half that separates somebody who files from somebody who
     // carries something through.
     score: (i, house) => {
-      const rate = productionRate(i);
+      const rate = productionRate(i, house);
       if (rate === null) return null;
       const { alpha, target } = GOALPOSTS.production[house];
       // log1p(x/α) is exactly 0 at x = 0 — a member who filed nothing scores the
@@ -324,14 +344,38 @@ export const QUALITY_PILLARS: QualityPillar[] = [
   },
 ];
 
-/** Substantive items per month in office, or null when the basis is too thin. */
-function productionRate(i: QualityInputs): number | null {
+/**
+ * Filings per month at which `FILING_ONLY_MAX` is reached, for one house.
+ *
+ * Derived from that house's own goalposts rather than fixed, so the cap lands on
+ * the same *score* in both houses even though their alpha/target ratios differ.
+ * Inverting `log1p(x/α) / log1p(target/α)` at `FILING_ONLY_MAX / 100` gives it in
+ * closed form — which means recalibrating a goalpost moves the cap with it and
+ * cannot leave the two out of step.
+ */
+export function filingCapRate(house: QualityHouse): number {
+  const { alpha, target } = GOALPOSTS.production[house];
+  return alpha * (Math.exp((FILING_ONLY_MAX / 100) * Math.log1p(target / alpha)) - 1);
+}
+
+/**
+ * Substantive items per month in office, or null when the basis is too thin.
+ *
+ * Two halves with different ceilings. **Filings** (`authored`) saturate at
+ * `filingCapRate` — volume of protocol stops paying past the point where it is
+ * plainly prolific. **Outcomes** (`advanced`, plus relatorias) are uncapped, and
+ * `advanced` is added on top of the filing it is already counted in, which is
+ * the deliberate double-count: the half that is hard to fake is the half that
+ * separates somebody who files from somebody who carries something through.
+ */
+function productionRate(i: QualityInputs, house: QualityHouse): number | null {
   const a = i.authorship;
   const r = i.rapporteurship;
   const months = a?.months ?? r?.months ?? 0;
   if (months < MIN_MONTHS) return null;
-  const authored = a ? a.authored + a.advanced : 0;
-  return (authored + (r?.count ?? 0)) / months;
+  const filings = Math.min(a?.authored ?? 0, filingCapRate(house) * months);
+  const outcomes = (a?.advanced ?? 0) + (r?.count ?? 0);
+  return (filings + outcomes) / months;
 }
 
 /** One pillar as it reaches the DTO and the page. */
@@ -523,3 +567,59 @@ export const qualityBandLabel: Record<QualityBand, string> = {
   AVERAGE: "Na média",
   WEAK: "Abaixo da média",
 };
+
+// ─── Versão da metodologia ───────────────────────────────────────────────────
+
+/**
+ * The published edition of this methodology.
+ *
+ * The whole point of fixed goalposts is that **a member's score changes when
+ * their own conduct changes, and at no other time**. Goalposts deliver that
+ * against *other people's* conduct — but not against ours: retuning a weight
+ * here moves every reading on the site, and the page had no way to say so.
+ *
+ * The Ranking dos Políticos closes the same gap by freezing each year's notes
+ * under the rules in force when they were published. We have no annual cycle to
+ * freeze, so we do the weaker but honest thing: stamp the edition onto every
+ * score, print it beside the number, and make an unstamped change fail the build
+ * check.
+ *
+ * **Bump `version` and `changedAt` on any change to `GOALPOSTS`, to a pillar's
+ * weight, to the pillar set, or to the tuning constants above.** `fingerprint`
+ * covers exactly those, and `npm run check:sources` fails when they drift apart
+ * — so this is enforced rather than remembered.
+ */
+export const QUALITY_METHODOLOGY = {
+  version: "2026.2",
+  changedAt: "2026-08-23",
+  /** `methodologyFingerprint()` at the time `version` was last bumped. */
+  fingerprint: "9bce24a0",
+  /** One line, shown beside the score. */
+  summary: "Metas fixas publicadas, produção em escala logarítmica, média geométrica.",
+} as const;
+
+/**
+ * A stable hash of everything `QUALITY_METHODOLOGY.version` claims to describe.
+ *
+ * FNV-1a over a canonical rendering — no dependency, deterministic across
+ * machines and Node versions, and short enough to read in a diff. It is not a
+ * cryptographic hash and does not need to be: it guards against forgetting, not
+ * against forgery.
+ */
+export function methodologyFingerprint(): string {
+  const canonical = [
+    ...QUALITY_PILLARS.map((p) => `${p.key}=${p.weight.toFixed(8)}`),
+    `att=${GOALPOSTS.attendance.floor}/${GOALPOSTS.attendance.target}`,
+    `prod.CAMARA=${GOALPOSTS.production.CAMARA.alpha}/${GOALPOSTS.production.CAMARA.target}`,
+    `prod.SENADO=${GOALPOSTS.production.SENADO.alpha}/${GOALPOSTS.production.SENADO.target}`,
+    `cost=${GOALPOSTS.cost.floor}/${GOALPOSTS.cost.target}`,
+    `k=${MIN_ROLL_CALLS}/${MAX_LEAVE_SHARE}/${MIN_MONTHS}/${MIN_COVERAGE}/${PILLAR_FLOOR}/${FILING_ONLY_MAX}`,
+  ].join("|");
+
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < canonical.length; i++) {
+    hash ^= canonical.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}

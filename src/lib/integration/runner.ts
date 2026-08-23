@@ -34,6 +34,21 @@ export const PIPELINE_JOB = "pipeline";
  */
 export const PIPELINE_LEASE_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * How often a running job flushes its counters to its own ImportRun row.
+ *
+ * Without this the row carries `0 seen / 0 upserted` from the moment it is
+ * created until the moment the job finishes, because the counts were only ever
+ * written by the success path. On a forty-minute import that reads, on the
+ * panel, exactly like a process that died — and an operator who cannot tell a
+ * live import from a corpse does the reasonable thing: releases the lock and
+ * starts it again. That happened here, to a job that was working.
+ *
+ * Fifteen seconds is well under the time anyone stares at a row before deciding
+ * it is stuck, and the write is a two-integer UPDATE on one row.
+ */
+const PROGRESS_FLUSH_MS = 15_000;
+
 /** Outcome of {@link runJob}. */
 export type JobOutcome =
   | { status: "ok"; result: SyncResult; durationMs: number }
@@ -130,8 +145,28 @@ export async function runJob(
     select: { id: true },
   });
 
+  // Wrap the caller's progress callback with one that also persists the counts,
+  // so "Em andamento" carries a number that moves instead of a permanent zero.
+  // Fire-and-forget: a failed heartbeat must never take down a healthy import,
+  // and the final write is the authoritative one either way.
+  const merged = jobOptions(job, opts);
+  const callerProgress = merged.onProgress;
+  let lastFlush = 0;
+  merged.onProgress = (progress) => {
+    callerProgress?.(progress);
+    const now = Date.now();
+    if (now - lastFlush < PROGRESS_FLUSH_MS) return;
+    lastFlush = now;
+    void db.importRun
+      .update({
+        where: { id: run.id },
+        data: { itemsSeen: progress.seen, itemsUpserted: progress.upserted },
+      })
+      .catch(() => {});
+  };
+
   try {
-    const result = await job.run(jobOptions(job, opts));
+    const result = await job.run(merged);
     const finishedAt = new Date();
 
     await db.importRun.update({
