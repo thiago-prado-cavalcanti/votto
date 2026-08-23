@@ -53,7 +53,10 @@ export default async function SyncPage() {
   ]);
 
   const stateByName = new Map(states.map((s) => [s.name, s]));
-  const chainRunning = Boolean(chain?.runningSince);
+  // A job whose claim predates the current chain's own claim cannot be the step
+  // that chain is on — it is a corpse from an earlier one, and the operator has
+  // to be able to clear it even while a chain is live.
+  const chainSince = chain?.runningSince ?? null;
   const now = new Date();
 
   const jobs: SyncJobView[] = plan.map((step, index) => {
@@ -73,7 +76,9 @@ export default async function SyncPage() {
       lastItemsUpserted: state?.lastItemsUpserted ?? 0,
       note: explanatoryWatermark(state?.watermark),
       runningSince: state?.runningSince ? formatZoned(state.runningSince) : null,
-      chainRunning,
+      heldByChain: Boolean(
+        chainSince && state?.runningSince && state.runningSince.getTime() >= chainSince.getTime(),
+      ),
       // Only jobs that declare a window take one; the rest always import the
       // full current roster or the whole year.
       defaultDays: step.job.defaults.days ?? null,

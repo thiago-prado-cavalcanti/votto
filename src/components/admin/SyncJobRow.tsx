@@ -54,16 +54,23 @@ export interface SyncJobView {
   note: string | null;
   runningSince: string | null;
   /**
-   * The chain holds its own lock right now, so a job showing `runningSince` is
-   * almost certainly the step it is on — not a corpse.
+   * This job's claim belongs to the chain that is running *right now* — so it is
+   * the step the chain is on, not a corpse.
    *
    * The distinction is the whole point: "Liberar lock" reads like a stop button
    * and is not one. Released on a live job it stops nothing and removes the only
    * guard against a second concurrent import of the same window — which for the
-   * theme jobs means concurrent tally updates on the same Theme. The panel used
-   * to offer that button beside a job the chain was actively running.
+   * theme jobs means concurrent tally updates on the same Theme.
+   *
+   * It is deliberately narrower than "a chain is running". The first version of
+   * this guard asked only that, and hid the button on *every* claimed job while
+   * any chain was live — which is wrong, because a live chain routinely coexists
+   * with orphan job claims left by a chain a deploy killed. It hid the control
+   * for exactly the corpses an operator needed to clear, and there was no other
+   * way to clear them short of waiting out the four-hour lease. A claim stamped
+   * before the current chain took its own cannot be that chain's current job.
    */
-  chainRunning: boolean;
+  heldByChain: boolean;
   /**
    * The job's default look-back in days, when it takes one.
    *
@@ -80,7 +87,7 @@ function StatusBadge({ job }: { job: SyncJobView }) {
   if (job.runningSince) {
     return (
       <Badge tone="neutral">
-        {job.chainRunning ? "Em execução pela cadeia" : "Em execução"} desde {job.runningSince}
+        {job.heldByChain ? "Em execução pela cadeia" : "Em execução"} desde {job.runningSince}
       </Badge>
     );
   }
@@ -212,7 +219,7 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
         {/* Only where the lock can actually be a corpse. While the chain is
             running, the control that stops things is "Interromper" on the chain
             — releasing the job's lock would stop nothing and unguard the run. */}
-        {job.runningSince && !job.chainRunning ? (
+        {job.runningSince && !job.heldByChain ? (
           <form action={lockAction}>
             <input type="hidden" name="job" value={job.name} />
             <Button type="submit" size="sm" variant="ghost">
@@ -220,7 +227,7 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
             </Button>
           </form>
         ) : null}
-        {job.runningSince && job.chainRunning ? (
+        {job.runningSince && job.heldByChain ? (
           <p className="text-xs text-[var(--color-muted)]">
             A cadeia está neste job agora. Para parar, use <span className="text-ink">Interromper</span>{" "}
             acima — liberar o lock daqui não interrompe o import, só remove a proteção contra uma
