@@ -10,21 +10,12 @@ import { PageIntro } from "@/components/public/Section";
 import { IndexPlate } from "@/components/public/IndexPlate";
 import { FilterBar } from "@/components/public/FilterBar";
 import { AgentCard } from "@/components/public/AgentCard";
+import { AgentFeed } from "@/components/public/AgentFeed";
+import { loadAgentPage } from "@/lib/domain/agent-list";
 import { db } from "@/lib/db";
-import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import {
-  citizenAgentAlignments,
-  agentElectorateAlignments,
-  agentBaseAlignments,
-  type BaseAlignment,
-} from "@/lib/indexes/alignment";
-import { citizenFollows, followSlot } from "@/lib/domain/follows";
-import { publicReading } from "@/lib/domain/reading";
-import { agentSearchFilter } from "@/lib/domain/search";
-import type { FollowSlot } from "@/components/public/FollowButton";
 import { agentTypeLabel, agentTypePluralLabel, BR_STATES } from "@/lib/labels";
-import type { AgentType, Prisma } from "@/generated/prisma";
+import type { AgentType } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -39,108 +30,42 @@ export default async function AgentsPage({
     state?: string;
     party?: string;
     sort?: string;
+    p?: string;
   }>;
 }) {
-  const { q, type, state, party, sort } = await searchParams;
+  const { q, type, state, party, sort, p } = await searchParams;
+  const query = { q, type, state, party, sort };
   const session = await getCitizenSession();
 
-  // Former members keep their votes (the alignment index needs them) but are
-  // not listed or ranked — the page is about who holds a mandate today.
-  const where: Prisma.PublicAgentWhereInput = { status: "ACTIVE", inOffice: true };
-  if (type && AGENT_TYPES.includes(type as AgentType)) where.type = type as AgentType;
-  if (state) where.state = state;
-  if (party) where.party = { kid: party };
-  // Search: the agent's own name and their party's name/acronym, folded so an
-  // accent never has to be typed (`jose guimaraes`, `uniao`). Every word must
-  // match, which is what makes `joao pt` mean "someone called João, in the PT"
-  // rather than "every João plus the whole PT bench". ANDed with the selects
-  // above rather than replacing them — box and filters are one form.
-  const search = agentSearchFilter(q);
-  if (search) where.AND = search;
+  const viewer = session
+    ? await db.user.findUnique({
+        where: { kid: session.userKid },
+        select: { id: true, voteVersion: true },
+      })
+    : null;
 
-  const [agents, parties] = await Promise.all([
-    db.publicAgent.findMany({
-      where,
-      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-      include: { party: true },
-    }),
+  // One page of rows, not the whole bench. The ordering still needs every row
+  // (three of the four sorts come from cached index maps, not from columns), but
+  // only a page of them is rendered into the document — see `agent-list.ts`.
+  const [page, parties] = await Promise.all([
+    loadAgentPage(
+      query,
+      Number(p) || 1,
+      viewer ? { userId: viewer.id, voteVersion: viewer.voteVersion } : null,
+    ),
     db.party.findMany({
       where: { status: "ACTIVE" },
       orderBy: { name: "asc" },
       select: { kid: true, name: true, acronym: true },
     }),
   ]);
+  const rows = page.rows;
 
-  // Positioning per agent (uses internal id; never exposed).
-
-  // The published reading: each agent against their own base, falling back to
-  // the electorate where nobody follows them yet (`publicReading`).
-  const [engagement, base] = await Promise.all([
-    agentElectorateAlignments(),
-    agentBaseAlignments(),
-  ]);
-
-  // Alignment and declarations for logged-in citizens.
-  let alignments: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
-  let follows: Awaited<ReturnType<typeof citizenFollows>> | null = null;
-  if (session) {
-    const user = await db.user.findUnique({
-      where: { kid: session.userKid },
-      select: { id: true, voteVersion: true },
-    });
-    if (user) {
-      [alignments, follows] = await Promise.all([
-        citizenAgentAlignments(user.id, user.voteVersion),
-        citizenFollows(user.id),
-      ]);
-    }
-  }
-
-  type Row = {
-    agent: ReturnType<typeof toPublicAgent>;
-    alignment: number | null;
-    engagement: number | null;
-    base: BaseAlignment | undefined;
-    follow: FollowSlot;
-    /** The figure actually printed — what "sort by alignment" must order on. */
-    published: number | null;
-    /** 0–100 quality index, or null when we could not measure enough of it. */
-    quality: number | null;
-  };
-
-  let rows: Row[] = agents.map((a) => {
-    const agentBase = base.get(a.kid);
-    const agentEngagement = engagement.get(a.kid)?.alignment ?? null;
-    return {
-      agent: toPublicAgent(a),
-      alignment: alignments?.get(a.kid)?.alignment ?? null,
-      engagement: agentEngagement,
-      base: agentBase,
-      follow: followSlot(a, session ? follows ?? new Map() : null),
-      published: publicReading(agentBase, agentEngagement).value,
-      quality: a.qualityScore,
-    };
-  });
-
-  if (sort === "alignment" && alignments) {
-    rows = [...rows].sort((a, b) => (b.alignment ?? -1) - (a.alignment ?? -1));
-  } else if (sort === "engagement") {
-    rows = [...rows].sort((a, b) => (b.published ?? -1) - (a.published ?? -1));
-  } else if (sort === "quality") {
-    // −1 for the unmeasured, so they sink instead of being ranked as if they
-    // had scored zero (CLAUDE.md §3.3).
-    rows = [...rows].sort((a, b) => (b.quality ?? -1) - (a.quality ?? -1));
-  }
-
-  // Masthead plate: the bench by office. Counted over the agents already in hand
-  // (the query has no `take`, so this is the whole filtered set) rather than in a
-  // second round trip, and it follows the filters for the same reason the plate
-  // on the themes page does — it describes what is on the screen.
-  const byType = new Map<AgentType, number>();
-  for (const agent of agents) byType.set(agent.type, (byType.get(agent.type) ?? 0) + 1);
-  const officeRows = [...byType.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([type, count]) => ({
+  // Masthead plate: the bench by office. Counted over the whole filtered set
+  // (`page.byType`), not over the slice — it is the shape of what the filters
+  // selected, and it must not shrink as the reader scrolls.
+  const officeRows = page.byType
+    .map(({ type, count }) => ({
       label: agentTypePluralLabel[type],
       value: count,
       color: "var(--color-colonial-500)",
@@ -156,7 +81,8 @@ export default async function AgentsPage({
           officeRows.length > 0 ? (
             <IndexPlate
               caption="Por cargo"
-              note={`${agents.length.toLocaleString("pt-BR")} ${agents.length === 1 ? "agente" : "agentes"}`}
+              // The whole filtered set, not the slice on screen.
+              note={`${page.total.toLocaleString("pt-BR")} ${page.total === 1 ? "agente" : "agentes"}`}
               rows={officeRows}
             />
           ) : null
@@ -224,7 +150,12 @@ export default async function AgentsPage({
             Nenhum agente encontrado para esta busca.
           </p>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <AgentFeed
+            query={query}
+            startPage={page.page}
+            initialHasMore={page.hasMore}
+            isAuthenticated={Boolean(session)}
+          >
             {rows.map((row, i) => (
               <AgentCard
                 key={row.agent.kid}
@@ -239,7 +170,7 @@ export default async function AgentsPage({
                 delay={(i % 3) * 80}
               />
             ))}
-          </div>
+          </AgentFeed>
         )}
       </Container>
     </>
