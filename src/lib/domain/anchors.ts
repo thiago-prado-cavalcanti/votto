@@ -316,3 +316,37 @@ export const MAX_AXIS_CORRELATION = 0.85;
 
 /** Cobertura mínima de cadeiras ancoradas para a correlação significar algo. */
 export const MIN_ANCHOR_COVERAGE = 0.6;
+
+/** Desvio padrão amostral. `null` abaixo de dois pontos. */
+export function stdDev(values: number[]): number | null {
+  const n = values.length;
+  if (n < 2) return null;
+  const mean = values.reduce((s, v) => s + v, 0) / n;
+  const ss = values.reduce((s, v) => s + (v - mean) ** 2, 0);
+  return Math.sqrt(ss / (n - 1));
+}
+
+/**
+ * A porta de dispersão: a nossa amplitude tem de ser comparável à da régua.
+ *
+ * **Spearman é livre de escala e por isso não enxerga isto.** Um eixo esmagado
+ * contra o zero ainda produz uma ordenação, e a ordenação ainda pode
+ * correlacionar bem — mas a leitura publicada seria falsa de outro jeito: diria
+ * ao cidadão que PSOL e PL são vizinhos.
+ *
+ * Não é hipótese. Medido na Câmara em 23/08/2026, as médias partidárias do eixo
+ * econômico iam de **−9 (PSOL) a +6 (PP)** — quinze pontos — contra os cerca de
+ * 160 que Bolognesi e o BLS cobrem para os mesmos partidos. Razão de dispersão
+ * **≈ 0,09**: o índice comprimia o espectro conhecido em mais de dez vezes, e
+ * ainda assim marcava ρ=0,63 na âncora.
+ *
+ * O limiar é uma **razão contra a régua**, não um número na nossa escala, pelo
+ * mesmo motivo que a porta 3 é: quem decide o que é dispersão suficiente para
+ * uma medida de ideologia é a medida externa, não nós. 0,40 diz que o eixo pode
+ * comprimir o espectro até dois e meio para um — o que já é generoso — e não
+ * mais.
+ *
+ * Provisório no mesmo sentido dos demais cortes (§11): o mecanismo é o que está
+ * assentado, o ponto exato se recalibra contra o histograma real.
+ */
+export const MIN_SPREAD_RATIO = 0.4;

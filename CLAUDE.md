@@ -187,7 +187,7 @@ quiz, which publishes code and no method. Four defects, each now answered by a n
   publishes two. A single number would have to be *fitted* against an external reference, never
   asserted.
 
-#### Three gates, and nothing is published unless all three pass
+#### Four gates, and nothing is published unless all four pass
 
 Per house, in `src/lib/integration/positioning.ts`:
 
@@ -196,7 +196,16 @@ Per house, in `src/lib/integration/positioning.ts`:
    `governismo`. Above `MAX_GOVERNMENT_CORRELATION` (0.50) the index is measuring support for the
    Executive and calling it ideology, so the house is blocked. This is the test the literature says
    an index like this silently fails.
-3. **External anchor** — party ordering on the economic axis against expert surveys
+3. **Spread against the ruler** — our party means must disperse comparably to the anchor's, over the
+   same parties, above `MIN_SPREAD_RATIO` (40%). **Spearman is scale-free and cannot see this.** An
+   axis crushed against zero still produces an ordering, and the ordering can still correlate well —
+   but the published reading would be false in a different way: it would tell a citizen that PSOL and
+   PL are neighbours. Measured on the Câmara on 2026-08-23, our party means ran from **−9 (PSOL) to
+   +6 (PP)** — fifteen points — against roughly 160 that Bolognesi and BLS cover for the same
+   parties. Ratio **≈ 0.08**, while the anchor correlation read a respectable 0.63. The threshold is
+   a *ratio against the ruler* rather than a number on our own scale, for the same reason gate 4 is:
+   what counts as enough dispersion for an ideology measure is decided by the external measure.
+4. **External anchor** — party ordering on the economic axis against expert surveys
    (`src/lib/domain/anchors.ts`), by Spearman, needing `MIN_ANCHOR_CORRELATION` (**0.85**) over
    `MIN_ANCHOR_COVERAGE` (60%) of seats. An index built from votes and validated against the same
    votes is not validated; it is circular (Jackson & Kingdon, *AJPS* 36, 1992). The bar comes from
@@ -205,7 +214,18 @@ Per house, in `src/lib/integration/positioning.ts`:
    0.575 against CHES. 0.85 is what puts Votto in the first family rather than the second, and it is
    reachable: an anchored rotation over the Câmara's real roll calls measured 0.86 out of sample.
 
-**Gates 2 and 3 are not substitutes for each other, and the reason is measured.** Party-level
+**Passing the falsification gate by losing the signal is not passing it.** The Câmara clears gate 2
+today, and the reason is not that the index separated ideology from governismo — it is that the axis
+has almost no variance left to correlate with anything. The mechanism is in `itemWeight`, and the two
+factors are anti-correlated in Brazil: a vote that **divides** the house is almost by definition a
+government↔opposition vote, so `|r(vote, governismo)|` is high and `(1 − contamination)` drives the
+weight to 0.05–0.2; a vote with **low** contamination is one the coalition did not drive, which in
+practice is consensual and gets zeroed by `MIN_DISCRIMINATION`. What survives is a thin residue with
+small weights whose signed contributions cancel. Everyone lands near zero. That is what the spread
+gate above exists to catch, and it is why a near-constant axis is a defect the correlation gates are
+structurally blind to. The fix is to **residualise rather than discount** — see §11.
+
+**Gates 2 and 4 are not substitutes for each other, and the reason is measured.** Party-level
 *governismo* on its own — the share of roll calls the bench voted with the `Governo` bloc, with no
 notion of ideology inside it — correlates with the Bolognesi anchor at **+0.93 under Bolsonaro and
 −0.81 under Lula**. A pure support-for-the-Executive index therefore scores 0.81–0.93 on the anchor
@@ -230,7 +250,7 @@ in Westminster at **99.1% correct classification**, with Corbyn, Benn and Skinne
 right-wing Labour MPs. **A high fit statistic is not validity**, and more classified bills cannot fix
 this — the coalition signal is the house's first dimension, not a coverage shortfall.
 
-A fourth gate decides only whether the *second* axis is a number. **In Brazil the two axes barely
+A further gate decides only whether the *second* axis is a number. **In Brazil the two axes barely
 separate**: Martínez-Gallardo et al. (*Party Politics*, 2023) ran a CFA on the CHES items and a
 second factor buys **+0.234 CFI in Europe against +0.045 in Latin America**, with the latent
 correlation at **0.95 there vs 0.58 here**; across the eleven Brazilian parties in CHES-LA,
@@ -1070,6 +1090,24 @@ be), but the reference is a printed record, not a fintech app.
 
 ## 11. Open Questions / To Validate
 
+- **Residualise the government↔opposition component instead of discounting it.** This is now the
+  single blocking defect of the positioning index, and it is measured rather than suspected: on
+  2026-08-23 the Câmara's party means spanned **15 points against the anchor's 160** (ratio 0.08),
+  with PSOL at −9 and PL at +4 — the two poles of the Brazilian economic spectrum, thirteen points
+  apart. `itemWeight` multiplies by `(1 − contamination)`, and since a vote that divides the house is
+  almost always a coalition vote, that factor guts precisely the items that carry information, while
+  `MIN_DISCRIMINATION` removes the rest. The principled repair is the one Zucco & Lauderdale use:
+  model the government↔opposition dimension **explicitly** and score the axis on the *residual*,
+  which preserves variance, rather than shrinking contaminated items toward zero, which destroys it.
+  It is a methodology change — new version, new `changedAt`, new fingerprint — so it is a product
+  decision and not a tuning pass. Two notes for whoever picks it up: **96% of items are already on
+  the format-2 tags**, so classification volume is not the constraint it looked like; and the
+  *ordering* already carries signal (PSOL/REDE/PSB/PT negative, PL/PSD/PP/MDB positive), so what is
+  broken is the scale, not the sign structure.
+- **`MIN_SPREAD_RATIO` is provisional at 0.40**, like the other cut points. The mechanism is what is
+  settled — an axis that compresses the known spectrum lies even when its ordering is right, and
+  Spearman is structurally blind to it. The exact point recalibrates against a real histogram once
+  the residualisation above changes the distribution it is measuring.
 - **Recalibrate the positioning floors against a real histogram** (§3.2). The mechanism is built and
   it refuses to publish on its own; what is still guessed are the cut points. `MIN_EFFECTIVE_ITEMS`
   is the one to settle first — its own docstring argues for eight and the constant says four, and it

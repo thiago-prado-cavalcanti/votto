@@ -27,7 +27,7 @@ import {
   type ScorableVote,
 } from "@/lib/indexes/positioning";
 import { pool, betweenVariance, agreementIndex, excessCohesion, expectedRandomAgreement } from "@/lib/indexes/pooling";
-import { spearman, pearson, anchorFor } from "@/lib/domain/anchors";
+import { spearman, pearson, anchorFor, stdDev, MIN_SPREAD_RATIO } from "@/lib/domain/anchors";
 
 let fails = 0;
 const ok = (name: string, cond: boolean, extra = "") => {
@@ -148,6 +148,18 @@ ok("pearson perfeito = 1", Math.abs(pearson([{a:1,b:2},{a:2,b:4},{a:3,b:6}])! - 
 ok("pearson sem variância = null (controle degenerado)", pearson([{a:1,b:5},{a:2,b:5},{a:3,b:5}]) === null);
 ok("pearson com n<3 = null", pearson([{a:1,b:2},{a:2,b:4}]) === null);
 ok("betweenVariance ≥ 0", betweenVariance(members(5, 10, 5), 25) >= 0);
+
+// Porta de dispersão. O caso medido na Câmara em 23/08/2026: as médias
+// partidárias iam de −9 a +6 enquanto a âncora ia de −87 a +76 — ordenação
+// aproveitável, escala inexistente. Spearman marcava 0,63 e não via nada disso,
+// porque é de posto. Estes dois casos fixam a diferença.
+const flatOurs = [-9, -1, 0, 1, 4, 6];
+const realAnchor = [-87, -69, -82, 16, 49, 51];
+const flatRatio = stdDev(flatOurs)! / stdDev(realAnchor)!;
+ok("eixo esmagado reprova a dispersão", flatRatio < MIN_SPREAD_RATIO, `(${(flatRatio * 100).toFixed(0)}%)`);
+const wideRatio = stdDev([-80, -60, -70, 15, 45, 50])! / stdDev(realAnchor)!;
+ok("eixo com escala passa", wideRatio >= MIN_SPREAD_RATIO, `(${(wideRatio * 100).toFixed(0)}%)`);
+ok("dispersão de um ponto só = null", stdDev([5]) === null);
 
 console.log(fails === 0 ? "\n✓ tudo passou\n" : `\n✗ ${fails} falha(s)\n`);
 process.exit(fails === 0 ? 0 : 1);

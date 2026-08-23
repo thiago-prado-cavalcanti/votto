@@ -63,6 +63,8 @@ import {
   anchorFor,
   MAX_GOVERNMENT_CORRELATION,
   MIN_ANCHOR_CORRELATION,
+  MIN_SPREAD_RATIO,
+  stdDev,
   MAX_AXIS_CORRELATION,
   MIN_ANCHOR_COVERAGE,
   pearson,
@@ -82,6 +84,7 @@ export type HouseBlock =
   | { kind: "orientations" }
   | { kind: "degenerate" }
   | { kind: "governismo"; correlation: number }
+  | { kind: "spread"; ratio: number | null }
   | { kind: "anchor"; correlation: number | null; coverage: number };
 
 export interface HouseReport {
@@ -98,6 +101,13 @@ export interface HouseReport {
   anchorCorrelation: number | null;
   /** Fatia das cadeiras medidas cujo partido tem âncora publicada. */
   anchorCoverage: number;
+  /**
+   * Dispersão das nossas médias partidárias dividida pela da âncora, sobre os
+   * mesmos partidos. 1,0 é espalhar tanto quanto a régua; abaixo de
+   * `MIN_SPREAD_RATIO` o eixo comprimiu o espectro a ponto de a leitura mentir
+   * mesmo com a ordenação certa — coisa que Spearman, sendo de posto, não vê.
+   */
+  spreadRatio: number | null;
   /**
    * Correlação entre os dois eixos entre os agentes desta casa.
    *
@@ -346,6 +356,7 @@ export async function recomputePositioningIndex(
       governmentCorrelation: null,
       anchorCorrelation: null,
       anchorCoverage: 0,
+      spreadRatio: null,
       axisCorrelation: null,
       socialCollinear: false,
       unanchored: [],
@@ -407,6 +418,12 @@ export async function recomputePositioningIndex(
     report.anchorCoverage = withReading.length > 0 ? anchoredSeats / withReading.length : 0;
     report.anchorCorrelation = spearman(anchorPairs);
 
+    // Dispersão contra a régua, sobre exatamente os pares que a porta 3 usa.
+    const ourSd = stdDev(anchorPairs.map((p) => p.a));
+    const anchorSd = stdDev(anchorPairs.map((p) => p.b * 100));
+    report.spreadRatio =
+      ourSd !== null && anchorSd !== null && anchorSd > 0 ? ourSd / anchorSd : null;
+
     // ── Julgamento, na ordem em que as portas se fecham ─────────────────────
     if (items < MIN_HOUSE_ITEMS) {
       report.blocked = { kind: "items", items };
@@ -426,6 +443,11 @@ export async function recomputePositioningIndex(
       report.blocked = { kind: "degenerate" };
     } else if (Math.abs(govR) > MAX_GOVERNMENT_CORRELATION) {
       report.blocked = { kind: "governismo", correlation: govR };
+    } else if (report.spreadRatio === null || report.spreadRatio < MIN_SPREAD_RATIO) {
+      // Antes da âncora de propósito: um eixo achatado torna a correlação de
+      // posto que vem a seguir uma ordenação de ruído, então perguntá-la
+      // primeiro seria decidir pela estatística que não enxerga o defeito.
+      report.blocked = { kind: "spread", ratio: report.spreadRatio };
     } else if (
       report.anchorCoverage < MIN_ANCHOR_COVERAGE ||
       report.anchorCorrelation === null ||
@@ -756,6 +778,11 @@ export function describeBlock(block: HouseBlock): string {
       return "o governismo não varia entre os agentes — o teste de falseamento não discrimina";
     case "governismo":
       return `o eixo econômico correlaciona ${block.correlation.toFixed(2)} com governismo (máximo ${MAX_GOVERNMENT_CORRELATION})`;
+    case "spread":
+      return block.ratio === null
+        ? "não foi possível medir a dispersão contra a âncora"
+        : `o eixo espalha ${(block.ratio * 100).toFixed(0)}% do que a âncora espalha ` +
+          `(mínimo ${MIN_SPREAD_RATIO * 100}%) — ordenação sem escala`;
     case "anchor":
       return block.correlation === null
         ? `cobertura de âncora em ${(block.coverage * 100).toFixed(0)}% das cadeiras (mínimo ${MIN_ANCHOR_COVERAGE * 100}%)`

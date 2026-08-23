@@ -30,6 +30,7 @@ import {
   anchorsFor,
   MAX_GOVERNMENT_CORRELATION,
   MIN_ANCHOR_CORRELATION,
+  MIN_SPREAD_RATIO,
 } from "@/lib/domain/anchors";
 
 /** Uma barra de histograma sobre −100..100, em dez baldes. */
@@ -97,6 +98,13 @@ async function main(): Promise<void> {
           (h.socialCollinear
             ? "  → eixo social só na figura, sem número próprio (esperado: o CHES-LA mede 0,94 nos partidos brasileiros)"
             : "  → os dois eixos se separam"),
+      );
+    }
+    if (h.spreadRatio !== null) {
+      const flag = h.spreadRatio < MIN_SPREAD_RATIO ? "  ⚠" : "";
+      console.log(
+        `        dispersão ${(h.spreadRatio * 100).toFixed(0)}% da âncora ` +
+          `(mín ${MIN_SPREAD_RATIO * 100}%) — o eixo espalha tanto quanto a régua?${flag}`,
       );
     }
     if (h.unanchored.length > 0) {
