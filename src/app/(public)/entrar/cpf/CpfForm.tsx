@@ -10,6 +10,7 @@
 import { useActionState } from "react";
 import { Button, Checkbox, Field, Input } from "@/components/ui";
 import { linkCpfAction, type LinkCpfResult } from "@/lib/actions/citizen-cpf";
+import { applyMask, maskBirthDate, maskCpf } from "@/lib/domain/masks";
 
 export function CpfForm() {
   const [state, formAction, pending] = useActionState<LinkCpfResult | null, FormData>(
@@ -52,7 +53,7 @@ export function CpfForm() {
         </Field>
       </div>
 
-      <Field label="CPF" htmlFor="cpf" hint="Somente números ou com pontuação.">
+      <Field label="CPF" htmlFor="cpf" hint="Digite só os números — a pontuação aparece sozinha.">
         <Input
           id="cpf"
           name="cpf"
@@ -60,6 +61,8 @@ export function CpfForm() {
           inputMode="numeric"
           autoComplete="off"
           placeholder="000.000.000-00"
+          maxLength={14}
+          onInput={(e) => applyMask(e.currentTarget, maskCpf)}
         />
       </Field>
 
@@ -75,6 +78,8 @@ export function CpfForm() {
           inputMode="numeric"
           autoComplete="bday"
           placeholder="DD/MM/AAAA"
+          maxLength={10}
+          onInput={(e) => applyMask(e.currentTarget, maskBirthDate)}
         />
       </Field>
 
