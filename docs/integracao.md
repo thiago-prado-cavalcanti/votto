@@ -309,6 +309,14 @@ Dois cuidados no backfill:
 
 - `--source camara|senado` filtra por prefixo de nome, o que **exclui**
   `metrics:quality`. Depois de um backfill por fonte, rode `npm run requality`.
+- **O livro de presença não se preenche sozinho num deploy existente.** A
+  assiduidade vem de `RollCall`, que é gravado pelos jobs `*:votes` — que já
+  existiam antes do índice. O catch-up do worker só pega job parado há mais de 8
+  dias, e os de voto rodam toda semana, então **eles nunca são considerados
+  atrasados e o livro fica vazio até o próximo domingo**. Depois de subir o
+  índice pela primeira vez, rode `camara:votes` e `senado:votes` à mão com uma
+  janela larga. Desde então `metrics:quality` se recusa a gravar uma casa cujo
+  pilar pesado esteja totalmente vazio, e diz isso no painel.
 - **Não use `--top` com os jobs de mandato/despesa.** Um roster parcial envenena
   todas as coortes; `metrics:quality` se recusa a gravar uma casa com menos de
   70% dos membros medidos, justamente por isso.

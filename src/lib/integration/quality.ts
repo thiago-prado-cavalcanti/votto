@@ -36,6 +36,27 @@ import { AgentType, EntityStatus, House, ServiceKind } from "@/generated/prisma"
  */
 const MIN_HOUSE_COVERAGE = 0.7;
 
+/**
+ * A pillar this heavy, measured for nobody in a house, blocks that house.
+ *
+ * The per-agent coverage floor answers "we could not measure *this* agent". It
+ * cannot answer "we never loaded this pillar's data at all", because that looks
+ * identical one agent at a time: every one of them redistributes the weight and
+ * publishes a perfectly plausible score.
+ *
+ * It happened on the first production run. The roll-call ledger is filled by the
+ * vote jobs, which already existed and had run within the week — so the worker's
+ * catch-up, which only picks up jobs idle for over eight days, correctly skipped
+ * them and the ledger stayed empty. Every agent then scored on three pillars,
+ * publishing "87/100" while the heaviest component of that number was missing
+ * and nothing on the page said so.
+ *
+ * Refusing is the same rule as {@link MIN_HOUSE_COVERAGE}: an index computed
+ * from a different set of pillars is not a partial result, it is a different
+ * index wearing the same name.
+ */
+const BLOCKING_PILLAR_WEIGHT = 0.25;
+
 /** Average days per month, for turning a service span into a rate denominator. */
 const DAYS_PER_MONTH = 30.44;
 
@@ -110,6 +131,8 @@ export async function recomputeQualityIndex(
     pillars: Quality["pillars"];
   }>;
   skippedHouses: House[];
+  /** Houses held back because a heavy pillar had no data at all, and which. */
+  blockedBy: Map<House, string[]>;
 }> {
   const years = windowYears();
   const from = Date.UTC(years[0], 0, 1);
@@ -257,15 +280,28 @@ export async function recomputeQualityIndex(
 
   // ── Cohort coverage gate ──────────────────────────────────────────────────
   const skippedHouses: House[] = [];
+  const blockedBy = new Map<House, string[]>();
   const measurableHouses = new Set<House>();
   for (const house of [House.CAMARA, House.SENADO]) {
     const inHouse = rows.filter((r) => r.house === house);
     if (inHouse.length === 0) continue;
+
     const measured = inHouse.filter((r) =>
       QUALITY_PILLARS.some((p) => p.raw(r.inputs) !== null),
     ).length;
-    if (measured / inHouse.length < MIN_HOUSE_COVERAGE) skippedHouses.push(house);
-    else measurableHouses.add(house);
+
+    // A heavy pillar nobody in the house could be measured on is missing data,
+    // not missing agents — see BLOCKING_PILLAR_WEIGHT.
+    const empty = QUALITY_PILLARS.filter(
+      (p) => p.weight >= BLOCKING_PILLAR_WEIGHT && inHouse.every((r) => p.raw(r.inputs) === null),
+    ).map((p) => p.label);
+
+    if (measured / inHouse.length < MIN_HOUSE_COVERAGE || empty.length > 0) {
+      skippedHouses.push(house);
+      if (empty.length > 0) blockedBy.set(house, empty);
+    } else {
+      measurableHouses.add(house);
+    }
   }
 
   // ── Percentiles, one cohort per (pillar, peer group) ──────────────────────
@@ -340,7 +376,7 @@ export async function recomputeQualityIndex(
     });
   }
 
-  return { scored, skippedHouses };
+  return { scored, skippedHouses, blockedBy };
 }
 
 /** Bills each agent proposed whose situation says they got somewhere. */
@@ -357,15 +393,28 @@ async function advancedBillCounts(agentIds: string[]): Promise<Map<string, numbe
   return out;
 }
 
+/** Whether anything at all was written this run. */
+function measurable(skipped: House[]): boolean {
+  return skipped.length < 2;
+}
+
 /** Registry entry: recompute the index from stored data, no network. */
 export async function syncQuality(opts: SyncOptions = {}): Promise<SyncResult> {
   const c = counters();
-  const { scored, skippedHouses } = await recomputeQualityIndex({ onProgress: opts.onProgress });
+  const { scored, skippedHouses, blockedBy } = await recomputeQualityIndex({
+    onProgress: opts.onProgress,
+  });
   c.seen = scored.length;
-  c.upserted = scored.filter((s) => s.score !== null).length;
-  return {
-    itemsSeen: c.seen,
-    itemsUpserted: c.upserted,
-    watermark: skippedHouses.length ? `skipped:${skippedHouses.join(",")}` : new Date().toISOString().slice(0, 10),
-  };
+  c.upserted = measurable(skippedHouses) ? scored.filter((s) => s.score !== null).length : 0;
+
+  // The watermark is what the admin panel shows back, so it has to say *why* a
+  // house was held back — "nothing was written" with no reason is the state
+  // this whole guard exists to stop being invisible.
+  const reasons = [...blockedBy.entries()].map(([h, p]) => `${h} sem ${p.join(" e ")}`);
+  const skipped = skippedHouses.length
+    ? `não gravado — ${reasons.length ? reasons.join("; ") : skippedHouses.join(",")}` +
+      (reasons.length ? ". Rode camara:votes e senado:votes antes." : "")
+    : new Date().toISOString().slice(0, 10);
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark: skipped };
 }

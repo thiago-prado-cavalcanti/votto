@@ -71,7 +71,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { scored, skippedHouses } = await recomputeQualityIndex({ dryRun });
+  const { scored, skippedHouses, blockedBy } = await recomputeQualityIndex({ dryRun });
 
   console.log(`▶ ${scored.length.toLocaleString("pt-BR")} agentes em exercício\n`);
   console.log(render("Antes:", tally(before.map((a) => a.qualityScore)), before.length));
@@ -80,9 +80,19 @@ async function main(): Promise<void> {
     render(dryRun ? "Depois (simulado):" : "Depois:", tally(scored.map((s) => s.score)), scored.length),
   );
 
-  if (skippedHouses.length > 0) {
+  for (const [house, pillars] of blockedBy) {
     console.log(
-      `\n  ⚠ Casa(s) sem cobertura mínima, não gravadas: ${skippedHouses.join(", ")}.` +
+      `\n  ⚠ ${house}: nenhum agente pôde ser medido em ${pillars.join(" e ")}.` +
+        "\n    Isso não é cobertura parcial, é dado que não foi carregado — e sem o aviso" +
+        "\n    cada agente publicaria uma nota plausível com o pilar mais pesado ausente." +
+        "\n    A assiduidade vem do livro de votações: rode `camara:votes` e `senado:votes`" +
+        "\n    (com --days largo) e recalcule.",
+    );
+  }
+  const thin = skippedHouses.filter((h) => !blockedBy.has(h));
+  if (thin.length > 0) {
+    console.log(
+      `\n  ⚠ Casa(s) sem cobertura mínima, não gravadas: ${thin.join(", ")}.` +
         "\n    Percentil calculado sobre um import parcial diria a cada agente que ele" +
         "\n    está numa coorte que não é a dele. Rode os jobs de mandato e despesa antes.",
     );

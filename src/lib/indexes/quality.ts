@@ -246,7 +246,7 @@ export const QUALITY_PILLARS: QualityPillar[] = [
       if (!c || c.documents === 0) return null;
       return {
         value: `${brl(c.spent / Math.max(1, c.months))}/mês`,
-        detail: `${brl(c.spent)} em ${c.months} meses de exercício`,
+        detail: `${brl(c.spent)} em ${Math.round(c.months)} meses de exercício`,
       };
     },
   },
