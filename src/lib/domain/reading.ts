@@ -42,7 +42,14 @@ export function publicReading(
   base: BaseAlignment | undefined,
   engagement: number | null,
 ): PublicReading {
-  if (base && base.alignment !== null) {
+  // Três condições, e a dos seguidores é dita aqui de propósito. Ela já valia —
+  // `agentBaseAlignments` só cria entrada para agente seguido —, mas valia como
+  // consequência do formato de um `findMany` duzentas linhas adiante. Uma
+  // consulta reescrita para trazer todos os agentes, por qualquer motivo
+  // razoável, publicaria "alinhamento com a base" de um parlamentar que ninguém
+  // segue, e nada aqui teria reclamado. Uma base vazia não tem posição média:
+  // não existe leitura para calcular, e um número no lugar dela seria invenção.
+  if (base && base.followers > 0 && base.alignment !== null) {
     return {
       value: base.alignment,
       label: "Alinhamento com a base",

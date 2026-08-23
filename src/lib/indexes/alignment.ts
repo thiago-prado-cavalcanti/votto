@@ -20,6 +20,47 @@ import { db } from "@/lib/db";
 import { cacheGet, cacheSet } from "@/lib/redis";
 import type { VoteValue } from "@/generated/prisma";
 
+/**
+ * Votações em comum de que uma leitura de alinhamento precisa antes de existir.
+ *
+ * `n > 0` era o único critério, e sobre uma plataforma recém-aberta isso publica
+ * o pior número possível: com um cidadão cadastrado, a maioria dos agentes
+ * compartilha **uma** votação com ele, e concordar nela imprime "100% de
+ * alinhamento" em tipo confiante, no card, ao lado do nome de um deputado.
+ * Observado assim que a primeira pessoa votou.
+ *
+ * Cinco não é um número mágico — é a menor quantidade em que a leitura deixa de
+ * ser uma moeda. Com uma votação a resposta só pode ser 0%, 50% ou 100%; com
+ * cinco, a escala tem doze degraus e um desacordo isolado deixa de zerar tudo.
+ * É a mesma disciplina de `MIN_EFFECTIVE_ITEMS` no posicionamento e de
+ * `MIN_GOVERNISMO_OPPORTUNITIES`: abaixo do piso, `null` — nenhuma leitura em
+ * vez de uma leitura falsa.
+ */
+export const MIN_ALIGNMENT_BASIS = 5;
+
+/**
+ * Cidadãos distintos de que a leitura "com os eleitores" precisa para existir.
+ *
+ * Ela é a média das posições de quem votou. Com **um** cidadão cadastrado essa
+ * média é aquela pessoa, e o rótulo passa a mentir duas vezes: chama de
+ * "eleitores" o que é um eleitor, e publica como leitura coletiva o que é a
+ * opinião de alguém identificável.
+ *
+ * O segundo problema é o grave, e é de privacidade, não de estatística. O voto
+ * de cada parlamentar é público e o Votto o publica; o do cidadão é **opinião
+ * política**, dado sensível pela LGPD art. 5º, II, guardado em claro só porque o
+ * índice não se calcula sem ele (CLAUDE.md §5). Com um eleitorado de um, dizer
+ * "este deputado alinha 100% com os eleitores" numa proposição cujo voto dele é
+ * conhecido **revela como aquele cidadão votou** — a plataforma publica de volta
+ * o dado que prometeu não publicar. Com dois ou três é quase tão ruim.
+ *
+ * Vinte não tem precisão nenhuma e não finge ter: é a ordem de grandeza em que
+ * um voto isolado deixa de mover a média o bastante para ser lido de fora. O que
+ * é preciso é a regra — abaixo do piso não há leitura, e a página diz que ainda
+ * não há eleitores suficientes em vez de inventar um número.
+ */
+export const MIN_ELECTORATE_CITIZENS = 20;
+
 function toScore(v: VoteValue): number {
   return v === "YES" ? 1 : v === "NO" ? -1 : 0;
 }
@@ -118,7 +159,9 @@ export async function citizenAgentAlignments(
   for (const [agentKid, { sum, n }] of acc) {
     result.set(agentKid, {
       agentKid,
-      alignment: n > 0 ? Math.round((sum / n) * 100) : null,
+      // Mesmo piso da leitura pública: uma votação em comum só sabe dizer 0%,
+      // 50% ou 100%, e nenhum dos três é uma afirmação sobre um parlamentar.
+      alignment: n >= MIN_ALIGNMENT_BASIS ? Math.round((sum / n) * 100) : null,
       sharedThemes: n,
     });
   }
@@ -212,8 +255,21 @@ export async function agentElectorateAlignments(): Promise<Map<string, Electorat
   const cached = await cacheGet<[string, ElectorateAlignment][]>(cacheKey);
   if (cached) return new Map(cached);
 
-  const stances = await citizenThemeStances();
   const result = new Map<string, ElectorateAlignment>();
+
+  // Quantos cidadãos distintos formam este "eleitorado". `cpfHash` é o que
+  // identifica um cidadão em `Vote` sem revelar o CPF (§5).
+  const citizens = await db.vote.findMany({
+    where: { voterType: "USER" },
+    select: { cpfHash: true },
+    distinct: ["cpfHash"],
+  });
+  if (citizens.length < MIN_ELECTORATE_CITIZENS) {
+    await cacheSet(cacheKey, [], 120);
+    return result;
+  }
+
+  const stances = await citizenThemeStances();
   if (stances.size === 0) return result;
 
   const themeIds = [...stances.keys()];
@@ -236,7 +292,13 @@ export async function agentElectorateAlignments(): Promise<Map<string, Electorat
   }
 
   for (const [kid, { sum, n }] of acc) {
-    result.set(kid, { alignment: n > 0 ? Math.round((sum / n) * 100) : null, basis: n });
+    // O `basis` continua gravado mesmo quando não há leitura: é ele que a página
+    // usa para dizer "ainda não há votações em comum suficientes" em vez de
+    // simplesmente não mostrar nada.
+    result.set(kid, {
+      alignment: n >= MIN_ALIGNMENT_BASIS ? Math.round((sum / n) * 100) : null,
+      basis: n,
+    });
   }
   await cacheSet(cacheKey, [...result.entries()], 120);
   return result;
@@ -392,7 +454,7 @@ export async function agentBaseAlignments(): Promise<Map<string, BaseAlignment>>
     }
 
     result.set(kid, {
-      alignment: n > 0 ? Math.round((sum / n) * 100) : null,
+      alignment: n >= MIN_ALIGNMENT_BASIS ? Math.round((sum / n) * 100) : null,
       followers: followers.size,
       basis: n,
     });
