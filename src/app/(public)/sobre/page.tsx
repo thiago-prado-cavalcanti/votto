@@ -25,6 +25,18 @@
  *   source, not an illustration — on a page whose whole argument is "the data is
  *   official and checkable", an invented figure would be self-refuting. It is
  *   withheld entirely while the base is empty, rather than shown as zeroes.
+ * - **This page is the platform as it stands, never a changelog.** It describes
+ *   what the indexes do, not what they used to do and what was fixed. The
+ *   temptation is real and specific: every hard-won correction feels like it
+ *   deserves its paragraph, and "antes… agora…" is the easiest way to explain
+ *   *why* a rule exists. But a reader arriving today has no prior version in
+ *   their head, so the narration costs them the explanation and buys nothing —
+ *   and a page that keeps score of its own repairs reads as a product arguing
+ *   with itself rather than a document stating what is true. The reasoning that
+ *   justifies a rule belongs here in the present tense ("zero is the coordinate
+ *   of the centre, not of the unmeasured"); the history belongs in the code
+ *   comments, in `docs/` and in the git log, where it is useful to whoever has
+ *   to change the thing.
  */
 import type { Metadata } from "next";
 import * as React from "react";
@@ -464,11 +476,11 @@ export default async function AboutPage() {
           </Reveal>
 
           {/* ── Posicionamento ──────────────────────────────────────────
-              A seção mais longa das três, e é proporcional: é o índice que
-              esteve errado, e a página que explica os índices não pode passar
-              por cima disso em dois parágrafos. A ordem é a da confiança que
-              cada parte já ganhou — o que ele mede, como pesa, o que ele se
-              recusa a dizer, e só então de onde vem a régua. */}
+              A seção mais longa das três, e é proporcional: é o índice com mais
+              decisões de método por linha, e o único que pode errar sobre uma
+              pessoa nomeada sem que nada quebre. A ordem é a da leitura — o que
+              ele mede, como pesa, o que se recusa a dizer, e de onde vem a
+              régua contra a qual é conferido. */}
           <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
             <div>
               <h3 className="text-[1.55rem] leading-tight">
@@ -493,10 +505,11 @@ export default async function AboutPage() {
                   resultado contra o dela, em vez de contra nós mesmos.
                 </p>
                 <p>
-                  Este índice foi <Key>reconstruído do zero</Key>. A versão anterior era
-                  uma média simples de voto vezes peso — a mesma conta dos testes de
-                  posicionamento que circulam na internet, e com os mesmos defeitos. O
-                  que está abaixo é o que mudou e por quê.
+                  É o índice mais difícil dos três, e o que mais se recusa a falar. Ele
+                  tem um piso de cobertura abaixo do qual não diz nada, um teste que
+                  precisa passar contra si mesmo, e uma régua externa contra a qual é
+                  conferido. <Key>Falhando qualquer um dos três, a leitura não
+                  aparece</Key> — e o resto desta seção é o que cada um deles verifica.
                 </p>
               </Prose>
             </div>
@@ -514,15 +527,17 @@ export default async function AboutPage() {
               </h4>
               <Prose>
                 <p>
-                  Antes, todas valiam. Um projeto aprovado por 470 a 21 mexia na posição de
-                  cada deputado tanto quanto um decidido por 260 a 231 — e como a maior
-                  parte do que a Câmara aprova é aprovada por quase todo mundo, o índice
-                  media <Key>a composição da pauta</Key>, não as pessoas.
+                  O peso de uma proposição é <Key>o quanto ela dividiu a casa</Key>. Um
+                  projeto aprovado por 470 a 21 não separa ninguém de ninguém e vale zero;
+                  um decidido por 260 a 231 vale quase tudo.
                 </p>
                 <p>
-                  Agora o peso de uma proposição é <Key>o quanto ela dividiu a casa</Key>.
-                  Uma votação em que ninguém discordou não separa ninguém e vale zero. Um
-                  quarto das votações nominais da Câmara em 2025 está nessa faixa.
+                  Isso é o que impede o índice de medir <Key>a composição da pauta</Key> em
+                  vez das pessoas. A maior parte do que a Câmara aprova é aprovada por
+                  quase todo mundo — um quarto das votações nominais de 2025 está na faixa
+                  que vale zero. Sem esse peso, uma sequência de projetos consensuais
+                  empurraria a casa inteira para o mesmo lado, e o número diria mais sobre
+                  o que foi pautado do que sobre quem votou.
                 </p>
               </Prose>
             </div>
@@ -555,7 +570,7 @@ export default async function AboutPage() {
                 2024 e 2025. A principal linha de divisão correlaciona{" "}
                 <span className="vt-num">−0,96</span> com apoio ao governo e apenas{" "}
                 <span className="vt-num">+0,49</span> com a escala de esquerda↔direita que
-                a literatura usa. Ela colocava o PSOL em 14º de 18, à direita do PSDB —
+                a literatura usa. Ela coloca o PSOL em 14º de 18, à direita do PSDB —
                 porque o PSOL se opõe ao governo Lula <em>pela esquerda</em>, e a conta lê
                 oposição como direita.
               </p>
@@ -580,12 +595,12 @@ export default async function AboutPage() {
             <div className="mt-4 max-w-2xl text-[0.95rem] leading-[1.7] text-navy-700">
               <RuleList>
                 <RuleItem>
-                  <Key>Sem dado, não há leitura — e não há centro.</Key> Este era o defeito
-                  mais grave da versão anterior, e o mais fácil de não notar: quem não
-                  tinha nenhuma proposição classificada saía com zero nos dois eixos, que é
-                  exatamente a coordenada de um centrista perfeito. Um partido que ninguém
-                  chamaria de centrista aparecia no centro por falta de dado. Hoje a página
-                  não mostra figura nenhuma nesse caso, e diz por quê.
+                  <Key>Sem dado, não há leitura — e não há centro.</Key> Zero, nesses
+                  eixos, é a coordenada de quem está exatamente no meio; não é a de quem
+                  não foi medido. Confundir as duas coisas colocaria no centro justamente
+                  quem o índice não conseguiu ler, que é a pior leitura possível porque é a
+                  mais plausível. Quem não tem proposições classificadas suficientes não
+                  recebe figura nenhuma, e a página diz isso em vez de desenhar.
                 </RuleItem>
                 <RuleItem>
                   <Key>Proposição que não mede posição fica de fora, por regra
