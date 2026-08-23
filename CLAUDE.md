@@ -74,6 +74,16 @@ that user's voting record.
 - A vote on a theme is one of: **yes**, **no**, **abstention**.
 - Numeric mapping: `yes = +1`, `no = -1`, `abstention = 0`.
 - Compare the user's votes with an agent's votes over the **set of themes both have voted on**.
+- **A theme where BOTH abstained leaves that set entirely** — numerator and denominator, the euandi
+  and smartvote rule for "no opinion". The naive distance over `{-1, 0, 1}` scores two abstentions
+  **1.0, a perfect match**, which is the Wahl-O-Mat's most-criticised behaviour landing on a pair
+  that resembles itself even less: a citizen's "Neutro" is the platform's own offer of *no opinion*,
+  while an agent's abstention is a procedural manoeuvre under party instruction (and `mapVote` folds
+  *obstrução* into it). Two people who each declined to state a position have not agreed about
+  anything, and the defect was not random noise — it inflated the reading of whoever abstained most.
+  A *mixed* pair keeps its 0.5, which is standard across the field. Guarded by `npm run
+  check:alignment`; the worked example on `/sobre` prints seven rows over a denominator of six so the
+  rule is visible rather than stated.
 - Score: agreement-based similarity normalized to **0–100%**. (Start with weighted agreement /
   cosine similarity over the shared theme set; revisit weighting later, e.g. by theme importance.)
 - **Party alignment** = aggregation of its agents' positions (or the party's official position when

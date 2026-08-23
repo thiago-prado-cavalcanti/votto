@@ -29,12 +29,23 @@ function VoteMark({ value }: { value: "YES" | "NO" | "ABSTENTION" }) {
 }
 
 /**
- * The worked example. Six themes, four agreements, one half and one clash —
- * 4,5 pontos em 6 = 75%, which a reader can verify with a pencil.
+ * The worked example. Seven themes, four agreements, one half, one clash — and
+ * one that leaves the table entirely: **4,5 pontos em 6**, not in 7, = 75%, and
+ * a reader can verify it with a pencil.
  *
- * The numbers are deliberately not round-by-luck: a 75% built out of a ½ is what
- * makes the abstention rule visible, and that rule is the only part of the
- * computation people get wrong when they guess it.
+ * The numbers are deliberately not round-by-luck. A 75% built out of a ½ is what
+ * makes the half-abstention rule visible, and the seventh row is what makes the
+ * *other* abstention rule visible — the one nobody guesses right, because the
+ * obvious arithmetic says the opposite.
+ *
+ * That seventh row is the whole reason this figure exists rather than a formula.
+ * Two people who each declined to state a position have not agreed about
+ * anything, so the theme leaves the numerator AND the denominator. Score it 1
+ * (which is what the naive distance on `{-1, 0, 1}` gives) and the platform
+ * manufactures agreement out of two silences; score it 0 and it manufactures a
+ * disagreement. The honest answer is that the theme does not count, and the
+ * denominator saying **6** beside seven printed rows is the sentence that
+ * teaches it.
  */
 const EXAMPLE: Array<{
   theme: string;
@@ -48,6 +59,7 @@ const EXAMPLE: Array<{
   { theme: "Licenciamento ambiental", you: "NO", agent: "NO", worth: "1" },
   { theme: "Reforma administrativa", you: "YES", agent: "ABSTENTION", worth: "½" },
   { theme: "Redução da maioridade penal", you: "NO", agent: "YES", worth: "0" },
+  { theme: "Marco temporal das terras indígenas", you: "ABSTENTION", agent: "ABSTENTION", worth: "—" },
 ];
 
 const RESULT = 75;
@@ -60,7 +72,7 @@ export function AlignmentLedger() {
           A conta, feita à mão
         </span>
         <span className="text-xs text-[var(--color-muted)]">
-          Exemplo com 6 temas em comum
+          Exemplo com 7 temas em comum
         </span>
       </figcaption>
 
@@ -109,8 +121,9 @@ export function AlignmentLedger() {
       <div className="flex items-end justify-between gap-4 border-t-2 border-navy-900 pt-4">
         <p className="max-w-xs text-[0.82rem] leading-relaxed text-[var(--color-muted)]">
           <span className="vt-num text-navy-800">4,5</span> pontos em{" "}
-          <span className="vt-num text-navy-800">6</span> temas. Nada além disso entra
-          na conta.
+          <span className="vt-num text-navy-800">6</span> temas — o sétimo saiu da
+          conta, porque dois &ldquo;Neutro&rdquo; não são um acordo. Nada além disso
+          entra.
         </p>
         <div
           className="vt-num vt-fade text-[2.7rem] leading-none"
