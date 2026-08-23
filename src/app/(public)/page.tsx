@@ -30,6 +30,10 @@ export default async function HomePage() {
   const isAuthenticated = Boolean(session);
 
   const [themeCount, agentCount, partyCount, voteCount, hotThemesRaw] = await Promise.all([
+    // O acervo inteiro, tramitando ou encerrado. `/temas` mostra só o que ainda
+    // pode ser votado por padrão, então o número dela é menor — e é a placa
+    // daquela página que declara a diferença e oferece o histórico, em vez de os
+    // dois números se contradizerem em silêncio.
     db.theme.count({ where: { status: "ACTIVE" } }),
     db.publicAgent.count({ where: { status: "ACTIVE", inOffice: true } }),
     db.party.count({ where: { status: "ACTIVE" } }),
@@ -116,13 +120,21 @@ export default async function HomePage() {
   // Ranked here only to decide WHICH ten make the cut; the table re-sorts by
   // whichever reading the citizen picks. Performance is the cut-off because it
   // is the one that exists logged out.
+  //
+  // **Só performance, nunca caindo para o alinhamento.** A versão anterior era
+  // `y.quality ?? y.base ?? -1`, que troca de grandeza no meio da comparação:
+  // performance política e alinhamento são os dois 0–100, então o `??` não
+  // reclama, e um agente sem performance medida com 95% de alinhamento passa na
+  // frente de um com 80 de performance. O defeito ficou invisível enquanto
+  // ninguém tinha votado — sem cidadãos, `base` é null para todos e a expressão
+  // se reduz a `quality ?? -1`. Bastou o primeiro voto para os 44 agentes sem
+  // performance medida saltarem ao topo de um ranking de performance.
+  //
+  // Sem medida vai para o fim, que é o que "não medido" significa numa lista
+  // ordenada por essa medida.
   const topBy = (rows: RankingRow[], n: number) =>
     [...rows]
-      .sort(
-        (x, y) =>
-          (y.quality ?? y.base ?? -1) - (x.quality ?? x.base ?? -1) ||
-          x.name.localeCompare(y.name),
-      )
+      .sort((x, y) => (y.quality ?? -1) - (x.quality ?? -1) || x.name.localeCompare(y.name))
       .slice(0, n);
 
   const topDeputies = topBy(deputies.map(toAgentRow), 10);
@@ -153,7 +165,7 @@ export default async function HomePage() {
         {/* Stats — passed as raw numbers so the strip can tally them up. */}
         <StatStrip
           items={[
-            { label: "Temas", value: themeCount },
+            { label: "Temas no acervo", value: themeCount },
             { label: "Agentes públicos", value: agentCount },
             { label: "Partidos", value: partyCount },
             { label: "Votos de cidadãos", value: voteCount },
