@@ -380,6 +380,59 @@ async function stillHoldsClaim(claimedAt: Date): Promise<boolean> {
   return row?.runningSince?.getTime() === claimedAt.getTime();
 }
 
+/**
+ * Drop a chain claim left behind by a process that no longer exists.
+ *
+ * Called once, by the worker, on boot — and a worker that is booting is proof
+ * that the worker which took that claim is gone. Without this a deploy landing
+ * mid-chain is a self-inflicted outage: the killed run leaves its claim standing
+ * for the full {@link PIPELINE_LEASE_MS}, the replacement worker asks for the
+ * chain, is refused by a lock nobody is behind, and goes back to sleep until the
+ * weekly slot. Twelve hours of no synchronization, triggered by the single most
+ * routine operational event there is. It happened twice in one night.
+ *
+ * `reapOrphanRuns` cannot cover this: it works off a lease, and the whole point
+ * is that a fresh boot knows *now* what the lease would only guess in half a day.
+ *
+ * Safe against the one case where the claim might still be live — a chain the
+ * admin panel started in the web container, which a worker restart does not
+ * kill. That run checks {@link stillHoldsClaim} between jobs, so having its claim
+ * taken makes it stand down cleanly at the next job boundary instead of running
+ * alongside; and each job's own lock keeps the two from importing the same
+ * window even in the seconds between.
+ *
+ * ⚠ **This depends on there being exactly one worker replica**, which is what
+ * `docker-compose.prod.yml` declares and what CLAUDE.md §7 describes. The proof
+ * is "a worker is booting, so the worker that took this claim is gone" — true of
+ * one replica, false of two: replica B booting would release replica A's *live*
+ * claim, and the result would be two chains running side by side. That failure
+ * is worse than the one this fixes, because it does not fail — it silently does
+ * the work twice, and only the duplicated request volume against the houses
+ * would ever show it.
+ *
+ * So scaling the worker past one replica is not a config change; it is a change
+ * that requires replacing this proof with a heartbeat — the running chain
+ * touching its own row often enough that a stale timestamp, rather than the fact
+ * of a boot, is what licenses the release. Deliberately not built now: there is
+ * one replica, and a heartbeat fine-grained enough to survive a forty-minute job
+ * would have to be driven from inside `runJob`, which knows nothing about chains.
+ */
+export async function releaseChainClaimOnBoot(): Promise<Date | null> {
+  const row = await db.syncJob.findUnique({
+    where: { name: PIPELINE_JOB },
+    select: { runningSince: true },
+  });
+  if (!row?.runningSince) return null;
+
+  // Conditioned on the exact claim we read, so a chain that starts in the
+  // millisecond between the read and the write is not silently unlocked.
+  await db.syncJob.updateMany({
+    where: { name: PIPELINE_JOB, runningSince: row.runningSince },
+    data: { runningSince: null },
+  });
+  return row.runningSince;
+}
+
 /** Who is holding the chain lock, if anyone. */
 export async function pipelineRunningSince(): Promise<Date | null> {
   const row = await db.syncJob.findUnique({

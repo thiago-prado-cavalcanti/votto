@@ -32,6 +32,7 @@ import { reapOrphanRuns } from "@/lib/integration/runner";
 import {
   FRESH_FOR_DAYS,
   orderedJobs,
+  releaseChainClaimOnBoot,
   runPipeline,
   summarize,
 } from "@/lib/integration/pipeline";
@@ -130,6 +131,16 @@ async function main(): Promise<void> {
   // killed mid-run neither looks busy nor keeps its claim.
   const reaped = await reapOrphanRuns();
   if (reaped > 0) log(`${reaped} execução(ões) interrompida(s) por um reinício anterior, encerrada(s).`);
+
+  // The reaper works off a lease; this works off the fact of the restart, which
+  // is what a deploy landing mid-chain actually gives us.
+  const abandoned = await releaseChainClaimOnBoot();
+  if (abandoned) {
+    log(
+      `Cadeia constava em execução desde ${formatZoned(abandoned)} — claim liberado: ` +
+        "um worker que sobe é prova de que aquele processo não existe mais.",
+    );
+  }
 
   // Boot is just another chain run: freshness decides whether it costs anything.
   await runChain("na inicialização");
