@@ -81,8 +81,17 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
       <div className="flex flex-wrap items-center gap-2">
         <form action={runAction}>
           <input type="hidden" name="job" value={job.name} />
-          <SubmitButton size="sm" variant="outline" pendingLabel="Sincronizando…">
-            Sincronizar agora
+          {/* Disabled while a claim stands. The server refuses a second run
+              anyway (`runJob` returns `skipped: locked`), but a button that
+              looks live and then errors invites the operator to keep clicking —
+              which is how three overlapping runs got started. */}
+          <SubmitButton
+            size="sm"
+            variant="outline"
+            pendingLabel="Sincronizando…"
+            disabled={Boolean(job.runningSince)}
+          >
+            {job.runningSince ? "Em execução" : "Sincronizar agora"}
           </SubmitButton>
         </form>
 

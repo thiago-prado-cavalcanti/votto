@@ -22,7 +22,7 @@
 // Must precede every import that reads `env` at module load.
 import "./load-env";
 import { SYNC_JOBS, type SyncJobDefinition } from "@/lib/integration/jobs";
-import { runJob } from "@/lib/integration/runner";
+import { reapOrphanRuns, runJob } from "@/lib/integration/runner";
 import { describeSchedule, formatZoned, nextOccurrence } from "@/lib/integration/schedule";
 import { db } from "@/lib/db";
 
@@ -112,6 +112,12 @@ async function main(): Promise<void> {
   for (const job of SYNC_JOBS) {
     log(`  · ${job.name} — ${describeSchedule(job.schedule)}`);
   }
+
+  // A restart is proof that nothing we started is still running. Close whatever
+  // the previous process left open before deciding what is stale, so a job it
+  // was killed mid-run does not look busy — and does not keep its claim.
+  const reaped = await reapOrphanRuns();
+  if (reaped > 0) log(`${reaped} execução(ões) interrompida(s) por um reinício anterior, encerrada(s).`);
 
   const pending = await staleJobs();
   if (pending.length > 0) {

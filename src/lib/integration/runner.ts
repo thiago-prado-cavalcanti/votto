@@ -30,6 +30,50 @@ export type JobOutcome =
   | { status: "failed"; error: string; durationMs: number };
 
 /**
+ * Close runs whose process is gone, and release the locks they were holding.
+ *
+ * `finishedAt` is written by the success path and by the failure path, and both
+ * require the process to still be alive. A container that is restarted mid-run —
+ * a deploy, an OOM kill, a SIGKILL — leaves the `ImportRun` row open forever and
+ * the job's claim standing until its lease runs out.
+ *
+ * That is not cosmetic. The panel then reports "Em andamento" for something that
+ * died hours ago, so an operator cannot tell a live import from a corpse; and
+ * because the claim survives, the next legitimate attempt is refused until the
+ * lease expires, at which point another run starts and can be killed the same
+ * way. Five deploys in one afternoon left three overlapping "Em andamento" rows
+ * for `camara:expenses`, a job that takes about forty minutes.
+ *
+ * Anything still open past the lease is therefore declared interrupted. The
+ * lease is the same clock the claim uses, so this never touches a healthy run:
+ * a job that has not finished within four hours is not going to.
+ *
+ * Cheap enough to call before every claim, which is also the only way a web
+ * process ever notices — nothing else runs on boot there.
+ */
+export async function reapOrphanRuns(): Promise<number> {
+  const cutoff = new Date(Date.now() - LOCK_LEASE_MS);
+
+  const { count } = await db.importRun.updateMany({
+    where: { finishedAt: null, startedAt: { lt: cutoff } },
+    data: {
+      finishedAt: new Date(),
+      ok: false,
+      note: "Interrompida: o processo foi encerrado antes de concluir (deploy ou reinício).",
+    },
+  });
+
+  // Release claims the dead runs were holding, so the next attempt is not
+  // refused by a lock nobody is behind.
+  await db.syncJob.updateMany({
+    where: { runningSince: { lt: cutoff } },
+    data: { runningSince: null },
+  });
+
+  return count;
+}
+
+/**
  * Run one registered job under its lock, recording the attempt.
  *
  * Returns a discriminated outcome rather than throwing, so a scheduler running
@@ -42,6 +86,10 @@ export async function runJob(
   { force = false }: { force?: boolean } = {},
 ): Promise<JobOutcome> {
   const startedAt = new Date();
+
+  // Sweep corpses before claiming: without this a job killed by a deploy holds
+  // its claim until the lease expires, and the panel calls it "Em andamento".
+  await reapOrphanRuns();
 
   // Ensure the row exists before trying to claim it. Two callers racing on the
   // first-ever run of a job both attempt the insert and one loses on the unique
