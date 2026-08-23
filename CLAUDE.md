@@ -59,6 +59,15 @@ Guiding principles:
 - **Public agent (detail)** — full detail of one agent.
 - **Themes** — list with a "temperature" index, vote counts, and filters. Vote action.
 - **Theme (detail)** — full detail of one theme. Vote action.
+- **Metodologia** (`/metodologia`) — the arithmetic of every published index: the formulas, the
+  constants in force, the standard errors and the conditions under which nothing is published.
+  It is the technical half of `/sobre`, whose index section is titled "os índices, sem matemática".
+  **Reachable only from the footer**, deliberately: it is the site's appendix, not a destination,
+  and a nav entry would put it in competition with the pages a citizen came to use. Two rules keep
+  it honest — every constant is *imported* from the index modules rather than typed into the page
+  (a second copy of the numbers is the copy that goes stale, and it is the one that would be
+  quoted), and it states what the code does even where two readings differ (the double-abstention
+  discard applies to the personal index and not to the base one, and the page says so).
 
 ---
 

@@ -385,6 +385,21 @@ export interface Position {
  */
 export const MIN_EFFECTIVE_ITEMS = 8;
 
+/**
+ * Votações classificadas e divididas de que uma **casa** precisa para ser
+ * escalada, contra o piso acima, que é por pessoa.
+ *
+ * Vinte é a convenção do `wnominate` para o mínimo de votos de um único
+ * parlamentar, e usá-la como piso da casa inteira é conservador de propósito.
+ * Medido nas fontes: a Câmara produz de 40 a 60 votações nominais substantivas
+ * por ano; o Senado publicou 14 em dezoito meses — a porta que exclui o Senado
+ * é esta, e ela é mecânica, sem nomear a casa.
+ */
+export const MIN_HOUSE_ITEMS = 20;
+
+/** Agentes medidos de que uma casa precisa antes de a correlação significar algo. */
+export const MIN_HOUSE_AGENTS = 30;
+
 const EMPTY_AXIS: AxisReading = {
   value: null,
   standardError: null,

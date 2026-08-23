@@ -64,6 +64,14 @@
  * this reason in 2010: *"Poor performance in any dimension is now directly
  * reflected… there is no longer perfect substitutability."*
  *
+ * ── Why every threshold here is exported ───────────────────────────────────
+ *
+ * `/metodologia` prints them. A public page that restated a goalpost, a floor or
+ * a cap would be a second copy of the methodology, and the second copy is the
+ * one that goes stale — `AboutIndex` kept its own list of pillar labels and it
+ * diverged on the very first rename. The page reads these constants, so the
+ * printed number cannot disagree with the computed one.
+ *
  * Pure: no database, no cache, no clock. The query wrapper lives in
  * `src/lib/domain/quality.ts`.
  */
@@ -136,7 +144,7 @@ export interface QualityPillar {
  * Minimum roll calls before attendance means anything. Below this, one missed
  * sitting swings the ratio by tens of points.
  */
-const MIN_ROLL_CALLS = 10;
+export const MIN_ROLL_CALLS = 10;
 
 /**
  * Above this share of the window spent on official leave, attendance is `null`.
@@ -146,10 +154,10 @@ const MIN_ROLL_CALLS = 10;
  * legitimately away. But subtracting without limit inverts the pillar: someone
  * away for almost the whole window would score perfectly off two sittings.
  */
-const MAX_LEAVE_SHARE = 0.4;
+export const MAX_LEAVE_SHARE = 0.4;
 
 /** Months in office before a per-month rate is meaningful. */
-const MIN_MONTHS = 6;
+export const MIN_MONTHS = 6;
 
 /**
  * Minimum share of the index's total weight that must be measurable before a
@@ -176,7 +184,7 @@ export const MIN_COVERAGE = 0.5;
  * six approved items), applied to a continuous scale rather than a hard cap, so
  * ordering above the cap is preserved for the half that is hard to fake.
  */
-const FILING_ONLY_MAX = 80;
+export const FILING_ONLY_MAX = 80;
 
 /**
  * Floor applied to every pillar before the geometric mean.
@@ -185,7 +193,7 @@ const FILING_ONLY_MAX = 80;
  * distinct way of failing into the same "0". One point keeps a total failure on
  * one pillar visibly bad and still separable from a failure on two.
  */
-const PILLAR_FLOOR = 1;
+export const PILLAR_FLOOR = 1;
 
 /**
  * The published goalposts. **Frozen constants, not observed extremes.**

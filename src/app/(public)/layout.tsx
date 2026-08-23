@@ -157,9 +157,17 @@ export default async function PublicLayout({
                 purpose — it is the long-form answer to the same question the
                 legal documents answer in short, so a reader who came down here
                 looking for what the platform does with them finds it in the
-                column they are already reading. */}
+                column they are already reading.
+
+                "Metodologia" is the appendix to that answer — every formula,
+                every constant, every condition under which an index refuses to
+                publish — and this line is its ONLY entry point on the site, by
+                design: it belongs beside a number for the reader who wants to
+                check one, not in a nav bar competing with the pages a citizen
+                came to use. Removing it would strand the page. */}
             <FooterColumn title="Transparência">
               <FooterLink href="/sobre">Sobre o projeto</FooterLink>
+              <FooterLink href="/metodologia">Metodologia dos índices</FooterLink>
               <FooterLink href="/termos">Termos de Serviço</FooterLink>
               <FooterLink href="/privacidade">Política de Privacidade</FooterLink>
               <FooterLink href="/exclusao-de-dados">Excluir meus dados</FooterLink>

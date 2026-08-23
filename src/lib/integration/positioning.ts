@@ -41,6 +41,8 @@ import {
   computePosition,
   discrimination,
   MIN_DISCRIMINATION,
+  MIN_HOUSE_AGENTS,
+  MIN_HOUSE_ITEMS,
   parseDimensions,
   POSITIONING_METHODOLOGY,
   type AxisKey,
@@ -68,19 +70,6 @@ import {
   anchorKey,
 } from "@/lib/domain/anchors";
 import { AgentType, EntityStatus, House, Prisma, VoteValue } from "@/generated/prisma";
-
-/**
- * Votações classificadas e divididas de que uma casa precisa para ser escalada.
- *
- * Vinte é a convenção do `wnominate` para o mínimo de votos de **um único
- * parlamentar**, e usá-la aqui como piso da casa é conservador de propósito.
- * Medido nas fontes: a Câmara produz de 40 a 60 votações nominais substantivas
- * por ano; o Senado publicou 14 em dezoito meses.
- */
-const MIN_HOUSE_ITEMS = 20;
-
-/** Agentes medidos de que uma casa precisa antes de a correlação significar algo. */
-const MIN_HOUSE_AGENTS = 30;
 
 /** Piso de variância para um membro, evitando divisão por zero no encolhimento. */
 const VARIANCE_FLOOR = 25;
@@ -758,5 +747,3 @@ export function describeBlock(block: HouseBlock): string {
         : `ordenação partidária a ${block.correlation.toFixed(2)} da âncora BLS (mínimo ${MIN_ANCHOR_CORRELATION})`;
   }
 }
-
-export { MIN_HOUSE_ITEMS, MIN_HOUSE_AGENTS };
