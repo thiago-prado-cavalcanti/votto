@@ -142,15 +142,24 @@ export function ThemeFeed({
             <div className="text-center">
               {failed ? (
                 <p className="mb-3 text-sm text-[var(--color-muted)]">
-                  Não foi possível carregar mais temas.
+                  Não foi possível carregar mais temas. Continue pela página seguinte.
                 </p>
               ) : null}
               <Link
                 href={moreHref}
                 onClick={
-                  // Once mounted, the same link retries in place instead of
-                  // reloading the document.
-                  ready
+                  // Once mounted, the same link continues in place instead of
+                  // reloading the document — EXCEPT after a failure, where it
+                  // stays a real link on purpose.
+                  //
+                  // The failure this recovers from is a deploy: a server
+                  // action's id is scoped to the build that produced it, so a
+                  // tab left open across a release calls an id the new build no
+                  // longer has. Retrying in place would then fail forever,
+                  // because the stale bundle can never reach the new action.
+                  // Navigating loads a fresh document, which both serves the
+                  // page and replaces the bundle that broke.
+                  ready && !failed
                     ? (event) => {
                         event.preventDefault();
                         void loadNext();
