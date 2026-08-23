@@ -11,7 +11,8 @@ import { IndexPlate } from "@/components/public/IndexPlate";
 import { FilterBar } from "@/components/public/FilterBar";
 import { AgentCard } from "@/components/public/AgentCard";
 import { AgentFeed } from "@/components/public/AgentFeed";
-import { loadAgentPage } from "@/lib/domain/agent-list";
+import { SortHeader } from "@/components/public/SortHeader";
+import { agentDirection, agentSort, loadAgentPage } from "@/lib/domain/agent-list";
 import { db } from "@/lib/db";
 import { getCitizenSession } from "@/lib/auth/session";
 import { agentTypeLabel, agentTypePluralLabel, BR_STATES } from "@/lib/labels";
@@ -30,11 +31,12 @@ export default async function AgentsPage({
     state?: string;
     party?: string;
     sort?: string;
+    dir?: string;
     p?: string;
   }>;
 }) {
-  const { q, type, state, party, sort, p } = await searchParams;
-  const query = { q, type, state, party, sort };
+  const { q, type, state, party, sort, dir, p } = await searchParams;
+  const query = { q, type, state, party, sort, dir };
   const session = await getCitizenSession();
 
   const viewer = session
@@ -60,6 +62,36 @@ export default async function AgentsPage({
     }),
   ]);
   const rows = page.rows;
+  const activeSort = agentSort(sort);
+  const activeDir = agentDirection(dir);
+
+  // A reading is offered only where it has something to say: the personal one
+  // needs a session, the others need the data to exist at all. That is what
+  // keeps the header from offering an ordering that would rank nothing.
+  const sortOptions = [
+    { key: "quality", label: "Performance política", has: rows.some((r) => r.quality !== null) },
+    { key: "base", label: "Alinhamento com a base", has: rows.some((r) => r.published !== null) },
+    {
+      key: "personal",
+      label: "Seu alinhamento",
+      has: Boolean(session) && rows.some((r) => r.alignment !== null),
+    },
+  ]
+    .filter((o) => o.has)
+    .map(({ key, label }) => ({
+      key,
+      label,
+      // Built here rather than in the component: a server component cannot pass
+      // a function across to a client one. Clicking the option already in force
+      // turns the arrow over; clicking another starts it descending.
+      href: `?${new URLSearchParams({
+        ...(Object.fromEntries(
+          Object.entries({ q, type, state, party }).filter(([, v]) => v),
+        ) as Record<string, string>),
+        sort: key,
+        dir: key === activeSort && activeDir === "desc" ? "asc" : "desc",
+      }).toString()}`,
+    }));
 
   // Masthead plate: the bench by office. Counted over the whole filtered set
   // (`page.byType`), not over the slice — it is the shape of what the filters
@@ -133,17 +165,15 @@ export default async function AgentsPage({
               ))}
             </Select>
           </Field>
-          <Field label="Ordenar por">
-            <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
-              <option value="">Nome</option>
-              {/* The value stays `engagement` (an internal token, and links to
-                  it already exist); the label follows what is actually shown. */}
-              <option value="engagement">Alinhamento com a base</option>
-              <option value="quality">Performance política</option>
-              {session ? <option value="alignment">Seu alinhamento</option> : null}
-            </Select>
-          </Field>
         </FilterBar>
+
+        {/* Ordering is a header of the list, not a filter: the filters say which
+            agents, this says which reading ranks them. Anchors rather than
+            buttons because the server paginates — page two has to agree with
+            page one, so the choice lives in the URL. */}
+        {sortOptions.length > 0 ? (
+          <SortHeader options={sortOptions} active={activeSort} direction={activeDir} />
+        ) : null}
 
         {rows.length === 0 ? (
           <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">

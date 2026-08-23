@@ -31,6 +31,15 @@ const DEFAULT_BATCH = 300;
 /** Pause between calls, so a long run doesn't burst against the rate limit. */
 const REQUEST_DELAY = 150;
 
+/**
+ * How long a theme the model could not summarize is left alone.
+ *
+ * Long enough that a permanently-unsummarizable bill costs one attempt a month
+ * instead of one a week, short enough that a transient outage is not a permanent
+ * exclusion.
+ */
+const RETRY_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** Below this model-reported confidence the axes are dropped as noise. */
 const MIN_AXIS_CONFIDENCE = 0.35;
 
@@ -62,8 +71,20 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
   }
 
   const take = opts.limit ?? DEFAULT_BATCH;
+  const retryAfter = new Date(Date.now() - RETRY_AFTER_MS);
   const themes = await db.theme.findMany({
-    where: { status: "ACTIVE", plainSummary: null, summary: { not: "" } },
+    // `plainSummary: null` is what keeps a theme from being summarized twice.
+    // The `aiUpdatedAt` clause is what keeps one that FAILED from being paid for
+    // every week: without it a theme the model cannot produce a brief for stays
+    // null, sits at the top of a priority ordering forever, and takes a slot in
+    // every batch — so it is re-sent indefinitely and the themes below it are
+    // never reached at all.
+    where: {
+      status: "ACTIVE",
+      plainSummary: null,
+      summary: { not: "" },
+      OR: [{ aiUpdatedAt: null }, { aiUpdatedAt: { lt: retryAfter } }],
+    },
     orderBy: [{ inProgress: "desc" }, { priority: "desc" }, { lastActionAt: "desc" }],
     take,
     select: {
@@ -95,7 +116,16 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
       classifications: classificationLabels(theme.classifications),
     });
     await sleep(REQUEST_DELAY);
-    if (!brief) continue;
+
+    if (!brief) {
+      // Record the attempt, not a result. `aiUpdatedAt` therefore means "when
+      // the AI last TRIED", which is what the selection above filters on — a
+      // theme the model refuses is set aside for a month rather than re-sent
+      // every run. It comes back on its own afterwards, in case the refusal was
+      // about the model or the wording of the bill at the time.
+      await db.theme.update({ where: { id: theme.id }, data: { aiUpdatedAt: new Date() } });
+      continue;
+    }
 
     // Axes are written only when the model is reasonably sure AND no editor has
     // tagged the theme. A low-confidence guess would pull every citizen's

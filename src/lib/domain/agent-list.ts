@@ -50,6 +50,40 @@ export interface AgentListQuery {
   state?: string;
   party?: string;
   sort?: string;
+  /** "asc" | "desc"; anything else reads as descending. */
+  dir?: string;
+}
+
+/**
+ * The three readings a bench can be ranked by, and the tokens that address them.
+ *
+ * `engagement` and `alignment` are the older names for the base and personal
+ * readings. They stay because links to them are already in circulation — the URL
+ * is a contract with anybody who bookmarked or shared one.
+ */
+export const AGENT_SORTS = {
+  quality: (r: AgentRow) => r.quality,
+  base: (r: AgentRow) => r.published,
+  personal: (r: AgentRow) => r.alignment,
+} as const;
+
+export type AgentSortKey = keyof typeof AGENT_SORTS;
+
+const SORT_ALIASES: Record<string, AgentSortKey> = {
+  engagement: "base",
+  alignment: "personal",
+};
+
+/** Canonical sort key. Performance leads: it is the one that reads logged out. */
+export function agentSort(sort: string | undefined): AgentSortKey {
+  if (!sort) return "quality";
+  if (sort in AGENT_SORTS) return sort as AgentSortKey;
+  return SORT_ALIASES[sort] ?? "quality";
+}
+
+/** Descending unless asked otherwise — on all three readings the top is the point. */
+export function agentDirection(dir: string | undefined): "asc" | "desc" {
+  return dir === "asc" ? "asc" : "desc";
 }
 
 /** One card's worth of data. */
@@ -138,15 +172,20 @@ export async function loadAgentPage(
     };
   });
 
-  if (query.sort === "alignment" && alignments) {
-    rows = [...rows].sort((a, b) => (b.alignment ?? -1) - (a.alignment ?? -1));
-  } else if (query.sort === "engagement") {
-    rows = [...rows].sort((a, b) => (b.published ?? -1) - (a.published ?? -1));
-  } else if (query.sort === "quality") {
-    // −1 for the unmeasured, so they sink instead of being ranked as if they
-    // had scored zero (CLAUDE.md §3.3).
-    rows = [...rows].sort((a, b) => (b.quality ?? -1) - (a.quality ?? -1));
-  }
+  const pick = AGENT_SORTS[agentSort(query.sort)];
+  const descending = agentDirection(query.dir) === "desc";
+  // The unmeasured sink to the bottom in BOTH directions. They are not the worst
+  // agents, they are the ones we could not measure, and asking for the bottom of
+  // a ranking should not hand back the people who are missing from it
+  // (CLAUDE.md §3.3).
+  rows = [...rows].sort((a, b) => {
+    const x = pick(a);
+    const y = pick(b);
+    if (x === null && y === null) return a.agent.firstName.localeCompare(b.agent.firstName);
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return descending ? y - x : x - y;
+  });
 
   // The masthead plate describes the whole filtered set, not the slice — it is
   // the shape of the bench the filters selected, and it must not shrink as the

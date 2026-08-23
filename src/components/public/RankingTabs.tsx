@@ -19,6 +19,7 @@ import { ButtonLink } from "@/components/ui";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { alignmentInk } from "@/lib/domain/tone";
 import { cn } from "@/lib/cn";
+import { SortHeader } from "@/components/public/SortHeader";
 
 export interface RankingRow {
   kid: string;
@@ -74,6 +75,7 @@ export function RankingTabs({
   // Performance leads by default: it is the only one of the three that reads
   // for a visitor who is not logged in, which is most of them.
   const [sort, setSort] = React.useState<SortKey>("quality");
+  const [direction, setDirection] = React.useState<"asc" | "desc">("desc");
   const current = tabs.find((t) => t.key === active) ?? tabs[0];
 
   // A column is offered when it has something to say — the personal one only
@@ -91,10 +93,18 @@ export function RankingTabs({
   const ordering = columns.find((c) => c.key === sort) ?? columns[0];
   const rows = React.useMemo(() => {
     if (!current || !ordering) return current?.rows ?? [];
-    return [...current.rows].sort(
-      (a, b) => (ordering.pick(b) ?? -1) - (ordering.pick(a) ?? -1) || a.name.localeCompare(b.name),
-    );
-  }, [current, ordering]);
+    const desc = direction === "desc";
+    return [...current.rows].sort((a, b) => {
+      const x = ordering.pick(a);
+      const y = ordering.pick(b);
+      // The unmeasured sink either way: they are not the worst, they are the
+      // ones missing from the ranking.
+      if (x === null && y === null) return a.name.localeCompare(b.name);
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return (desc ? y - x : x - y) || a.name.localeCompare(b.name);
+    });
+  }, [current, ordering, direction]);
 
   if (!current) return null;
   const logo = current.avatarShape === "logo";
@@ -145,31 +155,21 @@ export function RankingTabs({
         ) : null}
       </div>
 
-      {/* Ordering is a control, not a tab. The tabs say which bench you are
-          looking at; this says which reading ranks it — and the three readings
-          answer different questions, so one is never a subset of another. */}
+      {/* Ordering is a header of the list, not a tab. The tabs say which bench
+          you are looking at; this says which reading ranks it — and the three
+          readings answer different questions, so one is never a subset of
+          another. The table already holds every row it ranks, so this re-sorts
+          in place rather than addressing the server. */}
       {columns.length > 1 ? (
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-line py-2.5 text-[0.7rem]">
-          <span className="font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
-            Ordenar por
-          </span>
-          {columns.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => setSort(c.key)}
-              aria-pressed={ordering?.key === c.key}
-              className={cn(
-                "transition-colors",
-                ordering?.key === c.key
-                  ? "font-semibold text-navy-900 underline underline-offset-4"
-                  : "text-navy-600 hover:text-navy-900",
-              )}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
+        <SortHeader
+          options={columns.map((c) => ({ key: c.key, label: c.label }))}
+          active={ordering?.key ?? "quality"}
+          direction={direction}
+          onChange={(key, next) => {
+            setSort(key as SortKey);
+            setDirection(next);
+          }}
+        />
       ) : null}
 
       {rows.length === 0 ? (
@@ -192,7 +192,17 @@ export function RankingTabs({
                   <th
                     key={c.key}
                     scope="col"
-                    className="py-2.5 pl-3 text-right font-semibold whitespace-nowrap"
+                    aria-sort={
+                      ordering?.key === c.key
+                        ? direction === "desc"
+                          ? "descending"
+                          : "ascending"
+                        : "none"
+                    }
+                    className={cn(
+                      "py-2.5 pl-3 text-right font-semibold whitespace-nowrap",
+                      ordering?.key === c.key ? "text-navy-900" : null,
+                    )}
                   >
                     {c.label}
                   </th>

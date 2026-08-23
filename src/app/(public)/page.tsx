@@ -138,7 +138,10 @@ export default async function HomePage() {
       base: publicReading(partyBase.get(p.kid), partyEngage.get(p.kid)?.alignment ?? null).value,
       personal: isAuthenticated ? partyAlign?.get(p.kid)?.alignment ?? null : null,
     })),
-    5,
+    // Ten, like the two benches above it: the tabs are read side by side and a
+    // shorter table reads as "there are fewer parties", which is not the point
+    // the cut is making.
+    10,
   );
 
   return (
@@ -162,7 +165,7 @@ export default async function HomePage() {
             here wraps them in a second one. */}
         <section className="mt-16">
           <SectionHead
-            title="Ranking de alinhamento"
+            title="Ranking"
             lead={
               isAuthenticated
                 ? "Quem mais vota como você — do maior para o menor alinhamento pessoal."
