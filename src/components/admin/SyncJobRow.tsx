@@ -25,6 +25,15 @@ export interface SyncJobView {
   lastNote: string | null;
   lastItemsUpserted: number;
   runningSince: string | null;
+  /**
+   * The job's default look-back in days, when it takes one.
+   *
+   * Present so the operator can ask for a wider window than the weekly default.
+   * Without it the panel could only ever run the 30-day sweep, which is how the
+   * roll-call ledger stayed empty: thirty days is about four sittings, and the
+   * attendance pillar refuses to score anybody on fewer than ten.
+   */
+  defaultDays: number | null;
 }
 
 /** Colour and wording for the job's last outcome. */
@@ -79,8 +88,23 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <form action={runAction}>
+        <form action={runAction} className="flex items-center gap-2">
           <input type="hidden" name="job" value={job.name} />
+          {job.defaultDays !== null ? (
+            <label className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+              Janela
+              <input
+                type="number"
+                name="days"
+                min={1}
+                max={3650}
+                defaultValue={job.defaultDays}
+                disabled={Boolean(job.runningSince)}
+                className="h-8 w-20 border border-navy-300 bg-transparent px-2 text-sm text-navy-900 disabled:opacity-50"
+              />
+              dias
+            </label>
+          ) : null}
           {/* Disabled while a claim stands. The server refuses a second run
               anyway (`runJob` returns `skipped: locked`), but a button that
               looks live and then errors invites the operator to keep clicking —

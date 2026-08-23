@@ -93,9 +93,14 @@ export interface QualityPillar {
   weight: number;
   peer: PeerScope;
   /**
-   * The comparable figure that gets ranked. **Higher is always better** — a
-   * pillar where less is better (cost) returns its negation, so the percentile
-   * step never needs to know which way a pillar points.
+   * Which end of the scale is good. Cost is the one where less is better, and
+   * saying so here is what lets {@link relativeScore} normalize both directions
+   * without a pillar having to hide its meaning behind a negation.
+   */
+  higherIsBetter: boolean;
+  /**
+   * The comparable figure, in its own units — sittings attended over sittings
+   * held, bills per month, reais per month.
    *
    * `null` when the pillar is not measurable for this agent, which redistributes
    * its weight instead of scoring it zero.
@@ -180,8 +185,9 @@ function brl(value: number): string {
 export const QUALITY_PILLARS: QualityPillar[] = [
   {
     key: "attendance",
+    higherIsBetter: true,
     label: "Assiduidade",
-    weight: 0.3,
+    weight: 1 / 3,
     peer: "house",
     raw: (i) => {
       const a = i.attendance;
@@ -199,47 +205,53 @@ export const QUALITY_PILLARS: QualityPillar[] = [
     },
   },
   {
-    key: "authorship",
-    label: "Proposições",
-    weight: 0.25,
+    key: "production",
+    label: "Relatorias e proposições",
+    weight: 1 / 3,
     peer: "house",
-    // Outcome counts twice: once as a bill filed, once as a bill that moved.
-    // Filing is the cheap half, so the half that is hard to fake is the half
-    // that separates agents who file a lot from agents who carry something
-    // through.
+    higherIsBetter: true,
+    // One pillar, not two, because they are one thing: what the parliamentarian
+    // put through the house. Splitting them also punished the Câmara twice over
+    // — it publishes only a bill's last rapporteur, so relatoria alone could be
+    // measured for 75 members out of 594 and was null for everybody else.
+    //
+    // Outcome counts twice: filing is the cheap half, so the half that is hard
+    // to fake is the half that separates somebody who files from somebody who
+    // carries something through.
     raw: (i) => {
       const a = i.authorship;
-      if (!a || a.months < MIN_MONTHS) return null;
-      return (a.authored + a.advanced) / a.months;
+      const r = i.rapporteurship;
+      const months = a?.months ?? r?.months ?? 0;
+      if (months < MIN_MONTHS) return null;
+      const authored = a ? a.authored + a.advanced : 0;
+      return (authored + (r?.count ?? 0)) / months;
     },
     reading: (i) => {
       const a = i.authorship;
-      if (!a) return null;
-      return {
-        value: `${a.authored}`,
-        detail:
-          a.advanced > 0
-            ? `projetos apresentados · ${a.advanced} avançaram`
-            : "projetos apresentados",
-      };
+      const r = i.rapporteurship;
+      if (!a && !r) return null;
+      const authored = a?.authored ?? 0;
+      const reported = r?.count ?? 0;
+      const parts = [`${authored} apresentad${authored === 1 ? "o" : "os"}`];
+      parts.push(`${reported} relatad${reported === 1 ? "o" : "os"}`);
+      if (a && a.advanced > 0) parts.push(`${a.advanced} avançaram`);
+      return { value: `${authored + reported}`, detail: parts.join(" · ") };
     },
   },
   {
     key: "cost",
     label: "Custo político",
-    weight: 0.25,
+    weight: 1 / 3,
     peer: "house-uf",
-    // Negated: spending less is better, and the ranking step always reads
-    // "higher is better".
-    //
-    // `documents === 0` is `null`, never a top score. It is the worst false
+    higherIsBetter: false,
+    // `documents === 0` is null, never a top score. It is the worst false
     // positive the index could produce: a month the house has not published
     // yet, or an agent away on leave, is indistinguishable from R$ 0 spent —
     // and reading that as exemplary frugality would be exactly backwards.
     raw: (i) => {
       const c = i.cost;
       if (!c || c.documents === 0 || c.months < MIN_MONTHS) return null;
-      return -(c.spent / c.months);
+      return c.spent / c.months;
     },
     reading: (i) => {
       const c = i.cost;
@@ -248,22 +260,6 @@ export const QUALITY_PILLARS: QualityPillar[] = [
         value: `${brl(c.spent / Math.max(1, c.months))}/mês`,
         detail: `média de ${Math.round(c.months)} meses · ${brl(c.spent)} no total`,
       };
-    },
-  },
-  {
-    key: "rapporteurship",
-    label: "Relatorias",
-    weight: 0.2,
-    peer: "house",
-    raw: (i) => {
-      const r = i.rapporteurship;
-      if (!r || r.months < MIN_MONTHS) return null;
-      return r.count / r.months;
-    },
-    reading: (i) => {
-      const r = i.rapporteurship;
-      if (!r) return null;
-      return { value: `${r.count}`, detail: "projetos relatados" };
     },
   },
 ];
@@ -287,50 +283,71 @@ export interface Quality {
 }
 
 /**
- * Percentile of `value` within `cohort`, as 0–100.
+ * Score a value against the best in its peer group, as 0–100.
  *
- * Ties take the **midrank**: every member of a tied block gets the same score,
- * the average of the ranks the block spans. Without it, the large block of
- * agents with zero relatorias would be spread across a range of scores in
- * whatever order the array happened to arrive in — inventing a difference the
- * data does not contain.
+ * A proportion, not a rank: if the most assiduous member of a house attended 200
+ * sittings, 200 is 100 and 100 is 50. That is a different statement from a
+ * percentile, which would say "ahead of 80% of your peers" and tell you nothing
+ * about the size of the gap — two agents one sitting apart can sit twenty
+ * percentile points apart in a tight field, and a hundred apart in a loose one.
  *
- * `null` below `MIN_COHORT`, because a percentile over three peers is noise
- * dressed as a measurement — and `null` again when the tie block this value
- * falls in covers more than `MAX_TIE_SHARE` of the cohort, because a rank shared
- * with most of the field ranks nobody.
+ * A pillar where less is better inverts the ratio instead of the value: the
+ * cheapest mandate is 100, and one costing twice as much is 50. Same sentence,
+ * read from the other end.
+ *
+ * The cost of a proportion is that one outlier compresses everybody — a member
+ * who files four hundred bills where the median is ten leaves the rest scoring
+ * in the single digits. That is a real property of the measure and not a bug,
+ * but it is why `requality` prints the distribution: a pillar whose whole
+ * cohort has been flattened into the bottom fifth has stopped discriminating
+ * just as surely as one where they all tie.
+ *
+ * `null` below `MIN_COHORT`, and `null` when the value shares a tie block
+ * covering more than `MAX_TIE_SHARE` of the cohort — a score shared with most of
+ * the field ranks nobody.
  */
-export function percentileRank(value: number, cohort: number[]): number | null {
+export function relativeScore(
+  value: number,
+  cohort: number[],
+  higherIsBetter = true,
+): number | null {
   if (cohort.length < MIN_COHORT) return null;
-  let below = 0;
-  let equal = 0;
-  for (const other of cohort) {
-    if (other < value) below++;
-    else if (other === value) equal++;
+
+  const tied = cohort.filter((other) => other === value).length;
+  if (tied / cohort.length > MAX_TIE_SHARE) return null;
+
+  if (higherIsBetter) {
+    const best = Math.max(...cohort);
+    // Everybody at zero: there is nothing here to tell them apart.
+    if (best <= 0) return null;
+    return Math.round(Math.max(0, Math.min(100, (value / best) * 100)));
   }
-  if (equal === 0) return Math.round((below / cohort.length) * 100);
-  if (equal / cohort.length > MAX_TIE_SHARE) return null;
-  // Midrank: the block spans [below, below + equal), so its centre is
-  // below + equal/2.
-  return Math.round(((below + equal / 2) / cohort.length) * 100);
+
+  // Less is better: the smallest spend is the benchmark. A zero would make every
+  // other agent score nothing, so it is treated as unmeasurable rather than as
+  // the perfect mandate — the same reason `cost` refuses an agent with no
+  // documents at all.
+  const cheapest = Math.min(...cohort.filter((other) => other > 0));
+  if (!Number.isFinite(cheapest) || value <= 0) return null;
+  return Math.round(Math.max(0, Math.min(100, (cheapest / value) * 100)));
 }
 
 /**
  * Combine the pillars into the published 0–100.
  *
- * `percentiles` maps pillar key → the agent's already-computed rank inside its
- * peer group; it comes from the recompute step, which is the only place that
- * holds the whole cohort. A key that is absent or null means the pillar did not
+ * `scores` maps pillar key → the agent's already-computed 0–100 against its peer
+ * group; it comes from the recompute step, which is the only place that holds
+ * the whole cohort. A key that is absent or null means the pillar did not
  * produce a score, and its weight is redistributed over the pillars that did.
  */
 export function computeQuality(
   inputs: QualityInputs,
-  percentiles: Map<string, number | null>,
+  scores: Map<string, number | null>,
 ): Quality {
   const pillars: QualityPillarResult[] = QUALITY_PILLARS.map((pillar) => ({
     key: pillar.key,
     label: pillar.label,
-    score: pillar.raw(inputs) === null ? null : (percentiles.get(pillar.key) ?? null),
+    score: pillar.raw(inputs) === null ? null : (scores.get(pillar.key) ?? null),
     weight: pillar.weight,
     reading: pillar.reading(inputs),
   }));

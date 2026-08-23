@@ -124,7 +124,7 @@ export function AlignmentLedger() {
 }
 
 /**
- * The four pillars of the quality index, as their weights.
+ * The four pillars of the quality index.
  *
  * Weights, and deliberately not a worked score: every pillar is a percentile
  * inside a peer group, so an illustrative agent would need an invented cohort
@@ -144,52 +144,34 @@ export function AlignmentLedger() {
 /** The prose for each pillar, keyed by its registry `key`. */
 const PILLAR_NOTES: Record<string, string> = {
   attendance: "Votações a que compareceu, entre as que houve enquanto ocupava a cadeira.",
-  authorship: "Projetos apresentados por mês de mandato. Os que andaram contam em dobro.",
+  production:
+    "Projetos apresentados e relatados, por mês de mandato. Os que andaram contam em dobro.",
   cost: "Média mensal da cota parlamentar consumida. Aqui, gastar menos pontua mais.",
-  rapporteurship:
-    "Projetos relatados. Pesa menos de propósito — relatoria é distribuída pela liderança.",
 };
 
 const PILLARS = QUALITY_PILLARS.map((pillar) => ({
   label: pillar.label,
-  weight: Math.round(pillar.weight * 100),
   note: PILLAR_NOTES[pillar.key] ?? "",
 }));
 
 export function QualityPillars() {
-  const max = Math.max(...PILLARS.map((p) => p.weight));
-
   return (
     <figure className="border-t-2 border-navy-900">
       <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-3 pt-2.5">
         <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-navy-600">
           Como o índice é formado
         </span>
-        <span className="text-xs text-[var(--color-muted)]">Peso de cada pilar</span>
+        {/* The weights used to be drawn as bars. They are equal now, so four
+            identical bars would be a chart of nothing — the sentence says it
+            once and the rows get on with what each pillar measures. */}
+        <span className="text-xs text-[var(--color-muted)]">Três medidas, peso igual</span>
       </figcaption>
 
       <ul>
-        {PILLARS.map((pillar, i) => (
+        {PILLARS.map((pillar) => (
           <li key={pillar.label} className="border-t border-line py-3">
-            <div className="grid grid-cols-[minmax(0,1fr)_5rem_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto]">
-              <span className="truncate text-[0.86rem] text-navy-800">{pillar.label}</span>
-              {/* The track is the rule pigment, not the tint — the same reason
-                  `IndexPlate` uses it: a lighter track vanishes into warm paper. */}
-              <span className="block h-1.5 w-full bg-navy-200">
-                <span
-                  className="vt-grow block h-full"
-                  style={{
-                    ...({ "--vt-d": `${360 + i * 90}ms` } as CSSProperties),
-                    width: `${Math.round((pillar.weight / max) * 100)}%`,
-                    background: "var(--color-colonial-600)",
-                  }}
-                />
-              </span>
-              <span className="vt-num min-w-[2.5rem] text-right text-[1.05rem] leading-none text-navy-900">
-                {pillar.weight}%
-              </span>
-            </div>
-            <p className="mt-1.5 text-[0.78rem] leading-relaxed text-[var(--color-muted)]">
+            <span className="text-[0.86rem] text-navy-800">{pillar.label}</span>
+            <p className="mt-1 text-[0.78rem] leading-relaxed text-[var(--color-muted)]">
               {pillar.note}
             </p>
           </li>

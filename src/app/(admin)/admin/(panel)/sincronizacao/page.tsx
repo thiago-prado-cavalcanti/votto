@@ -39,6 +39,9 @@ export default async function SyncPage() {
       lastNote: state?.lastNote ?? null,
       lastItemsUpserted: state?.lastItemsUpserted ?? 0,
       runningSince: state?.runningSince ? formatZoned(state.runningSince) : null,
+      // Only jobs that declare a window take one; the rest always import the
+      // full current roster or the whole year.
+      defaultDays: job.defaults.days ?? null,
     };
   });
 

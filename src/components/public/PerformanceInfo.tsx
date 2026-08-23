@@ -94,12 +94,13 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
           <strong className="font-medium text-navy-900">com você</strong>. A performance
           política pergunta outra coisa, que não depende de concordar:{" "}
           <strong className="font-medium text-navy-900">se ele está fazendo o trabalho</strong>.
-          São quatro medidas, todas tiradas do registro oficial da própria casa.
+          São três medidas, todas tiradas do registro oficial da própria casa, e as
+          três pesam igual.
         </p>
 
         <dl className="mt-5 divide-y divide-[var(--color-line)] border-y border-line">
           {QUALITY_PILLARS.map((pillar) => (
-            <Point key={pillar.key} term={`${pillar.label} · ${Math.round(pillar.weight * 100)}%`}>
+            <Point key={pillar.key} term={pillar.label}>
               {EXPLANATION[pillar.key] ?? ""}
             </Point>
           ))}
@@ -110,12 +111,13 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
         </h3>
 
         <dl className="mt-3 divide-y divide-[var(--color-line)] border-y border-line">
-          <Point term="É uma posição entre pares, não uma nota de prova">
-            Cada barra mostra onde o parlamentar está em relação aos colegas da mesma
-            casa — e, no custo político, do mesmo estado, porque o teto da cota varia
-            com a distância de Brasília. Comparecer a 92% das votações pode ser muito ou
-            pouco dependendo de como está o resto da casa, e é por isso que o número
-            cru aparece sempre ao lado da barra.
+          <Point term="É proporção ao melhor, não nota de prova">
+            Cada barra compara o parlamentar com o melhor dos colegas da mesma casa —
+            e, no custo político, do mesmo estado, porque o teto da cota varia com a
+            distância de Brasília. Se quem mais compareceu esteve em 200 votações, 200 é
+            100% e 100 votações é 50%. No custo a leitura se inverte: o gabinete mais
+            barato é 100%, e um que custa o dobro disso é 50%. O número cru aparece
+            sempre ao lado da barra.
           </Point>
           <Point term="Custo político não é o dinheiro que ele traz">
             É a média mensal do que o mandato consome: gabinete, viagens, combustível,
@@ -147,11 +149,9 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
 const EXPLANATION: Record<string, string> = {
   attendance:
     "Votações nominais a que compareceu, entre as que aconteceram enquanto ocupava a cadeira. Afastamento oficial é descontado, e sessão que ele mesmo presidiu também — quem preside está impedido de votar.",
-  authorship:
-    "Projetos apresentados por mês de mandato, contando só os que legislam de fato (PL, PEC, PLP, PDL) e não requerimentos. Os que avançaram contam em dobro.",
+  production:
+    "O que o parlamentar pôs para andar na casa: projetos que apresentou, contando só os que legislam de fato (PL, PEC, PLP, PDL) e não requerimentos, mais os que relatou. Os que avançaram contam em dobro.",
   cost: "Média mensal da cota parlamentar consumida. Aqui, gastar menos pontua mais.",
-  rapporteurship:
-    "Projetos que ele relatou. Pesa menos de propósito: relatoria é distribuída pela liderança, então mede tanto prestígio interno quanto mérito.",
 };
 
 function Point({ term, children }: { term: string; children: ReactNode }) {

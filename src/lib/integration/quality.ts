@@ -18,7 +18,7 @@ import { windowYears } from "@/lib/integration/camara";
 import {
   computeQuality,
   isAdvancedSituation,
-  percentileRank,
+  relativeScore,
   QUALITY_PILLARS,
   type Quality,
   type QualityInputs,
@@ -304,7 +304,7 @@ export async function recomputeQualityIndex(
     }
   }
 
-  // ── Percentiles, one cohort per (pillar, peer group) ──────────────────────
+  // ── One cohort per (pillar, peer group) ───────────────────────────────────
   const cohorts = new Map<string, number[]>();
   const cohortKeyOf = (row: AgentRow, peer: string): string =>
     peer === "house-uf" ? `${row.house}:${row.state ?? "??"}` : `${row.house}`;
@@ -344,24 +344,24 @@ export async function recomputeQualityIndex(
     const agent = agents.find((a) => a.id === row.id);
     if (!agent) continue;
 
-    const percentiles = new Map<string, number | null>();
+    const scores = new Map<string, number | null>();
     for (const pillar of QUALITY_PILLARS) {
       const value = pillar.raw(row.inputs);
       if (value === null) {
-        percentiles.set(pillar.key, null);
+        scores.set(pillar.key, null);
         continue;
       }
       const primary = cohorts.get(`${pillar.key}:${cohortKeyOf(row, pillar.peer)}`) ?? [];
-      let rank = percentileRank(value, primary);
-      if (rank === null && pillar.peer === "house-uf") {
+      let score = relativeScore(value, primary, pillar.higherIsBetter);
+      if (score === null && pillar.peer === "house-uf") {
         const region =
           cohorts.get(`${pillar.key}:region:${row.house}:${REGION_BY_STATE[row.state ?? ""] ?? "??"}`) ?? [];
-        rank = percentileRank(value, region);
+        score = relativeScore(value, region, pillar.higherIsBetter);
       }
-      percentiles.set(pillar.key, rank);
+      scores.set(pillar.key, score);
     }
 
-    const quality = computeQuality(row.inputs, percentiles);
+    const quality = computeQuality(row.inputs, scores);
     const name = `${agent.firstName} ${agent.lastName}`.trim();
     scored.push({ id: row.id, kid: agent.kid, name, score: quality.score, pillars: quality.pillars });
 

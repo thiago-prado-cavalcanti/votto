@@ -27,7 +27,7 @@ import { dateWindows, isoDaysAgo, parseDate, splitName } from "@/lib/integration
 import {
   computeQuality,
   isAdvancedSituation,
-  percentileRank,
+  relativeScore,
   qualityBand,
   QUALITY_PILLARS,
   type QualityInputs,
@@ -524,29 +524,26 @@ function checkQualityHelpers(): void {
   // instead of being spread across a range in whatever order the array arrived
   // in — a difference the data does not contain. The fixture has to stay a
   // minority, because a majority block is nulled by the rule checked below.
-  const tied = [0, 1, 2, 2, 2, 3, 4, 5, 6, 7];
-  const midrank = percentileRank(2, tied);
-  check(
-    `bloco de empate divide um percentil só (${midrank})`,
-    midrank !== null && midrank > 20 && midrank < 50,
-    "empates deixaram de usar midrank — o índice está inventando diferença entre iguais",
-  );
-  check(
-    "os três empatados recebem a mesma nota",
-    percentileRank(2, tied) === midrank,
-  );
-  check("coorte pequena não produz percentil", percentileRank(1, [1, 2, 3]) === null);
+  // Proporção ao melhor: 200 é 100, 100 é 50 — não posição na fila.
+  const cohort = [50, 100, 150, 200, 80];
+  check(`o melhor da coorte é 100 (${relativeScore(200, cohort)})`, relativeScore(200, cohort) === 100);
+  check(`metade do melhor é 50 (${relativeScore(100, cohort)})`, relativeScore(100, cohort) === 50);
+  check("coorte pequena não produz nota", relativeScore(1, [1, 2, 3]) === null);
+  // Menos é melhor: o mais barato é 100, o dobro disso é 50.
+  const spend = [10_000, 20_000, 40_000, 15_000, 30_000];
+  check(`o mais barato é 100 (${relativeScore(10_000, spend, false)})`, relativeScore(10_000, spend, false) === 100);
+  check(`o dobro do mais barato é 50 (${relativeScore(20_000, spend, false)})`, relativeScore(20_000, spend, false) === 50);
   // A rank shared with most of the field ranks nobody. Measured on the first
   // real load: 87% of agents tied at 50 for relatorias, adding a near-constant
   // to every score and diluting the three pillars that discriminate.
   check(
-    "bloco de empate majoritário não produz percentil",
-    percentileRank(0, [0, 0, 0, 0, 0, 0, 0, 1, 2]) === null,
+    "bloco de empate majoritário não produz nota",
+    relativeScore(0, [0, 0, 0, 0, 0, 0, 0, 1, 2]) === null,
     "pilar que empata a maioria voltou a pontuar — está somando constante e diluindo os demais",
   );
   check(
     "a minoria distinguida continua pontuando",
-    (percentileRank(2, [0, 0, 0, 0, 0, 0, 0, 1, 2]) ?? 0) > 80,
+    (relativeScore(2, [0, 0, 0, 0, 0, 0, 0, 1, 2]) ?? 0) === 100,
   );
 
   const full = (over: Partial<QualityInputs> = {}): QualityInputs => ({
@@ -577,32 +574,33 @@ function checkQualityHelpers(): void {
   );
   check(
     "mandato curto não produz taxa por mês",
-    raw("authorship", full({ authorship: { authored: 2, advanced: 0, months: 2 } })) === null,
+    raw("production", full({ authorship: { authored: 2, advanced: 0, months: 2 }, rapporteurship: { count: 0, months: 2 } })) === null,
   );
+  // `raw` devolve o gasto nas próprias unidades; quem inverte é o
+  // `relativeScore`, pelo `higherIsBetter: false` que o pilar declara.
+  const cheap = raw("cost", full({ cost: { spent: 100_000, documents: 900, months: 40 } })) ?? 0;
+  const dear = raw("cost", full({ cost: { spent: 900_000, documents: 900, months: 40 } })) ?? 0;
+  check("custo político é lido em reais, não negado", cheap < dear);
   check(
-    "custeio é invertido (gastar menos pontua mais)",
-    (raw("cost", full({ cost: { spent: 100_000, documents: 900, months: 40 } })) ?? 0) >
-      (raw("cost", full({ cost: { spent: 900_000, documents: 900, months: 40 } })) ?? 0),
-    "o pilar de custeio deixou de ser negado — gastar mais está pontuando mais",
+    "gastar menos pontua mais",
+    (relativeScore(cheap, [cheap, dear, dear * 2, dear * 3, dear * 4], false) ?? 0) >
+      (relativeScore(dear, [cheap, dear, dear * 2, dear * 3, dear * 4], false) ?? 0),
+    "o custo político deixou de ser invertido — gastar mais está pontuando mais",
   );
   check(
     "desfecho conta duas vezes",
-    (raw("authorship", full({ authorship: { authored: 10, advanced: 10, months: 40 } })) ?? 0) >
-      (raw("authorship", full({ authorship: { authored: 10, advanced: 0, months: 40 } })) ?? 0),
+    (raw("production", full({ authorship: { authored: 10, advanced: 10, months: 40 } })) ?? 0) >
+      (raw("production", full({ authorship: { authored: 10, advanced: 0, months: 40 } })) ?? 0),
   );
 
   // Weight redistribution — the mechanism that makes the pillar set expandable.
   const twoPillars = new Map<string, number | null>([
     ["attendance", 80],
     ["cost", 60],
-    ["authorship", null],
-    ["rapporteurship", null],
+    ["production", null],
   ]);
-  const partial = computeQuality(
-    full({ authorship: null, rapporteurship: null }),
-    twoPillars,
-  );
-  const expected = Math.round((80 * 0.3 + 60 * 0.25) / (0.3 + 0.25));
+  const partial = computeQuality(full({ authorship: null, rapporteurship: null }), twoPillars);
+  const expected = Math.round((80 + 60) / 2);
   check(
     `peso de pilar ausente é redistribuído (${partial.score} ≈ ${expected})`,
     partial.score === expected,
@@ -849,24 +847,31 @@ async function checkQualitySources(): Promise<void> {
   // Windows of 80 days, not one wide one: `/votacoes` refuses ranges over three
   // months (the quirk `MAX_VOTE_WINDOW_DAYS` exists for). Walk back until a
   // window yields sittings with a roll call — recesses are real.
-  let camaraCodes = new Set<string>();
-  for (const offset of [0, 80, 160, 240]) {
-    if (camaraCodes.size > 3) break;
+  // Scan until the presiding code is actually FOUND, not until enough distinct
+  // codes have been seen: it appears at most once per sitting, so stopping early
+  // made this pass or fail by luck. Bounded by sittings examined, not by codes.
+  const camaraCodes = new Set<string>();
+  let sittingsSeen = 0;
+  const PRESIDING = /artigo\s*17|art\.\s*17/i;
+  outer: for (const offset of [0, 80, 160, 240]) {
     const page = await getOrNull<Page<Row>>(
       `${CAMARA}/votacoes?idOrgao=${PLENARY_ORG_ID}&dataInicio=${isoDaysAgo(offset + 80)}` +
         `&dataFim=${isoDaysAgo(offset)}&ordem=DESC&ordenarPor=dataHoraRegistro&itens=100`,
     );
-    for (const v of (page?.dados ?? []).slice(0, 25)) {
+    for (const v of page?.dados ?? []) {
+      if (sittingsSeen >= 30) break outer;
       const votes = await getOrNull<Page<Row>>(`${CAMARA}/votacoes/${v.id}/votos`);
       const rows2 = votes?.dados ?? [];
       if (rows2.length === 0) continue;
-      camaraCodes = new Set([...camaraCodes, ...rows2.map((x) => String(x.tipoVoto ?? "").trim())]);
-      if (camaraCodes.size > 3) break;
+      sittingsSeen++;
+      for (const x of rows2) camaraCodes.add(String(x.tipoVoto ?? "").trim());
+      if ([...camaraCodes].some((c) => PRESIDING.test(c))) break outer;
     }
   }
+  note(`${sittingsSeen} sessão(ões) com placar examinada(s)`);
   check(
     `Câmara ainda marca quem preside (${[...camaraCodes].join(", ") || "nenhum código lido"})`,
-    [...camaraCodes].some((c) => /artigo\s*17|art\.\s*17/i.test(c)),
+    [...camaraCodes].some((c) => PRESIDING.test(c)),
     "o código de presidência sumiu — quem está na cadeira volta a ser contado como faltoso",
   );
 
