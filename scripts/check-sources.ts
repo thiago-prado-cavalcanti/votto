@@ -505,7 +505,7 @@ async function checkSocialProviders(): Promise<void> {
 // ─── 1b. Quality index helpers ───────────────────────────────────────────────
 
 function checkQualityHelpers(): void {
-  console.log("\n[1b] Índice de qualidade (sem rede)");
+  console.log("\n[1b] Performance política (sem rede)");
 
   // Outcome vocabulary. Deliberately disjoint from `isConcludedSituation`: a
   // shelved bill has stopped moving without having got anywhere.
@@ -655,7 +655,7 @@ function checkQualityHelpers(): void {
 const SENADO_ADM = "https://adm.senado.gov.br/adm-dadosabertos/api/v1";
 
 async function checkQualitySources(): Promise<void> {
-  console.log("\n[4b] Fontes do índice de qualidade");
+  console.log("\n[4b] Fontes da performance política");
 
   // ── Câmara: mandate log ───────────────────────────────────────────────────
   const roster = await get<Page<Row>>(`${CAMARA}/deputados?ordem=ASC&ordenarPor=nome&itens=1`);

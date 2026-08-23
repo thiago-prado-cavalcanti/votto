@@ -208,10 +208,10 @@ export default async function PartyDetailPage({
                   Omitted, never zeroed, when none of them could be measured. */}
               {quality !== null ? (
                 <div className="mt-4 border-t border-[var(--color-line)] pt-4">
-                  <AlignmentMeter value={quality} label="Índice de qualidade" />
+                  <AlignmentMeter value={quality} label="Performance política" />
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
-                    Média do índice dos agentes do partido em exercício: assiduidade, projetos
-                    apresentados e relatados, e custeio do mandato.
+                    Média da performance dos agentes do partido em exercício: assiduidade,
+                    projetos apresentados e relatados, e custo político.
                   </p>
                 </div>
               ) : null}

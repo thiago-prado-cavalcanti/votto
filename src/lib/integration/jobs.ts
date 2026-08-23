@@ -189,7 +189,7 @@ export const SYNC_JOBS: SyncJobDefinition[] = [
     source: ImportSource.CAMARA,
     label: "Câmara — cota parlamentar",
     description:
-      "Custeio do mandato (CEAP) por deputado, por legislatura e ano. Não inclui emendas parlamentares.",
+      "Custo político (CEAP) por deputado, por legislatura e ano. Não inclui emendas parlamentares.",
     schedule: { weekday: 0, hour: 8, minute: 0 },
     defaults: {},
     run: camara.syncExpenses,
@@ -199,7 +199,7 @@ export const SYNC_JOBS: SyncJobDefinition[] = [
     source: ImportSource.SENADO,
     label: "Senado — cota parlamentar",
     description:
-      "Custeio do mandato (CEAPS) por senador, por ano. Não inclui emendas parlamentares.",
+      "Custo político (CEAPS) por senador, por ano. Não inclui emendas parlamentares.",
     schedule: { weekday: 0, hour: 8, minute: 15 },
     defaults: {},
     run: senado.syncExpenses,
@@ -207,9 +207,9 @@ export const SYNC_JOBS: SyncJobDefinition[] = [
   {
     name: "metrics:quality",
     source: ImportSource.MANUAL,
-    label: "Índice de qualidade",
+    label: "Performance política",
     description:
-      "Recalcula o índice 0–100 de cada agente a partir dos dados já importados. Sem rede.",
+      "Recalcula a performance política (0–100) de cada agente a partir dos dados já importados. Sem rede.",
     schedule: { weekday: 0, hour: 8, minute: 30 },
     defaults: {},
     run: syncQuality,

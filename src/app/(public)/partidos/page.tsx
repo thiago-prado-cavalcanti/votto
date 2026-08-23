@@ -137,7 +137,7 @@ export default async function PartiesPage({
                   count: they answer the same kind of question as each other and
                   a different kind from "how big is the bench". */}
               <option value="engagement">Alinhamento com a base</option>
-              <option value="quality">Índice de qualidade</option>
+              <option value="quality">Performance política</option>
               {session ? <option value="alignment">Seu alinhamento</option> : null}
               <option value="agents">Nº de agentes</option>
             </Select>

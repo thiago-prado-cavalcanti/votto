@@ -213,7 +213,7 @@ export default async function AgentsPage({
               {/* The value stays `engagement` (an internal token, and links to
                   it already exist); the label follows what is actually shown. */}
               <option value="engagement">Alinhamento com a base</option>
-              <option value="quality">Índice de qualidade</option>
+              <option value="quality">Performance política</option>
               {session ? <option value="alignment">Seu alinhamento</option> : null}
             </Select>
           </Field>

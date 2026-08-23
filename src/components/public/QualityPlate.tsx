@@ -86,9 +86,9 @@ export function QualityPlate({
 
       {/* The distinction the index would be lying about if it left it implicit. */}
       <p className="border-t border-line pt-2.5 text-xs leading-relaxed text-[var(--color-muted)]">
-        O custeio do mandato reúne gabinete, viagens, combustível, divulgação e segurança — a cota
-        parlamentar. Não inclui emendas nem verba destinada a projetos: recursos que o parlamentar
-        traz para políticas públicas não são despesa dele.
+        O custo político é a média mensal da cota parlamentar: gabinete, viagens, combustível,
+        divulgação e segurança. Não inclui emendas nem verba destinada a projetos — recursos que o
+        parlamentar traz para políticas públicas não são despesa dele.
       </p>
     </figure>
   );

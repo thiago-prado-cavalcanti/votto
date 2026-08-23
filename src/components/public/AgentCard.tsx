@@ -132,7 +132,7 @@ export function AgentCard({
                   who the agent agrees with, but how the mandate is exercised.
                   Omitted, never zeroed, when it could not be measured. */}
               {quality !== null ? (
-                <AlignmentMeter value={quality} label="Índice de qualidade" />
+                <AlignmentMeter value={quality} label="Performance política" />
               ) : null}
             </div>
           ) : null}

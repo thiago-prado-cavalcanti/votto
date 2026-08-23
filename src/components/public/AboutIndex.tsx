@@ -16,6 +16,7 @@
 import type { CSSProperties } from "react";
 import { Badge } from "@/components/ui";
 import { alignmentInk } from "@/lib/domain/tone";
+import { QUALITY_PILLARS } from "@/lib/indexes/quality";
 
 /** One vote in the ledger, as the tag the rest of the site prints it as. */
 function VoteMark({ value }: { value: "YES" | "NO" | "ABSTENTION" }) {
@@ -129,36 +130,31 @@ export function AlignmentLedger() {
  * inside a peer group, so an illustrative agent would need an invented cohort
  * behind them to mean anything, and an invented cohort on the page that argues
  * "the data is official and checkable" is exactly the wrong thing to draw. The
- * weights, by contrast, are the whole design decision and they are fixed —
- * `QUALITY_PILLARS` in `src/lib/indexes/quality.ts` is the source, and the two
- * must be changed together.
+ * weights, by contrast, are the whole design decision. They and the labels are
+ * READ from `QUALITY_PILLARS` rather than restated here: this file used to keep
+ * its own copy with the comment "the two must be changed together", and they
+ * diverged on the very first rename. Only the prose stays local, keyed by
+ * pillar, so a factor added to the registry shows up here missing a sentence
+ * rather than silently absent.
  *
  * Pinho rather than the earth pigments of the alignment scale: this index is
  * about institutional duty, not about agreement, and the reader should be able
  * to tell the two figures apart from across the page.
  */
-const PILLARS: Array<{ label: string; weight: number; note: string }> = [
-  {
-    label: "Assiduidade",
-    weight: 30,
-    note: "Votações a que compareceu, entre as que houve enquanto ocupava a cadeira.",
-  },
-  {
-    label: "Proposições",
-    weight: 25,
-    note: "Projetos apresentados por mês de mandato. Os que andaram contam em dobro.",
-  },
-  {
-    label: "Custeio do mandato",
-    weight: 25,
-    note: "Cota parlamentar consumida por mês. Aqui, gastar menos pontua mais.",
-  },
-  {
-    label: "Relatorias",
-    weight: 20,
-    note: "Projetos relatados. Pesa menos de propósito — relatoria é distribuída pela liderança.",
-  },
-];
+/** The prose for each pillar, keyed by its registry `key`. */
+const PILLAR_NOTES: Record<string, string> = {
+  attendance: "Votações a que compareceu, entre as que houve enquanto ocupava a cadeira.",
+  authorship: "Projetos apresentados por mês de mandato. Os que andaram contam em dobro.",
+  cost: "Média mensal da cota parlamentar consumida. Aqui, gastar menos pontua mais.",
+  rapporteurship:
+    "Projetos relatados. Pesa menos de propósito — relatoria é distribuída pela liderança.",
+};
+
+const PILLARS = QUALITY_PILLARS.map((pillar) => ({
+  label: pillar.label,
+  weight: Math.round(pillar.weight * 100),
+  note: PILLAR_NOTES[pillar.key] ?? "",
+}));
 
 export function QualityPillars() {
   const max = Math.max(...PILLARS.map((p) => p.weight));

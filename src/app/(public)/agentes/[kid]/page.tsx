@@ -21,6 +21,7 @@ import { IndexPlate } from "@/components/public/IndexPlate";
 import { ThemeBriefList, type ThemeBriefItem } from "@/components/public/ThemeBrief";
 import { PositioningChart } from "@/components/public/PositioningChart";
 import { QualityPlate } from "@/components/public/QualityPlate";
+import { PerformanceInfo } from "@/components/public/PerformanceInfo";
 import { parseQualityPillars } from "@/lib/domain/quality";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
@@ -250,12 +251,12 @@ export default async function AgentDetailPage({
                         : "O quanto os votos deste agente acompanham o conjunto dos cidadãos. Ainda ninguém o segue.",
                 },
                 {
-                  label: "Qualidade",
+                  label: "Performance",
                   value: agent.qualityScore,
                   hint:
                     agent.qualityScore === null
                       ? "Ainda não há registro suficiente de presença, produção e custeio para calcular."
-                      : "Assiduidade, projetos apresentados e relatados, e custeio do mandato — comparado aos pares da mesma casa.",
+                      : "Assiduidade, projetos apresentados e relatados, e custo político — comparado aos pares da mesma casa.",
                 },
                 {
                   label: "Com você",
@@ -419,7 +420,12 @@ export default async function AgentDetailPage({
             </section>
           </div>
 
-          {/* ── Margin column: where those votes place the agent ────────── */}
+          {/* ── Margin column ─────────────────────────────────────────────
+              One wrapper, not two grid children. The grid is two columns, so a
+              third direct child wraps to column 1 of the next row — which is
+              what put the positioning figure under the record instead of beside
+              it, and stretched row 1 to the height of the taller column. */}
+          <div className="flex flex-col gap-12">
           {/* Positioning: the figure and its legend, on the paper itself — no
               card, no rule, no tint. The left↔right BAND that used to head this
               block is gone with the spectrum bar: it reads as a verdict, and the
@@ -433,7 +439,10 @@ export default async function AgentDetailPage({
               (CLAUDE.md §3.3). */}
           {agent.qualityScore !== null ? (
             <Reveal as="aside" variant="fade" delay={100}>
-              <h2 className="text-xl text-navy-900">Índice de qualidade</h2>
+              <h2 className="flex items-center text-xl text-navy-900">
+                Performance política
+                <PerformanceInfo />
+              </h2>
               <div className="mt-4">
                 <QualityPlate
                   pillars={parseQualityPillars(agent.qualityPillars)}
@@ -469,6 +478,7 @@ export default async function AgentDetailPage({
               </dl>
             ) : null}
           </Reveal>
+          </div>
         </div>
       </Container>
     </>

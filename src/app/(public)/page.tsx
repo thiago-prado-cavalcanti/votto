@@ -194,7 +194,7 @@ export default async function HomePage() {
                   ? [
                       {
                         key: "qualidade",
-                        label: "Índice de qualidade",
+                        label: "Performance política",
                         rows: topQuality,
                         hrefAll: "/agentes?sort=quality",
                       },

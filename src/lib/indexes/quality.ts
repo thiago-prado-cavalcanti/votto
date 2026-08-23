@@ -226,7 +226,7 @@ export const QUALITY_PILLARS: QualityPillar[] = [
   },
   {
     key: "cost",
-    label: "Custeio do mandato",
+    label: "Custo político",
     weight: 0.25,
     peer: "house-uf",
     // Negated: spending less is better, and the ranking step always reads
@@ -246,7 +246,7 @@ export const QUALITY_PILLARS: QualityPillar[] = [
       if (!c || c.documents === 0) return null;
       return {
         value: `${brl(c.spent / Math.max(1, c.months))}/mês`,
-        detail: `${brl(c.spent)} em ${Math.round(c.months)} meses de exercício`,
+        detail: `média de ${Math.round(c.months)} meses · ${brl(c.spent)} no total`,
       };
     },
   },

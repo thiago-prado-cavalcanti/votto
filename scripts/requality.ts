@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   }
 
   if (dryRun) console.log("\n  (--dry: nada foi gravado)");
-  else console.log("\n✓ Índice atualizado.");
+  else console.log("\n✓ Performance política atualizada.");
 
   await db.$disconnect();
 }

@@ -100,7 +100,7 @@ export function PartyCard({
                 <AlignmentMeter value={alignment} label="Seu alinhamento" />
               ) : null}
               {quality !== null ? (
-                <AlignmentMeter value={quality} label="Índice de qualidade" />
+                <AlignmentMeter value={quality} label="Performance política" />
               ) : null}
             </div>
           ) : null}
