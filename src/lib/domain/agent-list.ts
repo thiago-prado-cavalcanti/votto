@@ -67,7 +67,7 @@ export const AGENT_SORTS = {
   personal: (r: AgentRow) => r.alignment,
 } as const;
 
-export type AgentSortKey = keyof typeof AGENT_SORTS;
+export type AgentSortKey = "name" | keyof typeof AGENT_SORTS;
 
 const SORT_ALIASES: Record<string, AgentSortKey> = {
   engagement: "base",
@@ -76,14 +76,24 @@ const SORT_ALIASES: Record<string, AgentSortKey> = {
 
 /** Canonical sort key. Performance leads: it is the one that reads logged out. */
 export function agentSort(sort: string | undefined): AgentSortKey {
-  if (!sort) return "quality";
-  if (sort in AGENT_SORTS) return sort as AgentSortKey;
-  return SORT_ALIASES[sort] ?? "quality";
+  if (!sort) return "name";
+  if (sort === "name" || sort in AGENT_SORTS) return sort as AgentSortKey;
+  return SORT_ALIASES[sort] ?? "name";
 }
 
-/** Descending unless asked otherwise — on all three readings the top is the point. */
-export function agentDirection(dir: string | undefined): "asc" | "desc" {
-  return dir === "asc" ? "asc" : "desc";
+/**
+ * Reading direction.
+ *
+ * Ascending for the name, where A→Z is what "sorted" means to anybody; the
+ * index readings default to descending, where the top of the ranking is the
+ * point of asking.
+ */
+export function agentDirection(
+  dir: string | undefined,
+  sort: AgentSortKey = "name",
+): "asc" | "desc" {
+  if (dir === "asc" || dir === "desc") return dir;
+  return sort === "name" ? "asc" : "desc";
 }
 
 /** One card's worth of data. */
@@ -108,6 +118,10 @@ export interface AgentPage {
   total: number;
   /** Count by office over the whole filtered set, for the masthead plate. */
   byType: Array<{ type: AgentType; count: number }>;
+}
+
+function nameOf(row: AgentRow): string {
+  return `${row.agent.firstName} ${row.agent.lastName}`.trim();
 }
 
 /** Translate the URL state into a Prisma filter. */
@@ -172,20 +186,28 @@ export async function loadAgentPage(
     };
   });
 
-  const pick = AGENT_SORTS[agentSort(query.sort)];
-  const descending = agentDirection(query.dir) === "desc";
+  const key = agentSort(query.sort);
+  const descending = agentDirection(query.dir, key) === "desc";
   // The unmeasured sink to the bottom in BOTH directions. They are not the worst
   // agents, they are the ones we could not measure, and asking for the bottom of
   // a ranking should not hand back the people who are missing from it
   // (CLAUDE.md §3.3).
-  rows = [...rows].sort((a, b) => {
-    const x = pick(a);
-    const y = pick(b);
-    if (x === null && y === null) return a.agent.firstName.localeCompare(b.agent.firstName);
-    if (x === null) return 1;
-    if (y === null) return -1;
-    return descending ? y - x : x - y;
-  });
+  if (key === "name") {
+    rows = [...rows].sort((a, b) => {
+      const order = nameOf(a).localeCompare(nameOf(b), "pt-BR");
+      return descending ? -order : order;
+    });
+  } else {
+    const pick = AGENT_SORTS[key];
+    rows = [...rows].sort((a, b) => {
+      const x = pick(a);
+      const y = pick(b);
+      if (x === null && y === null) return nameOf(a).localeCompare(nameOf(b), "pt-BR");
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return (descending ? y - x : x - y) || nameOf(a).localeCompare(nameOf(b), "pt-BR");
+    });
+  }
 
   // The masthead plate describes the whole filtered set, not the slice — it is
   // the shape of the bench the filters selected, and it must not shrink as the

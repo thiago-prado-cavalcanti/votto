@@ -3,11 +3,11 @@
  * citizens) their alignment meter. Sortable by alignment (when logged in),
  * number of agents, or name.
  */
-import { Container, Field, Select, ButtonLink } from "@/components/ui";
+import { Container, ButtonLink } from "@/components/ui";
 import { PageIntro } from "@/components/public/Section";
 import { IndexPlate } from "@/components/public/IndexPlate";
-import { FilterBar } from "@/components/public/FilterBar";
 import { PartyCard } from "@/components/public/PartyCard";
+import { SortHeader } from "@/components/public/SortHeader";
 import { db } from "@/lib/db";
 import { toPublicParty } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
@@ -25,9 +25,9 @@ export const dynamic = "force-dynamic";
 export default async function PartiesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string }>;
+  searchParams: Promise<{ sort?: string; dir?: string }>;
 }) {
-  const { sort } = await searchParams;
+  const { sort, dir } = await searchParams;
   const session = await getCitizenSession();
 
   const parties = await db.party.findMany({
@@ -79,16 +79,56 @@ export default async function PartiesPage({
     };
   });
 
-  if (sort === "alignment" && alignments) {
-    rows = [...rows].sort((a, b) => (b.alignment ?? -1) - (a.alignment ?? -1));
-  } else if (sort === "engagement") {
-    rows = [...rows].sort((a, b) => (b.published ?? -1) - (a.published ?? -1));
-  } else if (sort === "quality") {
-    // −1 for the unmeasured, so they sink rather than ranking as zero.
-    rows = [...rows].sort((a, b) => (b.quality ?? -1) - (a.quality ?? -1));
-  } else if (sort === "agents") {
-    rows = [...rows].sort((a, b) => b.party.agentCount - a.party.agentCount);
+  // The same four orderings as the agents list, and the same rules: name is the
+  // default because it never waits on data, and a party we could not measure
+  // sinks in BOTH directions rather than being handed back as "the worst".
+  const PARTY_SORTS: Record<string, (r: (typeof rows)[number]) => number | null> = {
+    quality: (r) => r.quality,
+    personal: (r) => r.alignment,
+    base: (r) => r.published,
+  };
+  // `engagement`/`alignment` are the older tokens; links to them are already in
+  // circulation, and the URL is a contract with whoever shared one.
+  const requested = sort === "engagement" ? "base" : sort === "alignment" ? "personal" : sort;
+  const activeSort = requested && requested in PARTY_SORTS ? requested : "name";
+  const activeDir: "asc" | "desc" =
+    dir === "asc" || dir === "desc" ? dir : activeSort === "name" ? "asc" : "desc";
+  const descending = activeDir === "desc";
+  const byName = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+    a.party.name.localeCompare(b.party.name, "pt-BR");
+
+  if (activeSort === "name") {
+    rows = [...rows].sort((a, b) => (descending ? -byName(a, b) : byName(a, b)));
+  } else {
+    const pick = PARTY_SORTS[activeSort];
+    rows = [...rows].sort((a, b) => {
+      const x = pick(a);
+      const y = pick(b);
+      if (x === null && y === null) return byName(a, b);
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return (descending ? y - x : x - y) || byName(a, b);
+    });
   }
+
+  const sortOptions = [
+    { key: "name", label: "Nome", has: true },
+    { key: "quality", label: "Performance política", has: rows.some((r) => r.quality !== null) },
+    {
+      key: "personal",
+      label: "Alinhamento com você",
+      has: Boolean(session) && rows.some((r) => r.alignment !== null),
+    },
+    { key: "base", label: "Alinhamento com a base", has: rows.some((r) => r.published !== null) },
+  ]
+    .filter((o) => o.has)
+    .map(({ key, label }) => ({
+      key,
+      label,
+      href: `?sort=${key}&dir=${
+        key === activeSort ? (activeDir === "asc" ? "desc" : "asc") : key === "name" ? "asc" : "desc"
+      }`,
+    }));
 
   // Masthead plate: the five largest benches. A party list is read as a balance
   // of forces before it is read alphabetically, and the headcount is the one
@@ -127,22 +167,18 @@ export default async function PartiesPage({
       </PageIntro>
 
       <Container className="py-10">
-        <FilterBar submitLabel="Aplicar">
-          <Field label="Ordenar por">
-            <Select variant="rule" name="sort" defaultValue={sort ?? ""}>
-              <option value="">Nome</option>
-              {/* The value stays `engagement` (an internal token, and links to
-                  it already exist); the label follows what is actually shown. */}
-              {/* The two index readings sit together, then the structural
-                  count: they answer the same kind of question as each other and
-                  a different kind from "how big is the bench". */}
-              <option value="engagement">Alinhamento com a base</option>
-              <option value="quality">Performance política</option>
-              {session ? <option value="alignment">Seu alinhamento</option> : null}
-              <option value="agents">Nº de agentes</option>
-            </Select>
-          </Field>
-        </FilterBar>
+        {/* No filter bar here: this list has nothing to filter by, only to
+            order. So the sort header takes its place and carries the rules the
+            bar would have — on /agentes it hugs the filter instead, which
+            already closes with one. */}
+        {sortOptions.length > 1 ? (
+          <SortHeader
+            options={sortOptions}
+            active={activeSort}
+            direction={activeDir}
+            className="mb-10 border-y border-line"
+          />
+        ) : null}
 
         {rows.length === 0 ? (
           <p className="border-t border-line py-8 text-sm text-[var(--color-muted)]">

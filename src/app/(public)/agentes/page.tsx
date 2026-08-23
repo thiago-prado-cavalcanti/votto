@@ -63,19 +63,22 @@ export default async function AgentsPage({
   ]);
   const rows = page.rows;
   const activeSort = agentSort(sort);
-  const activeDir = agentDirection(dir);
+  const activeDir = agentDirection(dir, activeSort);
 
   // A reading is offered only where it has something to say: the personal one
   // needs a session, the others need the data to exist at all. That is what
   // keeps the header from offering an ordering that would rank nothing.
   const sortOptions = [
+    // Name is always offered: it is the one ordering that never depends on data
+    // having arrived, and it is the default for the same reason.
+    { key: "name", label: "Nome", has: true },
     { key: "quality", label: "Performance política", has: rows.some((r) => r.quality !== null) },
-    { key: "base", label: "Alinhamento com a base", has: rows.some((r) => r.published !== null) },
     {
       key: "personal",
-      label: "Seu alinhamento",
+      label: "Alinhamento com você",
       has: Boolean(session) && rows.some((r) => r.alignment !== null),
     },
+    { key: "base", label: "Alinhamento com a base", has: rows.some((r) => r.published !== null) },
   ]
     .filter((o) => o.has)
     .map(({ key, label }) => ({
@@ -89,7 +92,16 @@ export default async function AgentsPage({
           Object.entries({ q, type, state, party }).filter(([, v]) => v),
         ) as Record<string, string>),
         sort: key,
-        dir: key === activeSort && activeDir === "desc" ? "asc" : "desc",
+        // Re-clicking turns the arrow over; a fresh choice starts where that
+        // reading is usually read — A→Z for the name, top-down for an index.
+        dir:
+          key === activeSort
+            ? activeDir === "asc"
+              ? "desc"
+              : "asc"
+            : key === "name"
+              ? "asc"
+              : "desc",
       }).toString()}`,
     }));
 
@@ -171,8 +183,15 @@ export default async function AgentsPage({
             agents, this says which reading ranks them. Anchors rather than
             buttons because the server paginates — page two has to agree with
             page one, so the choice lives in the URL. */}
-        {sortOptions.length > 0 ? (
-          <SortHeader options={sortOptions} active={activeSort} direction={activeDir} />
+        {sortOptions.length > 1 ? (
+          // Pulled flush against the filter bar, whose `mb-10` would otherwise
+          // leave an empty band between its closing rule and this row.
+          <SortHeader
+            options={sortOptions}
+            active={activeSort}
+            direction={activeDir}
+            className="-mt-10 mb-8"
+          />
         ) : null}
 
         {rows.length === 0 ? (
