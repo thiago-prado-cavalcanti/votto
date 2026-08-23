@@ -253,15 +253,44 @@ export function pearson(pairs: Array<{ a: number; b: number }>): number | null {
  * As duas portas que decidem se o índice pode ser publicado como ideologia.
  *
  * `MIN_ANCHOR_CORRELATION` — a ordenação partidária do eixo econômico tem de
- * bater com a do BLS. 0,70 é um patamar deliberadamente modesto: a rotação
- * ancorada que a pesquisa mediu sobre dados reais alcançou 0,86 fora da amostra,
- * então 0,70 é o piso do que já se demonstrou possível, não uma aspiração.
+ * bater com a das réguas de survey. **0,85, e o número tem uma razão empírica
+ * desconfortável.**
+ *
+ * A tentação é achar que 0,70 bastaria — a rotação ancorada medida sobre dados
+ * reais alcançou 0,86 fora da amostra, então algo abaixo disso pareceria um piso
+ * modesto. O problema é o que *já* clareia essa barra. Medido sobre as votações
+ * nominais brasileiras, o **governismo partidário puro** — a fração de vezes que
+ * a bancada votou com o bloco Governo, sem nenhuma ideia de ideologia dentro —
+ * correlaciona com a âncora do Bolognesi a **+0,93 sob Bolsonaro e −0,81 sob
+ * Lula**. Ou seja: um índice que mede exclusivamente apoio ao Executivo tira
+ * entre 0,81 e 0,93 no teste da âncora, e **teria passado** num limiar de 0,70.
+ *
+ * A colinearidade não é acidente: no presidencialismo de coalizão brasileiro a
+ * base é ordenada ideologicamente, então dentro de *uma* presidência governismo e
+ * ideologia quase não se distinguem. O que os separa é a troca de presidente, em
+ * que o sinal inverte — e uma medida ideológica genuína não inverteria.
+ *
+ * Daí a regra que não pode ser relaxada: **as portas 2 e 3 não são substitutas
+ * uma da outra.** A âncora sozinha quase valida governismo; o falseamento
+ * sozinho não diz se a ordenação faz sentido. Baixar este limiar "porque a
+ * âncora já cobre" é exatamente o erro que ele existe para impedir.
  *
  * `MAX_GOVERNMENT_CORRELATION` — o teste de falseamento. Se a leitura econômica
  * dos agentes correlaciona com o governismo deles acima disto, o índice está
  * medindo apoio ao Executivo e chamando aquilo de ideologia. O primeiro
  * componente principal cru mede −0,96 nesse teste; 0,50 é o ponto em que a
  * contaminação deixa de ser residual.
+ *
+ * Isto é a reprodução de um achado publicado, não um defeito nosso. Izumi
+ * (*Dados* 59(1), 2016) rodou Optimal Classification sobre 1.408 votações
+ * nominais do Senado (1989–2010): a primeira dimensão correlaciona **0,95, 0,93,
+ * 0,75 e −0,94/−0,96** com seguir o líder do governo, conforme a legislatura, e
+ * **o sinal vira quando o presidente troca**. A conclusão dele é a nossa porta:
+ * *"essa primeira dimensão de fato representa uma clivagem entre governo versus
+ * oposição e não as preferências ideológicas dos parlamentares."* Spirling &
+ * McLean (*Political Analysis* 15(1), 2007) mostram o mesmo em Westminster com
+ * **99,1% de classificação correta** — e Corbyn, Benn e Skinner classificados
+ * como os trabalhistas mais à direita. **Ajuste alto não é validade.**
  */
 export const MIN_ANCHOR_CORRELATION = 0.85;
 export const MAX_GOVERNMENT_CORRELATION = 0.5;

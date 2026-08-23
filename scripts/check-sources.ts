@@ -611,6 +611,56 @@ async function checkSenado(): Promise<void> {
   const codes = new Set(nominal.flatMap((v) => (v.votos as Row[]).map((x) => String(x.siglaVotoParlamentar))));
   note(`códigos de voto no período: ${[...codes].join(", ")}`);
   check("códigos Sim e Não presentes", codes.has("Sim") && codes.has("Não"));
+
+  // ── Orientação de bancada ────────────────────────────────────────────────
+  //
+  // Vive num serviço separado, com formato de data próprio (`AAAAMMDD`, a forma
+  // pontilhada 404) e chave de junção própria (`sequencialVotacao`). Cada uma
+  // dessas três coisas quebra em silêncio: sem orientação o governismo dos
+  // senadores simplesmente não é medido, e "não medido" é indistinguível de
+  // "a casa não orientou" — que é o caso legítimo e frequente aqui.
+  const compact = (iso: string) => iso.replace(/-/g, "");
+  const orient = await get<Row>(
+    `${SENADO}/plenario/votacao/orientacaoBancada/${compact(isoDaysAgo(60))}/${compact(isoDaysAgo(0))}`,
+  );
+  const oriRows = Array.isArray(orient?.votacoes) ? (orient.votacoes as Row[]) : [];
+  check(`orientacaoBancada responde: ${oriRows.length} votações`, oriRows.length > 0);
+
+  const blocs = new Set(
+    oriRows.flatMap((v) =>
+      ((v.orientacoesLideranca as Row[] | undefined) ?? []).map((o) => String(o.partido)),
+    ),
+  );
+  note(`bancadas orientando no período: ${[...blocs].sort().join(", ") || "nenhuma"}`);
+  check("pseudo-bloco Governo presente", blocs.has("Governo"));
+
+  // A junção. É ela que transforma o serviço em dado utilizável, e o campo vem
+  // das linhas de /votacao que o importador já baixa — daí custar uma requisição
+  // por janela e não uma por votação.
+  const oriSeq = new Set(
+    oriRows.map((v) => v.sequencialVotacao).filter((x): x is number => typeof x === "number"),
+  );
+  check(
+    "votação traz sequencialVotacao (chave de junção)",
+    nominal.every((v) => v.sequencialVotacao != null),
+  );
+  const joined = nominal.filter((v) => oriSeq.has(Number(v.sequencialVotacao)));
+  check(
+    `junção por sequencialVotacao: ${joined.length}/${nominal.length} votações nominais`,
+    nominal.length === 0 || joined.length > 0,
+  );
+
+  // Cobertura, como nota e não como asserção: ~37% das nominais trazem o bloco
+  // Governo, e a causa é regimental (o Colégio de Líderes não é formalizado no
+  // Senado), não uma falha da fonte. Falhar aqui seria alarmar sobre o normal —
+  // mas a medida precisa aparecer, porque é o denominador do governismo.
+  const withGov = oriRows.filter((v) =>
+    ((v.orientacoesLideranca as Row[] | undefined) ?? []).some((o) => String(o.partido) === "Governo"),
+  );
+  note(
+    `com bloco Governo: ${withGov.length}/${oriRows.length}` +
+      ` (histórico 2019–2026: ~37% das nominais; a Câmara orienta em ~100%)`,
+  );
 }
 
 // ─── 5. Provedores sociais ───────────────────────────────────────────────────

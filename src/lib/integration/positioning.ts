@@ -80,6 +80,7 @@ export type HouseBlock =
   | { kind: "items"; items: number }
   | { kind: "agents"; agents: number }
   | { kind: "orientations" }
+  | { kind: "degenerate" }
   | { kind: "governismo"; correlation: number }
   | { kind: "anchor"; correlation: number | null; coverage: number };
 
@@ -301,6 +302,17 @@ export async function recomputePositioningIndex(
   }
 
   // ── As portas, por casa ───────────────────────────────────────────────────
+  //
+  // **Mede tudo primeiro, julga depois.** A versão anterior decidia e saía com
+  // `continue`, de modo que uma casa barrada na primeira porta nunca chegava a
+  // ter governismo ou âncora calculados — justamente a casa sobre a qual é
+  // preciso decidir onde investir. O relatório dizia "só 3 votações" e calava
+  // sobre estar a 0,63 ou a 0,10 da âncora, que é a diferença entre faltar
+  // classificação e o índice estar medindo outra coisa.
+  //
+  // As correlações de uma casa barrada são **diagnóstico, não resultado**: com
+  // poucos itens elas são instáveis, e nada é gravado de qualquer forma. Vêm
+  // sempre acompanhadas da contagem que as relativiza.
   const houses: HouseReport[] = [];
   const passing = new Set<House>();
 
@@ -340,12 +352,13 @@ export async function recomputePositioningIndex(
       blocked: null,
     };
 
-    // Colinearidade dos eixos. Medida antes das portas porque ela não barra a
-    // casa — decide apenas se o segundo NÚMERO é publicado. A figura de dois
-    // eixos continua desenhada de qualquer forma: o resíduo separa a direita
-    // economicamente liberal (PSDB, NOVO) da moral-autoritária (PL,
-    // Republicanos), o que é uma distinção real ainda que valha um décimo da
-    // variância.
+    // ── Medições ────────────────────────────────────────────────────────────
+
+    // Colinearidade dos eixos. Não barra a casa — decide apenas se o segundo
+    // NÚMERO é publicado. A figura de dois eixos continua desenhada de qualquer
+    // forma: o resíduo separa a direita economicamente liberal (PSDB, NOVO) da
+    // moral-autoritária (PL, Republicanos), o que é uma distinção real ainda
+    // que valha um décimo da variância.
     const axisPairs = inHouse
       .filter((s) => s.position.economic.value !== null && s.position.social.value !== null)
       .map((s) => ({
@@ -357,37 +370,16 @@ export async function recomputePositioningIndex(
       report.axisCorrelation !== null &&
       Math.abs(report.axisCorrelation) > MAX_AXIS_CORRELATION;
 
-    if (items < MIN_HOUSE_ITEMS) {
-      report.blocked = { kind: "items", items };
-      houses.push(report);
-      continue;
-    }
-    if (withReading.length < MIN_HOUSE_AGENTS) {
-      report.blocked = { kind: "agents", agents: withReading.length };
-      houses.push(report);
-      continue;
-    }
-
-    // Porta 2 — falseamento contra o governismo.
+    // Falseamento contra o governismo.
     const govPairs = withReading
       .filter((s) => s.governismo !== null)
       .map((s) => ({ a: s.position.economic.value as number, b: s.governismo as number }));
-    if (govPairs.length < MIN_HOUSE_AGENTS) {
-      report.blocked = { kind: "orientations" };
-      houses.push(report);
-      continue;
-    }
-    const govR = pearson(govPairs);
+    const govR = govPairs.length >= MIN_HOUSE_AGENTS ? pearson(govPairs) : null;
     report.governmentCorrelation = govR;
-    if (govR !== null && Math.abs(govR) > MAX_GOVERNMENT_CORRELATION) {
-      report.blocked = { kind: "governismo", correlation: govR };
-      houses.push(report);
-      continue;
-    }
 
-    // Porta 3 — âncora externa. Médias partidárias simples aqui de propósito: a
-    // régua compara ORDENAÇÃO, e a média encolhida já foi puxada em direção ao
-    // centro — validar contra ela seria validar o encolhimento, não o índice.
+    // Âncora externa. Médias partidárias simples aqui de propósito: a régua
+    // compara ORDENAÇÃO, e a média encolhida já foi puxada em direção ao centro
+    // — validar contra ela seria validar o encolhimento, não o índice.
     const byParty = new Map<string, number[]>();
     for (const s of withReading) {
       if (!s.partyAcronym) continue;
@@ -415,7 +407,26 @@ export async function recomputePositioningIndex(
     report.anchorCoverage = withReading.length > 0 ? anchoredSeats / withReading.length : 0;
     report.anchorCorrelation = spearman(anchorPairs);
 
-    if (
+    // ── Julgamento, na ordem em que as portas se fecham ─────────────────────
+    if (items < MIN_HOUSE_ITEMS) {
+      report.blocked = { kind: "items", items };
+    } else if (withReading.length < MIN_HOUSE_AGENTS) {
+      report.blocked = { kind: "agents", agents: withReading.length };
+    } else if (govPairs.length < MIN_HOUSE_AGENTS) {
+      report.blocked = { kind: "orientations" };
+    } else if (govR === null) {
+      // Controle degenerado: há agentes com governismo bastante, mas o valor
+      // não varia entre eles (ou o eixo não varia), então `pearson` devolve
+      // `null` por divisão por zero.
+      //
+      // **Isso barrava por acidente antes: `govR !== null && …` deixava passar.**
+      // Um controle que não consegue discriminar é um controle que não rodou, e
+      // tratar "não rodou" como "passou" é exatamente o erro que a porta existe
+      // para impedir. Um resultado que não pode ser falseado não é publicável.
+      report.blocked = { kind: "degenerate" };
+    } else if (Math.abs(govR) > MAX_GOVERNMENT_CORRELATION) {
+      report.blocked = { kind: "governismo", correlation: govR };
+    } else if (
       report.anchorCoverage < MIN_ANCHOR_COVERAGE ||
       report.anchorCorrelation === null ||
       report.anchorCorrelation < MIN_ANCHOR_CORRELATION
@@ -425,11 +436,10 @@ export async function recomputePositioningIndex(
         correlation: report.anchorCorrelation,
         coverage: report.anchorCoverage,
       };
-      houses.push(report);
-      continue;
+    } else {
+      passing.add(house);
     }
 
-    passing.add(house);
     houses.push(report);
   }
 
@@ -742,6 +752,8 @@ export function describeBlock(block: HouseBlock): string {
       return `só ${block.agents} agentes com leitura (mínimo ${MIN_HOUSE_AGENTS})`;
     case "orientations":
       return "sem orientação do bloco Governo — o teste de falseamento não pode rodar";
+    case "degenerate":
+      return "o governismo não varia entre os agentes — o teste de falseamento não discrimina";
     case "governismo":
       return `o eixo econômico correlaciona ${block.correlation.toFixed(2)} com governismo (máximo ${MAX_GOVERNMENT_CORRELATION})`;
     case "anchor":

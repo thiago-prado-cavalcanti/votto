@@ -205,6 +205,31 @@ Per house, in `src/lib/integration/positioning.ts`:
    0.575 against CHES. 0.85 is what puts Votto in the first family rather than the second, and it is
    reachable: an anchored rotation over the Câmara's real roll calls measured 0.86 out of sample.
 
+**Gates 2 and 3 are not substitutes for each other, and the reason is measured.** Party-level
+*governismo* on its own — the share of roll calls the bench voted with the `Governo` bloc, with no
+notion of ideology inside it — correlates with the Bolognesi anchor at **+0.93 under Bolsonaro and
+−0.81 under Lula**. A pure support-for-the-Executive index therefore scores 0.81–0.93 on the anchor
+test, and **would have passed** a threshold of 0.70. Inside one presidency the Brazilian coalition is
+ideologically ordered, so the two are nearly collinear; what separates them is the change of
+president, where the sign inverts — which a genuine ideological measure would not do. So the anchor
+alone nearly validates governismo, and lowering `MIN_ANCHOR_CORRELATION` "because the anchor already
+covers it" is exactly the error the gate exists to prevent.
+
+**A control that cannot discriminate blocks the house.** `pearson` returns `null` when either side
+has no variance, and the falsification gate read `govR !== null && Math.abs(govR) > MAX` — so a
+degenerate control *passed by silence*. It publishes no wrong number; it publishes without a test,
+which is worse. It is now `kind: "degenerate"`, and `check:positioning` pins the `null`.
+
+**This block is a published finding reproduced, not a defect in our data.** Izumi (*Dados* 59(1),
+2016) ran Optimal Classification over **1,408 Senate nominal roll calls (1989–2010)**: dimension 1
+correlates 0.95, 0.93, 0.75 and −0.94/−0.96 with following the government leader, by legislature,
+**and the sign flips when the president changes**. His conclusion is our gate — *"essa primeira
+dimensão de fato representa uma clivagem entre governo versus oposição e não as preferências
+ideológicas dos parlamentares."* Spirling & McLean (*Political Analysis* 15(1), 2007) show the same
+in Westminster at **99.1% correct classification**, with Corbyn, Benn and Skinner ranked the most
+right-wing Labour MPs. **A high fit statistic is not validity**, and more classified bills cannot fix
+this — the coalition signal is the house's first dimension, not a coverage shortfall.
+
 A fourth gate decides only whether the *second* axis is a number. **In Brazil the two axes barely
 separate**: Martínez-Gallardo et al. (*Party Politics*, 2023) ran a CFA on the CHES items and a
 second factor buys **+0.234 CFI in Europe against +0.045 in Latin America**, with the latent
@@ -786,6 +811,36 @@ Verified against the live APIs; `npm run check:sources` re-checks them.
 - The Câmara publishes only a bill's **last** rapporteur (`statusProposicao.uriUltimoRelator`), so
   deputy relatoria counts are a floor. The Senado publishes the full history. Ranking inside a house
   is what keeps that asymmetry from handing the Senado the pillar.
+- **The Senado publishes bloc orientation, but not where you would look for it.** The Câmara exposes
+  it per roll call at `/votacoes/{id}/orientacoes` — one request each. The Senado's `/votacao` payload
+  has no orientation field at all, which is why it was believed to have none; the data lives in a
+  separate service, `/plenario/votacao/orientacaoBancada/{AAAAMMDD}/{AAAAMMDD}`, which returns a whole
+  date range in one call and carries the same four pseudo-blocs (`Governo`, `Oposição`, `Minoria`,
+  `Maioria`). Dates must be `AAAAMMDD`; the dashed form 404s. The join key is `sequencialVotacao`,
+  already present in the `/votacao` rows the importer reads — so this costs **one request per window,
+  not one per roll call**, cheaper than the Câmara's own path. There is no window cap here, unlike
+  `/votacao` (one year) and `processo?numdias=` (30 days).
+
+  The honest limitation is **coverage, not existence**: measured across 997 nominal votes from 2019
+  to 2026, about 48% carry any orientation and **37% carry a `Governo` bloc**, against ~100% of the
+  Câmara's nominal votes. So senators' `governismo` is measurable on roughly a third of the record.
+  It must therefore be published with its own denominator and `null` below the floor (§3.2) — never
+  compared like-for-like with a deputy's, whose denominator is the whole ledger. `Oposição` only
+  appears from 2021 on, so the government↔opposition discount can lean only on `Governo` before that.
+
+  **And the scarcity is regimental, not a gap in the API.** Neiva (*Dados* 54(2), 2011) counts, for
+  1995–2006, **16,717 leader vote-indications across 1,642 Câmara roll calls (mean 10.2) against
+  2,544 across 1,016 in the Senado (mean 2.5)** — with many where not even the largest parties
+  oriented. The Senate's Colégio de Líderes is not formalised, and with 81 members, in his phrase,
+  *"basta um gesto ou um simples 'olhar'."* No amount of importing will raise this to the Câmara's
+  level, which is precisely why `governismoBase` travels with the number.
+
+  Imported by `syncVotes` in `src/lib/integration/senado.ts`, one request per date window alongside
+  the votes. `mapOrientation`/`foldBloc` live in `importer.ts` and are shared by both houses — the
+  "Liberado means `null`" rule decides the governismo denominator, and two copies of it would be two
+  chances for the houses to count different things under one name. `check:sources` asserts the
+  endpoint, the `Governo` bloc and **the join itself**, because a failed join is indistinguishable
+  from a house that did not orient.
 - Both houses mark the **presiding officer** with a vote code that is not a vote — Câmara
   `"Artigo 17"`, Senado `"Presidente (art. 51 RISF)"`, one per sitting in both. It means "present but
   barred from voting", so any attendance measure must exclude that sitting rather than count it as a

@@ -38,6 +38,8 @@ import {
   upsertArticle,
   upsertTheme,
   recordRollCall,
+  mapOrientation,
+  foldBloc,
   upsertServiceSpan,
   upsertAgentMetrics,
   type Counters,
@@ -168,6 +170,8 @@ interface SenadoVotacao {
   codigoMateria?: number;
   idProcesso?: number;
   codigoSessaoVotacao?: number;
+  /** Chave de junção com o serviço de orientação de bancada. */
+  sequencialVotacao?: number;
   identificacao?: string;
   ementa?: string;
   dataSessao?: string;
@@ -690,6 +694,80 @@ async function senatorIdsByRef(): Promise<Map<string, string>> {
  */
 const MAX_VOTE_WINDOW_DAYS = 365;
 
+/** Uma votação no serviço de orientação de bancada. */
+interface SenadoOrientacaoVotacao {
+  sequencialVotacao?: number;
+  orientacoesLideranca?: Array<{ partido?: string; voto?: string }>;
+}
+
+/**
+ * Orientação dos pseudo-blocos `Governo` e `Oposição` numa janela de datas.
+ *
+ * **O Senado publica isto — só não onde se procuraria.** A Câmara expõe a
+ * orientação por votação, em `/votacoes/{id}/orientacoes`. O payload de
+ * `/votacao` do Senado não tem campo de orientação nenhum, e foi por isso que a
+ * casa passou por não ter o dado. Ele existe num serviço separado,
+ * `/plenario/votacao/orientacaoBancada/{AAAAMMDD}/{AAAAMMDD}`, que devolve uma
+ * faixa inteira de datas numa requisição e carrega os mesmos quatro
+ * pseudo-blocos (`Governo`, `Oposição`, `Minoria`, `Maioria`).
+ *
+ * Duas armadilhas de formato, ambas medidas contra o serviço vivo:
+ *
+ *  - **As datas são `AAAAMMDD` sem hífen.** A forma pontilhada que o resto da
+ *    API do Senado aceita devolve 404 aqui.
+ *  - **A chave de junção é `sequencialVotacao`**, não `codigoSessaoVotacao`. Ela
+ *    já vem nas linhas de `/votacao` que o importador baixa, então isto custa
+ *    **uma requisição por janela, não uma por votação** — mais barato que o
+ *    caminho da própria Câmara. Verificado: numa janela de março–abril de 2025,
+ *    as 9 votações nominais casaram 9 de 9.
+ *
+ * **A limitação honesta é cobertura, não existência.** Medido sobre 997
+ * votações nominais de 2019 a 2026, cerca de 48% trazem alguma orientação e
+ * **37% trazem o bloco `Governo`**, contra praticamente 100% das nominais da
+ * Câmara. E isso não é falha da API: Neiva (*Dados* 54(2), 2011) conta, de 1995
+ * a 2006, **16.717 indicações de liderança em 1.642 votações da Câmara (média
+ * 10,2) contra 2.544 em 1.016 do Senado (média 2,5)**, com muitas votações em
+ * que nem os partidos maiores orientaram. O Colégio de Líderes não é
+ * formalizado no Senado, e com 81 membros — na frase dele — "basta um gesto ou
+ * um simples 'olhar'". A escassez é regimental.
+ *
+ * Consequência para quem lê o índice: o `governismo` de um senador tem
+ * denominador próprio e não é comparável, um a um, com o de um deputado. É
+ * exatamente por isso que `governismoBase` viaja sempre junto do número
+ * (§3.2) e que abaixo do piso não há leitura.
+ *
+ * `Oposição` só aparece a partir de 2021, então antes disso o desconto de
+ * contaminação só pode se apoiar no `Governo`.
+ */
+async function fetchOrientations(
+  window: { start: string; end: string },
+): Promise<Map<number, { government: VoteValue | null; opposition: VoteValue | null }>> {
+  const out = new Map<number, { government: VoteValue | null; opposition: VoteValue | null }>();
+  const compact = (iso: string) => iso.replace(/-/g, "");
+
+  const data = await tryFetch<{ votacoes?: SenadoOrientacaoVotacao[] }>(
+    `/plenario/votacao/orientacaoBancada/${compact(window.start)}/${compact(window.end)}`,
+  );
+  await sleep(REQUEST_DELAY);
+
+  // Ao contrário de `/votacao`, uma janela sem orientação aqui não é motivo para
+  // derrubar o import: o governismo é uma leitura publicada à parte e o resto da
+  // votação — presença, posição, tema — continua correto sem ele. Ficar sem a
+  // orientação degrada `governismo` para `null`, que é o que "não medido"
+  // significa, e não corrompe nada.
+  const rows = Array.isArray(data?.votacoes) ? data.votacoes : [];
+  for (const row of rows) {
+    if (row.sequencialVotacao == null) continue;
+    const bloc = (name: string) =>
+      (row.orientacoesLideranca ?? []).find((o) => foldBloc(o.partido) === name)?.voto;
+    out.set(row.sequencialVotacao, {
+      government: mapOrientation(bloc("governo")),
+      opposition: mapOrientation(bloc("oposicao")),
+    });
+  }
+  return out;
+}
+
 export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
   const c = counters();
   const days = opts.days ?? 30;
@@ -703,6 +781,12 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
   // request until a four-year look-back came back 400 and this job called that
   // success.
   const votacoes: SenadoVotacao[] = [];
+  // Orientação de bancada, por `sequencialVotacao`. Uma requisição por janela,
+  // na mesma varredura — o serviço aceita a faixa inteira de uma vez.
+  const orientations = new Map<
+    number,
+    { government: VoteValue | null; opposition: VoteValue | null }
+  >();
   for (const w of dateWindows(from, to, MAX_VOTE_WINDOW_DAYS)) {
     const page = await tryFetch<SenadoVotacao[]>(
       `/votacao?dataInicio=${w.start}&dataFim=${w.end}`,
@@ -721,6 +805,7 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
       );
     }
     votacoes.push(...page);
+    for (const [seq, o] of await fetchOrientations(w)) orientations.set(seq, o);
   }
 
   const agentIdByRef = await senatorIdsByRef();
@@ -810,6 +895,8 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
     // A sitting with no date cannot be placed inside a mandate window, so it
     // cannot serve as an attendance denominator — skip it rather than guess.
     if (occurredAt) {
+      const orientation =
+        v.sequencialVotacao != null ? orientations.get(v.sequencialVotacao) : undefined;
       await recordRollCall({
         source: SOURCE,
         externalRef: sessionRef,
@@ -818,6 +905,8 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
         themeId,
         participants,
         presidingAgentId,
+        governmentPosition: orientation?.government ?? null,
+        oppositionPosition: orientation?.opposition ?? null,
       });
     }
   }

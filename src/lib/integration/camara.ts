@@ -48,6 +48,8 @@ import {
   type SyncOptions,
   type SyncResult,
   type ThemeClassification,
+  foldBloc,
+  mapOrientation,
 } from "@/lib/integration/importer";
 import { computePriority, isConcludedSituation } from "@/lib/domain/priority";
 import { db } from "@/lib/db";
@@ -869,7 +871,7 @@ async function fetchOrientacoes(
     await sleep(REQUEST_DELAY);
     const rows = Array.isArray(res.dados) ? res.dados : [];
     const bloc = (...names: string[]) =>
-      rows.find((r) => names.includes(fold(r.siglaPartidoBloco)))?.orientacaoVoto;
+      rows.find((r) => names.includes(foldBloc(r.siglaPartidoBloco)))?.orientacaoVoto;
     return {
       government: mapOrientation(bloc("governo")),
       opposition: mapOrientation(bloc("oposicao")),
@@ -881,29 +883,6 @@ async function fetchOrientacoes(
   }
 }
 
-/**
- * Mapear uma orientação de bancada nos nossos três valores.
- *
- * `Liberado` vira `null` de propósito, e a diferença é a que sustenta o
- * controle: uma bancada liberada é o governo dizendo que aquela votação **não**
- * é da linha governo↔oposição, e tratá-la como posição inverteria o sinal do
- * desconto.
- */
-function mapOrientation(orientation: string | undefined): VoteValue | null {
-  const t = fold(orientation);
-  if (t === "sim") return VoteValue.YES;
-  if (t === "nao") return VoteValue.NO;
-  return null;
-}
-
-/** Minúsculas sem acento — as siglas de bloco chegam como "Oposição". */
-function fold(value: string | undefined): string {
-  return (value ?? "")
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
 
 /** Fetch a votação's nominal votes, treating any failure as "no roll call". */
 async function fetchVotos(votacaoId: string): Promise<CamaraVoto[]> {

@@ -109,7 +109,7 @@ pontos, o número é um relatório sobre aquele projeto, e a página diz isso.
 
 | Regra | Limiar | Onde |
 |---|---|---|
-| Cobertura mínima por eixo | 4 itens efetivos | `MIN_EFFECTIVE_ITEMS` |
+| Cobertura mínima por eixo | 8 itens efetivos | `MIN_EFFECTIVE_ITEMS` |
 | Discriminação mínima de um item | 0,20 | `MIN_DISCRIMINATION` |
 | Confiança mínima de uma tag | 0,35 | `MIN_AXIS_CONFIDENCE` |
 | Itens classificados por casa | 20 | `MIN_HOUSE_ITEMS` |

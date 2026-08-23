@@ -955,3 +955,36 @@ export async function syncPartyAgentCounts(): Promise<void> {
     }
   }
 }
+
+/**
+ * Minúsculas sem acento — as siglas de bloco chegam como "Oposição".
+ *
+ * Compartilhada pelas duas casas porque as duas publicam orientação de bancada,
+ * em serviços diferentes e com a mesma grafia acentuada.
+ */
+export function foldBloc(value: string | undefined): string {
+  return (value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+/**
+ * Mapear uma orientação de bancada nos nossos três valores.
+ *
+ * `Liberado` vira `null` de propósito, e a diferença é a que sustenta o
+ * controle: uma bancada liberada é o governo dizendo que aquela votação **não**
+ * é da linha governo↔oposição, e tratá-la como posição inverteria o sinal do
+ * desconto.
+ *
+ * Uma definição só, para as duas casas: a regra do "Liberado" é a que decide o
+ * denominador do governismo, e duas cópias dela seriam duas chances de as casas
+ * contarem coisas diferentes sob o mesmo nome.
+ */
+export function mapOrientation(orientation: string | undefined): VoteValue | null {
+  const t = foldBloc(orientation);
+  if (t === "sim") return VoteValue.YES;
+  if (t === "nao") return VoteValue.NO;
+  return null;
+}
