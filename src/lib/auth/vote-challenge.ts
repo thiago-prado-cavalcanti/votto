@@ -71,12 +71,29 @@ function cookieOptions() {
   };
 }
 
-/** Three distinct positions in ascending order, drawn with a CSPRNG. */
+/**
+ * Three **consecutive** positions, drawn with a CSPRNG.
+ *
+ * They used to be three positions drawn independently — the 1st, the 4th and
+ * the 8th — which reads fine in a spec and badly on a document. Answering it
+ * means counting along eleven digits three separate times, on a card held in
+ * one hand, and the miscount is silent: a wrong digit is indistinguishable from
+ * not knowing the CPF, so an honest citizen burns an attempt and cannot tell
+ * why. Three in a row is read once, left to right.
+ *
+ * The cost is real and worth stating: nine windows instead of the 165
+ * combinations of three positions out of eleven. That matters only against an
+ * attacker who is guessing digits, and this challenge was never for them — it
+ * exists so an unlocked phone or a session left open on a shared computer
+ * cannot vote in somebody's name (CLAUDE.md §5). Whoever knows the CPF passes
+ * either way; whoever does not fails either way, and the three attempts and
+ * three challenges per session are what bound the guessing, not the geometry of
+ * the positions.
+ */
 function drawPositions(): [number, number, number] {
-  const picked = new Set<number>();
-  while (picked.size < 3) picked.add(randomInt(1, 12)); // 1..11, inclusive
-  const sorted = [...picked].sort((a, b) => a - b);
-  return [sorted[0], sorted[1], sorted[2]];
+  // 1..9 inclusive, so the window [start, start + 2] always ends within the 11.
+  const start = randomInt(1, 10);
+  return [start, start + 1, start + 2];
 }
 
 /**

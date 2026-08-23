@@ -28,6 +28,14 @@ async function main() {
   check("3 posições distintas", new Set(c.positions).size === 3, c.positions.join(","));
   check("posições dentro de 1..11", c.positions.every((p) => p >= 1 && p <= 11), c.positions.join(","));
   check("posições em ordem crescente", c.positions[0] < c.positions[1] && c.positions[1] < c.positions[2]);
+  // Contíguas: o cidadão lê três dígitos seguidos no documento, uma vez, da
+  // esquerda para a direita — e não conta até a 1ª, a 4ª e a 8ª posição.
+  check(
+    "posições consecutivas",
+    c.positions[1] === c.positions[0] + 1 && c.positions[2] === c.positions[1] + 1,
+    c.positions.join(","),
+  );
+  check("janela cabe no CPF (início entre 1 e 9)", c.positions[0] >= 1 && c.positions[0] <= 9);
   check("campo é dia, mês ou ano", ["day","month","year"].includes(c.field), c.field);
 
   const answerFor = (ch: typeof c) => ({
