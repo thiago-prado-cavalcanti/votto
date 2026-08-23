@@ -146,7 +146,7 @@ const PILLAR_NOTES: Record<string, string> = {
   attendance: "Votações a que compareceu, entre as que houve enquanto ocupava a cadeira.",
   production:
     "Projetos apresentados e relatados, por mês de mandato. Os que andaram contam em dobro.",
-  cost: "Média mensal da cota parlamentar consumida. Aqui, gastar menos pontua mais.",
+  cost: "Fatia da cota a que tem direito que foi usada — o teto varia por estado. Gastar menos pontua mais.",
 };
 
 const PILLARS = QUALITY_PILLARS.map((pillar) => ({
@@ -164,7 +164,7 @@ export function QualityPillars() {
         {/* The weights used to be drawn as bars. They are equal now, so four
             identical bars would be a chart of nothing — the sentence says it
             once and the rows get on with what each pillar measures. */}
-        <span className="text-xs text-[var(--color-muted)]">Três medidas, peso igual</span>
+        <span className="text-xs text-[var(--color-muted)]">Três medidas, peso igual, régua fixa</span>
       </figcaption>
 
       <ul>

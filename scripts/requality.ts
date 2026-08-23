@@ -71,7 +71,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { scored, skippedHouses, blockedBy } = await recomputeQualityIndex({ dryRun });
+  const { scored, shapes, skippedHouses, blockedBy } = await recomputeQualityIndex({ dryRun });
 
   console.log(`▶ ${scored.length.toLocaleString("pt-BR")} agentes em exercício\n`);
   console.log(render("Antes:", tally(before.map((a) => a.qualityScore)), before.length));
@@ -144,6 +144,24 @@ async function main(): Promise<void> {
       `    ${pillar.label.padEnd(22)} ${String(values.length).padStart(3)} medidos · ` +
         `maior empate ${tieShare.toFixed(0)}% em ${tieValue}${flag}`,
     );
+  }
+
+  // Shape of each cohort BEFORE normalization. This is the check that says
+  // whether the normalization is defensible at all: a distribution one outlier
+  // is driving cannot be normalized raw without crushing everybody else, and
+  // |assimetria| > 2 com curtose > 3.5 é a convenção que marca esse caso.
+  if (shapes.length > 0) {
+    console.log("\n  Forma das coortes (antes de normalizar):");
+    for (const { pillar, cohort, shape } of shapes.sort(
+      (a, b) => Math.abs(b.shape.skewness) - Math.abs(a.shape.skewness),
+    ).slice(0, 8)) {
+      const flag = shape.needsTreatment ? "  ⚠ um outlier domina" : "";
+      console.log(
+        `    ${`${pillar}·${cohort}`.padEnd(26)} n=${String(shape.n).padStart(3)} ` +
+          `assim=${shape.skewness.toFixed(2).padStart(6)} curt=${shape.kurtosis.toFixed(2).padStart(7)} ` +
+          `max/med=${(shape.max / (shape.median || 1)).toFixed(1)}×${flag}`,
+      );
+    }
   }
 
   if (dryRun) console.log("\n  (--dry: nada foi gravado)");

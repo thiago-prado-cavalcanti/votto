@@ -23,6 +23,17 @@ import type { SyncOptions, SyncResult } from "@/lib/integration/importer";
  */
 export const LOCK_LEASE_MS = 4 * 60 * 60 * 1000;
 
+/** SyncJob row that holds the whole-chain lock (`pipeline.ts`). Not a registered job. */
+export const PIPELINE_JOB = "pipeline";
+
+/**
+ * Lease for the chain lock. Longer than a single job's, because the chain is the
+ * sum of them: a cold start that imports both houses' rosters, bills, roll calls,
+ * mandates and quotas runs for hours, and a four-hour lease would declare a
+ * healthy run dead halfway through and let a second one start beside it.
+ */
+export const PIPELINE_LEASE_MS = 12 * 60 * 60 * 1000;
+
 /** Outcome of {@link runJob}. */
 export type JobOutcome =
   | { status: "ok"; result: SyncResult; durationMs: number }
@@ -64,9 +75,14 @@ export async function reapOrphanRuns(): Promise<number> {
   });
 
   // Release claims the dead runs were holding, so the next attempt is not
-  // refused by a lock nobody is behind.
+  // refused by a lock nobody is behind. The chain row is swept on its own,
+  // longer lease — reaping it at four hours would cut a legitimate cold start.
   await db.syncJob.updateMany({
-    where: { runningSince: { lt: cutoff } },
+    where: { name: { not: PIPELINE_JOB }, runningSince: { lt: cutoff } },
+    data: { runningSince: null },
+  });
+  await db.syncJob.updateMany({
+    where: { name: PIPELINE_JOB, runningSince: { lt: new Date(Date.now() - PIPELINE_LEASE_MS) } },
     data: { runningSince: null },
   });
 
@@ -91,22 +107,10 @@ export async function runJob(
   // its claim until the lease expires, and the panel calls it "Em andamento".
   await reapOrphanRuns();
 
-  // Ensure the row exists before trying to claim it. Two callers racing on the
-  // first-ever run of a job both attempt the insert and one loses on the unique
-  // index — that loser's row now exists, which is all this step needed.
-  try {
-    await db.syncJob.upsert({
-      where: { name: job.name },
-      create: { name: job.name },
-      update: {},
-    });
-  } catch {
-    const exists = await db.syncJob.findUnique({ where: { name: job.name }, select: { id: true } });
-    if (!exists) throw new Error(`Não foi possível registrar o job ${job.name}.`);
-  }
+  await ensureJobRow(job.name);
 
   if (!force) {
-    const claimed = await claim(job.name, startedAt);
+    const claimed = await claimJob(job.name, startedAt);
     if (!claimed) {
       const current = await db.syncJob.findUnique({
         where: { name: job.name },
@@ -177,11 +181,34 @@ export async function runJob(
 }
 
 /**
- * Atomically claim the job. `updateMany` with the "idle or stale" predicate is a
- * single conditional UPDATE, so exactly one concurrent caller gets `count: 1`.
+ * Make sure a lock row exists before anyone tries to claim it.
+ *
+ * Two callers racing on the first-ever run of a job both attempt the insert and
+ * one loses on the unique index — that loser's row now exists, which is all this
+ * step needed.
  */
-async function claim(name: string, now: Date): Promise<boolean> {
-  const staleBefore = new Date(now.getTime() - LOCK_LEASE_MS);
+export async function ensureJobRow(name: string): Promise<void> {
+  try {
+    await db.syncJob.upsert({ where: { name }, create: { name }, update: {} });
+  } catch {
+    const exists = await db.syncJob.findUnique({ where: { name }, select: { id: true } });
+    if (!exists) throw new Error(`Não foi possível registrar o job ${name}.`);
+  }
+}
+
+/**
+ * Atomically claim a lock row. `updateMany` with the "idle or stale" predicate is
+ * a single conditional UPDATE, so exactly one concurrent caller gets `count: 1`.
+ *
+ * Used for a registered job and for the chain row alike — they differ only in
+ * how long a claim stays valid.
+ */
+export async function claimJob(
+  name: string,
+  now: Date,
+  leaseMs: number = LOCK_LEASE_MS,
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - leaseMs);
   const { count } = await db.syncJob.updateMany({
     where: {
       name,

@@ -18,11 +18,13 @@ import { windowYears } from "@/lib/integration/camara";
 import {
   computeQuality,
   isAdvancedSituation,
-  relativeScore,
+  describeCohort,
   QUALITY_PILLARS,
   type Quality,
+  type QualityHouse,
   type QualityInputs,
 } from "@/lib/indexes/quality";
+import { quotaCeiling } from "@/lib/domain/quota-ceilings";
 import { AgentType, EntityStatus, House, ServiceKind } from "@/generated/prisma";
 
 /**
@@ -60,15 +62,6 @@ const BLOCKING_PILLAR_WEIGHT = 0.25;
 /** Average days per month, for turning a service span into a rate denominator. */
 const DAYS_PER_MONTH = 30.44;
 
-/** Region of each state, the fallback cohort when a UF has too few members. */
-const REGION_BY_STATE: Record<string, string> = {
-  AC: "N", AP: "N", AM: "N", PA: "N", RO: "N", RR: "N", TO: "N",
-  AL: "NE", BA: "NE", CE: "NE", MA: "NE", PB: "NE", PE: "NE", PI: "NE", RN: "NE", SE: "NE",
-  DF: "CO", GO: "CO", MT: "CO", MS: "CO",
-  ES: "SE", MG: "SE", RJ: "SE", SP: "SE",
-  PR: "S", RS: "S", SC: "S",
-};
-
 /** Half-open interval, `end === null` meaning "still open". */
 interface Span {
   start: number;
@@ -99,7 +92,12 @@ function covers(spans: Span[], at: number): boolean {
   return spans.some((s) => at >= s.start && (s.end === null || at <= s.end));
 }
 
-/** The house an agent belongs to, for cohorts and the roll-call ledger. */
+/** The pure module's house token, which is the Prisma enum minus CONGRESSO. */
+function houseKey(house: House): QualityHouse {
+  return house === House.SENADO ? "SENADO" : "CAMARA";
+}
+
+/** The house an agent belongs to, for the roll-call ledger and the goalposts. */
 function houseOf(type: AgentType): House | null {
   if (type === AgentType.FEDERAL_DEPUTY) return House.CAMARA;
   if (type === AgentType.SENATOR) return House.SENADO;
@@ -109,7 +107,6 @@ function houseOf(type: AgentType): House | null {
 interface AgentRow {
   id: string;
   house: House;
-  state: string | null;
   inputs: QualityInputs;
 }
 
@@ -130,6 +127,8 @@ export async function recomputeQualityIndex(
     score: number | null;
     pillars: Quality["pillars"];
   }>;
+  /** Shape of each (pillar, cohort) — the diagnostic `requality` prints. */
+  shapes: Array<{ pillar: string; cohort: string; shape: NonNullable<ReturnType<typeof describeCohort>> }>;
   skippedHouses: House[];
   /** Houses held back because a heavy pillar had no data at all, and which. */
   blockedBy: Map<House, string[]>;
@@ -238,7 +237,6 @@ export async function recomputeQualityIndex(
     rows.push({
       id: agent.id,
       house,
-      state: agent.state,
       inputs: {
         attendance:
           eligible > 0
@@ -250,7 +248,7 @@ export async function recomputeQualityIndex(
             : null,
         authorship: { authored, advanced: advanced.get(agent.id) ?? 0, months },
         rapporteurship: { count: rapporteured, months },
-        cost: { spent, documents, months },
+        cost: { spent, documents, months, ceiling: quotaCeiling(agent.type, agent.state) },
       },
     });
 
@@ -287,13 +285,15 @@ export async function recomputeQualityIndex(
     if (inHouse.length === 0) continue;
 
     const measured = inHouse.filter((r) =>
-      QUALITY_PILLARS.some((p) => p.raw(r.inputs) !== null),
+      QUALITY_PILLARS.some((p) => p.score(r.inputs, houseKey(house)) !== null),
     ).length;
 
     // A heavy pillar nobody in the house could be measured on is missing data,
     // not missing agents — see BLOCKING_PILLAR_WEIGHT.
     const empty = QUALITY_PILLARS.filter(
-      (p) => p.weight >= BLOCKING_PILLAR_WEIGHT && inHouse.every((r) => p.raw(r.inputs) === null),
+      (p) =>
+        p.weight >= BLOCKING_PILLAR_WEIGHT &&
+        inHouse.every((r) => p.score(r.inputs, houseKey(house)) === null),
     ).map((p) => p.label);
 
     if (measured / inHouse.length < MIN_HOUSE_COVERAGE || empty.length > 0) {
@@ -304,35 +304,29 @@ export async function recomputeQualityIndex(
     }
   }
 
-  // ── One cohort per (pillar, peer group) ───────────────────────────────────
-  const cohorts = new Map<string, number[]>();
-  const cohortKeyOf = (row: AgentRow, peer: string): string =>
-    peer === "house-uf" ? `${row.house}:${row.state ?? "??"}` : `${row.house}`;
-
-  for (const pillar of QUALITY_PILLARS) {
-    for (const row of rows) {
-      const value = pillar.raw(row.inputs);
-      if (value === null) continue;
-      const key = `${pillar.key}:${cohortKeyOf(row, pillar.peer)}`;
-      const list = cohorts.get(key) ?? [];
-      list.push(value);
-      cohorts.set(key, list);
-    }
-  }
-  // A state with too few members is not a cohort; fall back to its region, which
-  // still shares the quota's geography — the reason cost is ranked by UF at all.
-  for (const pillar of QUALITY_PILLARS) {
-    if (pillar.peer !== "house-uf") continue;
-    for (const row of rows) {
-      const value = pillar.raw(row.inputs);
-      if (value === null) continue;
-      const key = `${pillar.key}:region:${row.house}:${REGION_BY_STATE[row.state ?? ""] ?? "??"}`;
-      const list = cohorts.get(key) ?? [];
-      list.push(value);
-      cohorts.set(key, list);
+  // ── Distribution diagnostics ──────────────────────────────────────────────
+  // Nothing scores against these any more — the goalposts are fixed. They are
+  // measured so the screening rule that CHOSE the treatment keeps being checked.
+  const shapes: Array<{
+    pillar: string;
+    cohort: string;
+    shape: NonNullable<ReturnType<typeof describeCohort>>;
+  }> = [];
+  for (const house of [House.CAMARA, House.SENADO]) {
+    for (const pillar of QUALITY_PILLARS) {
+      const values = rows
+        .filter((r) => r.house === house)
+        .map((r) => pillar.score(r.inputs, houseKey(house)))
+        .filter((v): v is number => v !== null);
+      const shape = describeCohort(values);
+      if (shape) shapes.push({ pillar: pillar.key, cohort: house, shape });
     }
   }
 
+  // ── Score ─────────────────────────────────────────────────────────────────
+  // One pass, no cohort, no second read: every pillar is the member's own
+  // figures against the published goalposts. This is what makes a score a
+  // statement about them, and what makes it stable between editions.
   const scored: Array<{
     id: string;
     kid: string;
@@ -340,28 +334,13 @@ export async function recomputeQualityIndex(
     score: number | null;
     pillars: Quality["pillars"];
   }> = [];
+  const byId = new Map(agents.map((a) => [a.id, a]));
+
   for (const row of rows) {
-    const agent = agents.find((a) => a.id === row.id);
+    const agent = byId.get(row.id);
     if (!agent) continue;
 
-    const scores = new Map<string, number | null>();
-    for (const pillar of QUALITY_PILLARS) {
-      const value = pillar.raw(row.inputs);
-      if (value === null) {
-        scores.set(pillar.key, null);
-        continue;
-      }
-      const primary = cohorts.get(`${pillar.key}:${cohortKeyOf(row, pillar.peer)}`) ?? [];
-      let score = relativeScore(value, primary, pillar.higherIsBetter);
-      if (score === null && pillar.peer === "house-uf") {
-        const region =
-          cohorts.get(`${pillar.key}:region:${row.house}:${REGION_BY_STATE[row.state ?? ""] ?? "??"}`) ?? [];
-        score = relativeScore(value, region, pillar.higherIsBetter);
-      }
-      scores.set(pillar.key, score);
-    }
-
-    const quality = computeQuality(row.inputs, scores);
+    const quality = computeQuality(row.inputs, houseKey(row.house));
     const name = `${agent.firstName} ${agent.lastName}`.trim();
     scored.push({ id: row.id, kid: agent.kid, name, score: quality.score, pillars: quality.pillars });
 
@@ -373,15 +352,14 @@ export async function recomputeQualityIndex(
         // The raw inputs ride along beside the pillars so the page can FORMAT
         // the reading at render time instead of replaying a string frozen at
         // recompute. Without them a wording or rounding fix only reaches a
-        // citizen after the next full recompute — which is exactly how
-        // "R$ 1.276.327 em 34.74775840337093 meses" survived being fixed.
+        // citizen after the next full recompute.
         qualityPillars: { pillars: quality.pillars, inputs: row.inputs } as unknown as object,
         qualityComputedAt: new Date(),
       },
     });
   }
 
-  return { scored, skippedHouses, blockedBy };
+  return { scored, shapes, skippedHouses, blockedBy };
 }
 
 /** Bills each agent proposed whose situation says they got somewhere. */

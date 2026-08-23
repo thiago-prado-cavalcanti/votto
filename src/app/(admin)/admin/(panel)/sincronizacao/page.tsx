@@ -1,16 +1,22 @@
 /**
  * Synchronization panel: the operational view of the official-source importers.
  *
- * Shows every registered job with its weekly slot, next firing, last outcome and
- * a manual trigger, plus the most recent run history. This is where an operator
- * answers "is the federal data actually current?" without shelling into the box.
+ * Leads with the one control that matters — run the whole chain — and then shows
+ * every job in the order the chain runs it, with what the next run would do to
+ * each: execute it, or skip it because it is current. That second line is the
+ * point of the page. "Última execução: OK" answers whether a job worked; it does
+ * not answer whether the record is complete, which is what an operator is
+ * actually asking when they open this.
  */
 import type { Metadata } from "next";
 import { Card, CardBody, Badge } from "@/components/ui";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { SyncJobRow, type SyncJobView } from "@/components/admin/SyncJobRow";
+import { SyncPipelineCard, type SyncPipelineView } from "@/components/admin/SyncPipelineCard";
 import { db } from "@/lib/db";
-import { SYNC_JOBS } from "@/lib/integration/jobs";
+import { PIPELINE_SCHEDULE } from "@/lib/integration/jobs";
+import { FRESH_FOR_DAYS, planPipeline } from "@/lib/integration/pipeline";
+import { PIPELINE_JOB } from "@/lib/integration/runner";
 import { describeSchedule, formatZoned, nextOccurrence } from "@/lib/integration/schedule";
 import { env } from "@/lib/env";
 
@@ -18,22 +24,29 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sincronização" };
 
 export default async function SyncPage() {
-  const [states, runs] = await Promise.all([
-    db.syncJob.findMany({ where: { name: { in: SYNC_JOBS.map((j) => j.name) } } }),
+  // The plan is the same computation the chain runs, so the panel cannot drift
+  // from what pressing the button would actually do.
+  const [plan, states, runs, chain] = await Promise.all([
+    planPipeline(),
+    db.syncJob.findMany(),
     db.importRun.findMany({ orderBy: { startedAt: "desc" }, take: 15 }),
+    db.syncJob.findUnique({ where: { name: PIPELINE_JOB } }),
   ]);
 
   const stateByName = new Map(states.map((s) => [s.name, s]));
   const now = new Date();
 
-  const jobs: SyncJobView[] = SYNC_JOBS.map((job) => {
-    const state = stateByName.get(job.name);
+  const jobs: SyncJobView[] = plan.map((step, index) => {
+    const state = stateByName.get(step.job.name);
     return {
-      name: job.name,
-      label: job.label,
-      description: job.description,
-      schedule: describeSchedule(job.schedule),
-      nextRun: formatZoned(nextOccurrence(job.schedule, now)),
+      name: step.job.name,
+      label: step.job.label,
+      description: step.job.description,
+      position: index + 1,
+      needs: step.job.needs ?? [],
+      after: step.job.after ?? [],
+      upToDate: step.action === "skip",
+      planReason: step.reason,
       lastFinishedAt: state?.lastFinishedAt ? formatZoned(state.lastFinishedAt) : null,
       lastOk: state?.lastFinishedAt ? state.lastOk : null,
       lastNote: state?.lastNote ?? null,
@@ -41,11 +54,24 @@ export default async function SyncPage() {
       runningSince: state?.runningSince ? formatZoned(state.runningSince) : null,
       // Only jobs that declare a window take one; the rest always import the
       // full current roster or the whole year.
-      defaultDays: job.defaults.days ?? null,
+      defaultDays: step.job.defaults.days ?? null,
     };
   });
 
-  const stale = jobs.filter((j) => j.lastOk === null || j.lastOk === false).length;
+  const pipeline: SyncPipelineView = {
+    lockName: PIPELINE_JOB,
+    schedule: describeSchedule(PIPELINE_SCHEDULE),
+    nextRun: formatZoned(nextOccurrence(PIPELINE_SCHEDULE, now)),
+    freshForDays: FRESH_FOR_DAYS,
+    total: plan.length,
+    dueNow: plan.filter((s) => s.action === "run").length,
+    runningSince: chain?.runningSince ? formatZoned(chain.runningSince) : null,
+    lastFinishedAt: chain?.lastFinishedAt ? formatZoned(chain.lastFinishedAt) : null,
+    lastOk: chain?.lastFinishedAt ? chain.lastOk : null,
+    lastNote: chain?.lastNote ?? null,
+  };
+
+  const failing = jobs.filter((j) => j.lastOk === false).length;
 
   return (
     <div>
@@ -53,36 +79,53 @@ export default async function SyncPage() {
         title="Sincronização"
         description="Importações das fontes oficiais (Câmara dos Deputados e Senado Federal)."
         action={
-          stale === 0 ? (
+          failing > 0 ? (
+            <Badge tone="negative">{failing} job(s) com falha</Badge>
+          ) : pipeline.dueNow === 0 ? (
             <Badge tone="positive">Todas as fontes em dia</Badge>
           ) : (
-            <Badge tone="neutral">{stale} job(s) pendentes ou com falha</Badge>
+            <Badge tone="neutral">{pipeline.dueNow} job(s) a executar</Badge>
           )
         }
       />
 
       <Card>
         <CardBody className="p-0">
-          <ul className="divide-y divide-line">
-            {jobs.map((job) => (
-              <SyncJobRow key={job.name} job={job} />
-            ))}
-          </ul>
+          <SyncPipelineCard pipeline={pipeline} />
         </CardBody>
       </Card>
 
+      <div className="mt-8">
+        <h2 className="mb-1 font-display text-xl text-navy-900">A cadeia, em ordem</h2>
+        <p className="mb-3 max-w-3xl text-xs text-[var(--color-muted)]">
+          A ordem não é preferência: cada job lê o que o anterior gravou — as proposições
+          resolvem o autor contra a lista de parlamentares, a cota lê as legislaturas do
+          mandato, e a performance política ranqueia cada agente dentro da própria casa,
+          por isso ela é a única que fica <em>adiada</em> quando os votos não entram.
+          Executar um job isolado abaixo ignora a janela de frescor: nomeá-lo é uma ordem
+          explícita.
+        </p>
+        <Card>
+          <CardBody className="p-0">
+            <ul className="divide-y divide-line">
+              {jobs.map((job) => (
+                <SyncJobRow key={job.name} job={job} />
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      </div>
+
       <p className="mt-3 text-xs text-[var(--color-muted)]">
-        O worker dedicado executa estes jobs automaticamente nos horários acima e
-        recupera sozinho qualquer job sem execução bem-sucedida há mais de 8 dias.
+        O worker dedicado executa a cadeia automaticamente {pipeline.schedule.toLowerCase()} e
+        também ao subir, pulando o que já estiver em dia.
         {env.cronSecret
-          ? " O gatilho HTTP (POST /api/cron/{job}) também está habilitado."
+          ? " O gatilho HTTP (POST /api/cron/all) também está habilitado."
           : " O gatilho HTTP está desabilitado — defina CRON_SECRET para habilitá-lo."}
       </p>
 
       <div className="mt-8">
-        <h2 className="mb-3 font-display text-xl text-navy-900">
-          Execuções recentes
-        </h2>
+        <h2 className="mb-3 font-display text-xl text-navy-900">Execuções recentes</h2>
         <Card>
           <CardBody className="p-0">
             {runs.length === 0 ? (
@@ -95,7 +138,7 @@ export default async function SyncPage() {
                   <li key={run.id} className="flex items-center justify-between gap-3 px-5 py-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-ink">
-                        {run.job ?? run.source}
+                        {run.job === PIPELINE_JOB ? "Sincronização completa" : (run.job ?? run.source)}
                       </p>
                       <p className="text-xs text-[var(--color-muted)]">
                         {formatZoned(run.startedAt)} ·{" "}

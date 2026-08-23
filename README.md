@@ -60,14 +60,16 @@ npm run dev               # http://localhost:3100
 ## Dados oficiais (Câmara / Senado)
 
 Deputados, senadores, partidos, proposições em pauta e votos nominais vêm das APIs públicas de
-Dados Abertos (sem autenticação), por dez jobs independentes que rodam **semanalmente** no
-container `worker`. Os registros são deduplicados por `(source, externalRef)`, então reexecutar
-nunca duplica.
+Dados Abertos (sem autenticação), por dezesseis jobs que rodam como **uma cadeia** — na ordem de
+dependência, semanalmente, no container `worker`. Um job concluído há menos de sete dias é pulado,
+a menos que algo do qual ele depende tenha trazido dados novos. Os registros são deduplicados por
+`(source, externalRef)`, então reexecutar nunca duplica.
 
 ```bash
 npm run backfill -- --top 100           # carga inicial: 6 meses, 100 proposições por casa
-npm run sync all                        # refresh federal completo
-npm run sync camara:votes -- --days 90  # reimporta três meses de votações
+npm run sync                            # a cadeia inteira, pulando o que está em dia
+npm run sync -- --dry                   # só o plano: o que rodaria e por quê
+npm run sync camara:votes -- --days 90  # um job só, sempre executado
 npm run check:sources                   # confere os contratos das APIs (não toca no banco)
 ```
 
@@ -89,8 +91,9 @@ gatilho HTTP e onboarding dos provedores sociais — em [`docs/integracao.md`](d
 | `npm run db:seed:purge-demo` | Remove os dados de demonstração |
 | `npm run backfill` | Carga histórica das fontes oficiais |
 | `npm run reprioritize` | Recalcula a prioridade dos temas (sem rede) |
-| `npm run sync <job\|all>` | Sincroniza uma fonte oficial agora |
-| `npm run worker` | Agendador semanal das sincronizações |
+| `npm run sync [job]` | Roda a cadeia inteira, ou um job nomeado |
+| `npm run sync:plan` | Mostra o que a cadeia faria, sem executar |
+| `npm run worker` | Agendador semanal da cadeia |
 | `npm run check:sources` | Verifica os contratos das APIs oficiais |
 
 ## Segurança & privacidade

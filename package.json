@@ -2,7 +2,7 @@
   "name": "votto",
   "version": "0.1.0",
   "private": true,
-  "description": "Votto — direct-democracy platform measuring alignment between citizens and public agents.",
+  "description": "Votto \u2014 direct-democracy platform measuring alignment between citizens and public agents.",
   "scripts": {
     "dev": "next dev -p 3100",
     "build": "prisma generate && next build",
@@ -31,7 +31,8 @@
     "estimate:ai": "tsx scripts/estimate-ai-cost.ts",
     "sync": "tsx scripts/sync.ts",
     "sync:all": "tsx scripts/sync.ts all",
-    "worker": "tsx scripts/worker.ts"
+    "worker": "tsx scripts/worker.ts",
+    "sync:plan": "tsx scripts/sync.ts --dry"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

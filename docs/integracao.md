@@ -187,26 +187,100 @@ motivo.
 
 ## 3. Os workers
 
-Dezesseis jobs independentes, registrados em `src/lib/integration/jobs.ts`:
+### Uma cadeia, não dezesseis relógios
 
-| Job | O que traz | Horário (Brasília) |
-| --- | --- | --- |
-| `camara:parties` | Partidos com bancada na Câmara | domingo 02:00 |
-| `senado:parties` | Partidos com bancada no Senado | domingo 02:20 |
-| `camara:agents` | Deputados em exercício | domingo 02:40 |
-| `senado:agents` | Senadores em exercício | domingo 03:00 |
-| `camara:agenda` | Proposições pautadas no Plenário | domingo 03:15 |
-| `senado:agenda` | Processos na ordem do dia / prontos para o Plenário | domingo 03:20 |
-| `camara:themes` | Todas as proposições que tramitaram | domingo 03:30 |
-| `senado:themes` | Todos os processos atualizados | domingo 05:00 |
-| `ai:summaries` | Resumo em linguagem simples dos temas prioritários | domingo 05:30 |
-| `camara:votes` | Votações nominais + votos (e o livro de presença) | domingo 06:00 |
-| `senado:votes` | Votações nominais + votos (e o livro de presença) | domingo 07:00 |
-| `camara:mandate` | Exercício, licenças, legislaturas, autoria | domingo 07:30 |
-| `senado:mandate` | Exercício, licenças, autoria, relatoria | domingo 07:45 |
-| `camara:expenses` | Cota parlamentar (CEAP) | domingo 08:00 |
-| `senado:expenses` | Cota parlamentar (CEAPS) | domingo 08:15 |
-| `metrics:quality` | Recalcula o índice de qualidade (sem rede) | domingo 08:30 |
+Os jobs **não são independentes**, ainda que cada um rode sozinho sem quebrar:
+as proposições resolvem o autor contra a lista de parlamentares, a cota lê as
+legislaturas que o mandato gravou, e a performance política ranqueia cada agente
+dentro da própria casa a partir do que os jobs de voto trouxeram.
+
+Cada job tinha um horário próprio, vinte minutos depois do anterior. Isso
+codificava a ordem como **esperança**: o horário disparava tendo ou não o job
+anterior terminado. Nada falhava — o registro simplesmente ficava incompleto, o
+que é pior, porque parece dado: proposições sem autor, cota calculada sobre uma
+legislatura só, índice ranqueando metade de uma coorte.
+
+Hoje há **um comando**, que roda tudo na ordem de dependência e pula o que já
+está em dia (`src/lib/integration/pipeline.ts`):
+
+```bash
+npm run sync            # a cadeia inteira, pulando o que está em dia
+npm run sync -- --dry   # só o plano: o que rodaria e por quê
+```
+
+A ordem sai de uma ordenação topológica sobre o que cada job declara no registro
+(`after` = ordem; `needs` = dependência dura). Ela é estável: um registro já
+escrito numa ordem válida sai **exatamente** como está no arquivo, e a ordenação
+só intervém onde o arquivo estiver errado. `npm run check:sources` afirma isso —
+toda dependência precede quem depende dela — e afirma também a regra de frescor,
+sem banco.
+
+| # | Job | O que traz | Depois de |
+| --- | --- | --- | --- |
+| 1 | `camara:parties` | Partidos com bancada na Câmara | — |
+| 2 | `senado:parties` | Partidos com bancada no Senado | `camara:parties` |
+| 3 | `camara:agents` | Deputados em exercício | `camara:parties` |
+| 4 | `senado:agents` | Senadores em exercício | `senado:parties` |
+| 5 | `camara:agenda` | Proposições pautadas no Plenário | `camara:agents` |
+| 6 | `senado:agenda` | Processos na ordem do dia / prontos para o Plenário | `senado:agents` |
+| 7 | `camara:themes` | Todas as proposições que tramitaram | `camara:agents`, `camara:agenda` |
+| 8 | `senado:themes` | Todos os processos atualizados | `senado:agents`, `senado:agenda` |
+| 9 | `ai:summaries` | Resumo em linguagem simples dos temas prioritários | os dois `*:themes` |
+| 10 | `camara:votes` | Votações nominais + votos (e o livro de presença) | `camara:agents`, `camara:themes` |
+| 11 | `senado:votes` | Votações nominais + votos (e o livro de presença) | `senado:agents`, `senado:themes` |
+| 12 | `camara:mandate` | Exercício, licenças, legislaturas, autoria | `camara:agents`, `camara:themes` |
+| 13 | `senado:mandate` | Exercício, licenças, autoria, relatoria | `senado:agents`, `senado:themes` |
+| 14 | `camara:expenses` | Cota parlamentar (CEAP) | `camara:mandate` |
+| 15 | `senado:expenses` | Cota parlamentar (CEAPS) | `senado:mandate` |
+| 16 | `metrics:quality` | Recalcula a performance política (sem rede) | **needs** os dois `*:votes` |
+
+**`needs` aparece uma vez só**, e de propósito. `after` é ordem: os jobs criam o
+que lhes falta (o job de agentes cria um partido ausente, o de votos cria um
+agente ausente), então rodar fora de ordem custa detalhe, nunca correção — e uma
+falha ali não segura ninguém. `metrics:quality` é a exceção porque cada pilar é
+um percentil **dentro da casa**: uma importação que trouxe metade das votações
+não dá uma leitura mais magra, ela diz a cada agente que ele está numa coorte que
+não é a dele. Quando os votos não entram, o índice fica **adiado** e o painel diz
+por quê — a próxima execução o pega, porque um job que não rodou nunca ficou "em
+dia".
+
+### Frescor: o que a cadeia pula
+
+Um job que concluiu com sucesso há menos de **7 dias** não roda de novo. As
+casas publicam diariamente, mas a semana legislativa é a unidade em que algo
+efetivamente muda, e reimportar uma janela que ninguém tocou custa milhares de
+requisições para gravar linhas que já estão lá.
+
+A regra tem três saídas para "executa", e a terceira é a que um agendamento por
+horário não conseguia expressar:
+
+1. nunca concluiu com sucesso;
+2. concluiu há mais tempo que a janela;
+3. **uma dependência concluiu depois dele.** Se o job de votos rodou hoje, o
+   índice que rodou ontem está velho — mesmo tendo um dia de idade. É isso que
+   faz a atualização descer a cadeia inteira numa passada só, em vez de deixar a
+   ponta uma semana atrás da cabeça.
+
+Para ignorar o frescor: `npm run sync -- --force` (ou `--max-age 0`), ou
+"Refazer tudo" no painel. Nomear **um** job (`npm run sync camara:votes`) também
+ignora — nomear é ordem explícita.
+
+### Interromper uma cadeia em andamento
+
+**Interromper** no painel revoga o claim da execução. A cadeia pergunta, entre um
+job e outro, se o claim que ela tomou ainda está na linha do `SyncJob`; se não
+estiver, ela para no próximo limite de job — **nunca no meio de uma gravação**. O
+que não rodou fica para a próxima execução, porque um job que não rodou nunca
+ficou em dia.
+
+Isso também é o que impede duas cadeias de correrem juntas: quem perdeu o claim
+se recolhe, e o `finally` só libera o claim que ele próprio tomou.
+
+Não é preciso interromper nada antes de um deploy. O container `worker` é
+recriado, recebe SIGTERM (`stop_grace_period: 2m`) e o worker novo, ao subir,
+roda `reapOrphanRuns()` antes de qualquer decisão: fecha as `ImportRun` que
+ficaram abertas e devolve os locks que ninguém está segurando. A limpeza de
+"sincronização pendente" é automática no boot.
 
 Os pares `*:agenda` e `*:themes` cobrem ângulos diferentes de propósito: o
 primeiro traz o punhado de proposições efetivamente pautadas para votação
@@ -311,11 +385,11 @@ Dois cuidados no backfill:
   `metrics:quality`. Depois de um backfill por fonte, rode `npm run requality`.
 - **O livro de presença não se preenche sozinho num deploy existente.** A
   assiduidade vem de `RollCall`, que é gravado pelos jobs `*:votes` — que já
-  existiam antes do índice. O catch-up do worker só pega job parado há mais de 8
-  dias, e os de voto rodam toda semana, então **eles nunca são considerados
-  atrasados e o livro fica vazio até o próximo domingo**. Depois de subir o
-  índice pela primeira vez, rode `camara:votes` e `senado:votes` à mão com uma
-  janela larga. Desde então `metrics:quality` se recusa a gravar uma casa cujo
+  existiam antes do índice. Eles rodam toda semana, então estão sempre "em dia"
+  pela regra de frescor e **a cadeia os pula**, deixando o livro raso: a janela
+  semanal é de 30 dias, cerca de quatro sessões. Depois de subir o índice pela
+  primeira vez, rode `camara:votes` e `senado:votes` à mão com uma janela larga —
+  nomear um job ignora o frescor exatamente para isto. Desde então `metrics:quality` se recusa a gravar uma casa cujo
   pilar pesado esteja totalmente vazio, e diz isso no painel.
 - **Não use `--top` com os jobs de mandato/despesa.** Um roster parcial envenena
   todas as coortes; `metrics:quality` se recusa a gravar uma casa com menos de
@@ -324,12 +398,16 @@ Dois cuidados no backfill:
 ### CLI
 
 ```bash
-npm run sync all                      # refresh federal completo
-npm run sync camara                   # todos os jobs da Câmara
-npm run sync camara:votes -- --days 90   # backfill de três meses
+npm run sync                             # a cadeia inteira, pulando o que está em dia
+npm run sync -- --dry                    # só o plano, sem executar nada
+npm run sync -- camara                   # só a cadeia da Câmara
+npm run sync -- --force                  # refaz tudo, ignorando lock e frescor
+npm run sync camara:votes -- --days 90   # um job só, sempre executado
 npm run sync senado:agents -- --limit 5  # teste rápido
-npm run sync camara:themes -- --force    # ignora o lock (só se o dono morreu)
 ```
+
+Alvo vazio, `all` ou uma casa passam pela cadeia (ordem + frescor). Nomear **um**
+job roda aquele job e mais nada, sem consultar o frescor.
 
 Em produção, dentro do container que tem o código-fonte:
 
@@ -344,11 +422,20 @@ Para um agendador externo (cron de plataforma, pinger, curl durante um
 incidente). Requer `CRON_SECRET`; sem ele o endpoint recusa tudo.
 
 ```bash
+# a cadeia inteira — é esta que um cron externo deve chamar
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
+  "https://votto.online/api/cron/all"
+
+# um job só, quando se sabe qual
 curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
   "https://votto.online/api/cron/camara:votes?days=7"
 ```
 
-Respostas: `200` com os contadores, `409` se o job já está rodando, `401` se o
+Um agendador externo com um horário por job recriaria exatamente o problema de
+ordem que a cadeia existe para resolver — chame `all`.
+
+Respostas: `200` com os contadores (a cadeia devolve também o resultado de cada
+passo e por que foi pulado), `409` se já há execução em andamento, `401` se o
 segredo não confere, `503` se `CRON_SECRET` não está configurado.
 
 ### Verificação de contratos

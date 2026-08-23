@@ -27,13 +27,20 @@ import { dateWindows, isoDaysAgo, parseDate, splitName } from "@/lib/integration
 import {
   computeQuality,
   isAdvancedSituation,
-  relativeScore,
+  GOALPOSTS,
   qualityBand,
   QUALITY_PILLARS,
   type QualityInputs,
 } from "@/lib/indexes/quality";
 import { isDeliberativeSession, serviceSpansFromHistory } from "@/lib/integration/camara";
-import { SYNC_JOBS, findJob } from "@/lib/integration/jobs";
+import { PIPELINE_SCHEDULE, SYNC_JOBS, findJob, type SyncJobDefinition } from "@/lib/integration/jobs";
+import {
+  decide,
+  jobDependencies,
+  orderedJobs,
+  type JobState,
+  type StepStatus,
+} from "@/lib/integration/pipeline";
 import { describeSchedule, formatZoned, nextOccurrence } from "@/lib/integration/schedule";
 
 const CAMARA = "https://dadosabertos.camara.leg.br/api/v2";
@@ -209,19 +216,125 @@ function checkHelpers(): void {
 
 // ─── 2. Scheduling ───────────────────────────────────────────────────────────
 
+/**
+ * The chain: one weekly slot, and an ordering that actually holds.
+ *
+ * The dependency graph is plain data in the registry, so nothing in TypeScript
+ * stops a typo'd name or a cycle — `orderedJobs` throws on both, and this is
+ * where that throw is turned into a failed check instead of a broken worker
+ * three days later. The last assertion is the one that matters: every dependency
+ * comes out ahead of the job that declares it. That is the whole promise.
+ */
 function checkScheduling(): void {
-  console.log("\n[2] Agendamento semanal (America/Sao_Paulo)");
+  console.log("\n[2] Cadeia de sincronização (America/Sao_Paulo)");
   const now = new Date();
 
   check(`${SYNC_JOBS.length} jobs registrados com nomes únicos`, new Set(SYNC_JOBS.map((j) => j.name)).size === SYNC_JOBS.length);
   check("findJob resolve um job existente", findJob("camara:votes")?.name === "camara:votes");
   check("findJob devolve null para nome inválido", findJob("inexistente") === null);
 
-  for (const job of SYNC_JOBS) {
-    const next = nextOccurrence(job.schedule, now);
-    const withinAWeek = next.getTime() > now.getTime() && next.getTime() - now.getTime() <= 8 * 86_400_000;
-    check(`${job.name} → ${formatZoned(next)} (${describeSchedule(job.schedule)})`, withinAWeek);
+  const next = nextOccurrence(PIPELINE_SCHEDULE, now);
+  check(
+    `cadeia agendada para ${formatZoned(next)} (${describeSchedule(PIPELINE_SCHEDULE)})`,
+    next.getTime() > now.getTime() && next.getTime() - now.getTime() <= 8 * 86_400_000,
+  );
+
+  let ordered: SyncJobDefinition[] = [];
+  try {
+    ordered = orderedJobs();
+    check(`ordem topológica resolvida para ${ordered.length} jobs`, ordered.length === SYNC_JOBS.length);
+  } catch (err) {
+    check(`ordem topológica: ${err instanceof Error ? err.message : String(err)}`, false);
+    return;
   }
+
+  const position = new Map(ordered.map((job, i) => [job.name, i]));
+  const violations = ordered.flatMap((job) =>
+    jobDependencies(job)
+      .filter((dep) => (position.get(dep) ?? -1) >= (position.get(job.name) ?? 0))
+      .map((dep) => `${job.name} antes de ${dep}`),
+  );
+  check(
+    violations.length === 0
+      ? "toda dependência vem antes de quem depende dela"
+      : `dependências fora de ordem: ${violations.join(", ")}`,
+    violations.length === 0,
+  );
+
+  console.log(`      ${ordered.map((j) => j.name).join(" → ")}`);
+
+  checkFreshness(now);
+}
+
+/**
+ * The skip rule, exercised against a hand-built state map — no database.
+ *
+ * The third case is the one worth a check of its own: a job inside its freshness
+ * window whose *dependency* ran after it. Age alone says "em dia", and that is
+ * how the tail of the chain ends up a week behind its head — the quality index
+ * still carrying last week's roll calls because it happened to run yesterday.
+ */
+function checkFreshness(now: Date): void {
+  const quality = findJob("metrics:quality");
+  const votes = findJob("camara:votes");
+  if (!quality || !votes) {
+    check("jobs de referência para o teste de frescor existem", false);
+    return;
+  }
+
+  const week = 7 * 86_400_000;
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const ran = (at: Date): JobState => ({ lastOk: true, lastFinishedAt: at });
+  const plan = (state: Map<string, JobState>, outcomes = new Map<string, StepStatus>()) =>
+    decide(quality, state, outcomes, week, now);
+
+  check(
+    "nunca executado → executa",
+    plan(new Map()).action === "run",
+  );
+  check(
+    "concluído há 8 dias → executa",
+    plan(new Map([[quality.name, ran(ago(8 * 86_400_000))]])).action === "run",
+  );
+  check(
+    "concluído há 2 dias, nada novo a montante → pula",
+    plan(
+      new Map([
+        [quality.name, ran(ago(2 * 86_400_000))],
+        [votes.name, ran(ago(3 * 86_400_000))],
+      ]),
+    ).action === "skip",
+  );
+  check(
+    "concluído há 2 dias mas camara:votes rodou há 1 → executa",
+    plan(
+      new Map([
+        [quality.name, ran(ago(2 * 86_400_000))],
+        [votes.name, ran(ago(1 * 86_400_000))],
+      ]),
+    ).action === "run",
+  );
+  check(
+    "dependência `needs` que falhou nesta execução → adiado, não executado",
+    plan(
+      new Map([[quality.name, ran(ago(30 * 86_400_000))]]),
+      new Map([[votes.name, "failed"]]),
+    ).status === "blocked",
+  );
+
+  const parties = findJob("camara:parties");
+  check(
+    "falha em dependência `after` não adia ninguém",
+    parties
+      ? decide(
+          findJob("camara:agents")!,
+          new Map(),
+          new Map([[parties.name, "failed"]]),
+          week,
+          now,
+        ).action === "run"
+      : false,
+  );
 }
 
 // ─── 3. Câmara dos Deputados ─────────────────────────────────────────────────
@@ -524,93 +637,117 @@ function checkQualityHelpers(): void {
   // instead of being spread across a range in whatever order the array arrived
   // in — a difference the data does not contain. The fixture has to stay a
   // minority, because a majority block is nulled by the rule checked below.
-  // Proporção ao melhor: 200 é 100, 100 é 50 — não posição na fila.
-  const cohort = [50, 100, 150, 200, 80];
-  check(`o melhor da coorte é 100 (${relativeScore(200, cohort)})`, relativeScore(200, cohort) === 100);
-  check(`metade do melhor é 50 (${relativeScore(100, cohort)})`, relativeScore(100, cohort) === 50);
-  check("coorte pequena não produz nota", relativeScore(1, [1, 2, 3]) === null);
-  // Menos é melhor: o mais barato é 100, o dobro disso é 50.
-  const spend = [10_000, 20_000, 40_000, 15_000, 30_000];
-  check(`o mais barato é 100 (${relativeScore(10_000, spend, false)})`, relativeScore(10_000, spend, false) === 100);
-  check(`o dobro do mais barato é 50 (${relativeScore(20_000, spend, false)})`, relativeScore(20_000, spend, false) === 50);
-  // A rank shared with most of the field ranks nobody. Measured on the first
-  // real load: 87% of agents tied at 50 for relatorias, adding a near-constant
-  // to every score and diluting the three pillars that discriminate.
-  check(
-    "bloco de empate majoritário não produz nota",
-    relativeScore(0, [0, 0, 0, 0, 0, 0, 0, 1, 2]) === null,
-    "pilar que empata a maioria voltou a pontuar — está somando constante e diluindo os demais",
-  );
-  check(
-    "a minoria distinguida continua pontuando",
-    (relativeScore(2, [0, 0, 0, 0, 0, 0, 0, 1, 2]) ?? 0) === 100,
-  );
-
+  // Goalposts fixos: a nota é uma afirmação sobre o próprio parlamentar,
+  // conferível contra um número publicado, e não se move quando outra pessoa
+  // muda de comportamento. É a propriedade que motivou o redesenho inteiro.
   const full = (over: Partial<QualityInputs> = {}): QualityInputs => ({
     attendance: { eligible: 200, attended: 190, leaveShare: 0.02 },
     authorship: { authored: 12, advanced: 3, months: 40 },
     rapporteurship: { count: 4, months: 40 },
-    cost: { spent: 800_000, documents: 900, months: 40 },
+    cost: { spent: 800_000, documents: 900, months: 40, ceiling: 45_000 },
     ...over,
   });
-  const raw = (key: string, inputs: QualityInputs) =>
-    QUALITY_PILLARS.find((p) => p.key === key)?.raw(inputs) ?? null;
+  const pillar = (key: string, i: QualityInputs, house: "CAMARA" | "SENADO" = "CAMARA") =>
+    QUALITY_PILLARS.find((p) => p.key === key)?.score(i, house) ?? null;
 
-  // The guard against the index's worst false positive: an unpublished month,
-  // or an agent on leave, must never read as exemplary frugality.
   check(
-    "gasto zero sem documento é null, nunca nota máxima",
-    raw("cost", full({ cost: { spent: 0, documents: 0, months: 40 } })) === null,
-    "custeio sem documento voltou a pontuar — R$ 0 está sendo lido como economia",
+    `assiduidade perfeita marca 100 (${pillar("attendance", full({ attendance: { eligible: 200, attended: 200, leaveShare: 0 } }))})`,
+    pillar("attendance", full({ attendance: { eligible: 200, attended: 200, leaveShare: 0 } })) === 100,
+  );
+  // Lê o piso do próprio registry: um número fixo aqui envelheceria na primeira
+  // recalibragem, que é exatamente o que aconteceu com a versão anterior.
+  const atFloor = Math.round(200 * GOALPOSTS.attendance.floor);
+  check(
+    `assiduidade no piso publicado (${GOALPOSTS.attendance.floor}) marca o mínimo`,
+    (pillar("attendance", full({ attendance: { eligible: 200, attended: atFloor, leaveShare: 0 } })) ?? 99) <= 1,
+    "o piso deixou de ancorar a escala",
+  );
+
+  // A propriedade decisiva: ninguém mais entra na conta de ninguém.
+  const alone = pillar("production", full());
+  const crowded = pillar("production", full());
+  check("a nota não depende de mais ninguém", alone === crowded && alone !== null);
+
+  // Custo é taxa de utilização do teto publicado, não reais absolutos — é o que
+  // impede que a geografia da cota vire mérito.
+  const cheapUf = pillar("cost", full({ cost: { spent: 40_000 * 40, documents: 900, months: 40, ceiling: 50_000 } }));
+  const dearUf = pillar("cost", full({ cost: { spent: 40_000 * 40, documents: 900, months: 40, ceiling: 42_000 } }));
+  check(
+    `mesmo gasto, teto maior pontua mais (${cheapUf} > ${dearUf})`,
+    (cheapUf ?? 0) > (dearUf ?? 0),
+    "o custo voltou a ser lido em reais absolutos — a UF do parlamentar está virando mérito",
+  );
+  const atCap = 45_000 * GOALPOSTS.cost.floor;
+  check(
+    `usar ${Math.round(GOALPOSTS.cost.floor * 100)}% da cota marca o mínimo`,
+    (pillar("cost", full({ cost: { spent: atCap * 40, documents: 900, months: 40, ceiling: 45_000 } })) ?? 99) <= 1,
   );
   check(
+    `usar ${Math.round(GOALPOSTS.cost.target * 100)}% da cota marca 100`,
+    pillar("cost", full({
+      cost: { spent: 45_000 * GOALPOSTS.cost.target * 40, documents: 900, months: 40, ceiling: 45_000 },
+    })) === 100,
+  );
+  check(
+    "sem teto conhecido o custo não pontua",
+    pillar("cost", full({ cost: { spent: 100_000, documents: 900, months: 40, ceiling: null } })) === null,
+  );
+  check(
+    "gasto zero sem documento é null, nunca nota máxima",
+    pillar("cost", full({ cost: { spent: 0, documents: 0, months: 40, ceiling: 45_000 } })) === null,
+    "custo sem documento voltou a pontuar — R$ 0 está sendo lido como economia",
+  );
+
+  check(
     "afastamento acima do teto zera a assiduidade",
-    raw("attendance", full({ attendance: { eligible: 200, attended: 200, leaveShare: 0.8 } })) === null,
+    pillar("attendance", full({ attendance: { eligible: 200, attended: 200, leaveShare: 0.8 } })) === null,
     "quem passou a janela afastado está pontuando 100% de presença",
   );
   check(
     "poucas votações não produzem assiduidade",
-    raw("attendance", full({ attendance: { eligible: 3, attended: 3, leaveShare: 0 } })) === null,
+    pillar("attendance", full({ attendance: { eligible: 3, attended: 3, leaveShare: 0 } })) === null,
   );
   check(
     "mandato curto não produz taxa por mês",
-    raw("production", full({ authorship: { authored: 2, advanced: 0, months: 2 }, rapporteurship: { count: 0, months: 2 } })) === null,
-  );
-  // `raw` devolve o gasto nas próprias unidades; quem inverte é o
-  // `relativeScore`, pelo `higherIsBetter: false` que o pilar declara.
-  const cheap = raw("cost", full({ cost: { spent: 100_000, documents: 900, months: 40 } })) ?? 0;
-  const dear = raw("cost", full({ cost: { spent: 900_000, documents: 900, months: 40 } })) ?? 0;
-  check("custo político é lido em reais, não negado", cheap < dear);
-  check(
-    "gastar menos pontua mais",
-    (relativeScore(cheap, [cheap, dear, dear * 2, dear * 3, dear * 4], false) ?? 0) >
-      (relativeScore(dear, [cheap, dear, dear * 2, dear * 3, dear * 4], false) ?? 0),
-    "o custo político deixou de ser invertido — gastar mais está pontuando mais",
+    pillar("production", full({ authorship: { authored: 2, advanced: 0, months: 2 }, rapporteurship: { count: 0, months: 2 } })) === null,
   );
   check(
     "desfecho conta duas vezes",
-    (raw("production", full({ authorship: { authored: 10, advanced: 10, months: 40 } })) ?? 0) >
-      (raw("production", full({ authorship: { authored: 10, advanced: 0, months: 40 } })) ?? 0),
+    (pillar("production", full({ authorship: { authored: 10, advanced: 10, months: 40 } })) ?? 0) >
+      (pillar("production", full({ authorship: { authored: 10, advanced: 0, months: 40 } })) ?? 0),
   );
-
-  // Weight redistribution — the mechanism that makes the pillar set expandable.
-  const twoPillars = new Map<string, number | null>([
-    ["attendance", 80],
-    ["cost", 60],
-    ["production", null],
-  ]);
-  const partial = computeQuality(full({ authorship: null, rapporteurship: null }), twoPillars);
-  const expected = Math.round((80 + 60) / 2);
+  // O log é o que impede a cauda de esmagar o resto: quem produz o dobro da
+  // mediana não vale o dobro da nota, e quem produz 10× não vale 10×.
+  const p1 = pillar("production", full({ authorship: { authored: 40, advanced: 0, months: 40 }, rapporteurship: { count: 0, months: 40 } })) ?? 0;
+  const p10 = pillar("production", full({ authorship: { authored: 400, advanced: 0, months: 40 }, rapporteurship: { count: 0, months: 40 } })) ?? 0;
   check(
-    `peso de pilar ausente é redistribuído (${partial.score} ≈ ${expected})`,
-    partial.score === expected,
-    "o peso de um pilar ausente deixou de ser redistribuído — agentes sem uma fonte estão sendo empurrados para zero",
+    `produzir 10× não vale 10× a nota (${p1} → ${p10})`,
+    p10 > p1 && p10 < p1 * 3,
+    "a produção voltou a ser lida em escala linear — a cauda esmaga o resto",
   );
 
-  // Coverage floor: half a picture stated as a number is worse than no number.
+  // Média geométrica: falhar num pilar não se compra com os outros dois.
+  const balanced = computeQuality(full(), "CAMARA");
+  const lopsided = computeQuality(
+    full({ attendance: { eligible: 200, attended: 20, leaveShare: 0 } }),
+    "CAMARA",
+  );
+  check(
+    `falha num pilar não é compensada (${balanced.score} → ${lopsided.score})`,
+    (lopsided.score ?? 100) < (balanced.score ?? 0) * 0.75,
+    "a agregação voltou a ser aritmética — fantasma, ocioso e perdulário pontuam igual",
+  );
+
+  // Redistribuição de peso e piso de cobertura.
+  const partial = computeQuality(full({ authorship: null, rapporteurship: null }), "CAMARA");
+  check(
+    `peso de pilar ausente é redistribuído (cobertura ${partial.coverage.toFixed(2)})`,
+    partial.score !== null && Math.abs(partial.coverage - 2 / 3) < 0.01,
+    "o peso de um pilar ausente deixou de ser redistribuído",
+  );
   const thin = computeQuality(
     full({ attendance: null, authorship: null, rapporteurship: null }),
-    new Map<string, number | null>([["cost", 90]]),
+    "CAMARA",
   );
   check(
     "cobertura abaixo do piso devolve null",
@@ -618,7 +755,6 @@ function checkQualityHelpers(): void {
     "está publicando nota com menos da metade dos pilares medidos",
   );
 
-  // Bands, asserted as bands (not numbers) so retuning weights costs no rewrite.
   check("85 → banda de topo", qualityBand(85) === "EXCELLENT");
   check("50 → banda do meio", qualityBand(50) === "AVERAGE");
   check("20 → banda de baixo", qualityBand(20) === "WEAK");

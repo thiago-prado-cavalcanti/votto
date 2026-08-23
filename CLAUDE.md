@@ -614,14 +614,51 @@ Three things follow, and all three are load-bearing:
   `processo?siglaSituacao=` (Senado, which does filter server-side). They overlap with the broad
   `*:themes` sweep on purpose — cheap high-signal first, exhaustive second.
 - **One job per (source × domain)** — parties, agents, agenda, themes, votes — registered in
-  `src/lib/integration/jobs.ts` and scheduled weekly (Sunday early morning, America/São_Paulo). Jobs
-  are independent: an agent job creates a missing party, a vote job creates a missing agent, so
-  running them out of order loses detail but never correctness.
-- **Worker:** a dedicated container (`scripts/worker.ts`) runs the schedule, catches up on boot for
-  any job idle >8 days, runs jobs sequentially and isolates failures. An authenticated
-  `POST /api/cron/{job}` and the `/admin/sincronizacao` panel drive the same jobs manually.
-- **Single flight:** each job holds a lock in `SyncJob` (4h lease, reclaimable) so a worker run and a
+  `src/lib/integration/jobs.ts`. Jobs are independent in the sense that matters for failure: an
+  agent job creates a missing party, a vote job creates a missing agent, so running them out of
+  order loses detail but never correctness.
+
+### One chain, not sixteen clocks
+
+They are **not** independent in the sense that matters for completeness, and a weekly slot per job
+encoded the ordering as a hope: every slot fired whether or not the previous one had finished. The
+bill import resolves its authors against the agent roster, `camara:expenses` reads the legislatures
+`camara:mandate` writes, and `metrics:quality` ranks a cohort the vote jobs supply. Nothing failed —
+the record was quietly incomplete, which is worse, because it looks like data.
+
+There is now **one command**, `src/lib/integration/pipeline.ts`, and every surface calls it: the CLI
+(`npm run sync`), the worker's weekly slot and boot, `POST /api/cron/all`, and "Sincronizar tudo" on
+`/admin/sincronizacao`.
+
+- **Order is declared, not scheduled.** Each job carries `after` (ordering only — a failure upstream
+  costs detail) and `needs` (the job would publish a *wrong* figure without it, so a failed
+  dependency holds it back for the next run). `needs` appears exactly once, on `metrics:quality`,
+  because its pillars are percentiles inside a house: half a roll-call import does not give a
+  thinner reading, it tells every agent they are in a cohort that is not theirs. The topological
+  sort is **stable** — a registry already in a valid order comes out exactly as the file reads, and
+  the sort only intervenes where the file is wrong.
+- **A job that succeeded inside `FRESH_FOR_DAYS` (7) is skipped.** The houses publish daily, but the
+  legislative week is the unit anything changes in, and re-importing an untouched window costs
+  thousands of requests to write rows that are already there. This is also what makes the chain safe
+  to trigger by hand.
+- **Freshness alone would strand the tail of the chain**, so a job whose dependency finished *after*
+  its own last success is never fresh. If the vote job runs today, the index that ran yesterday is
+  stale despite being one day old — that clause is what carries an import down the whole chain in a
+  single pass instead of one job per week.
+- **Naming one job bypasses the window** (`npm run sync camara:votes`, the per-job button, the
+  per-job HTTP route): naming it is an explicit instruction. `--force` / "Refazer tudo" /
+  `--max-age 0` drop the window for the whole chain. `npm run sync -- --dry` prints the plan.
+- **Worker:** a dedicated container (`scripts/worker.ts`) runs the chain on `PIPELINE_SCHEDULE`
+  (Sunday early morning, America/São_Paulo) and again on boot — boot is just another chain run, and
+  freshness decides whether it costs anything, so a fresh deployment populates itself and a restart
+  is free.
+- **Single flight, two levels:** the chain holds a `SyncJob` row of its own (`pipeline`, 12h lease,
+  the chain being the sum of its jobs) and each job still takes its own (4h), so a worker run and a
   manual trigger never import the same window concurrently.
+- **The panel shows the plan, not just the history.** `/admin/sincronizacao` renders `planPipeline()`
+  — the same computation the button runs — so each row says what the next run would do to it and
+  why. "Última execução: OK" answers whether a job worked; it does not answer whether the record is
+  complete, which is what an operator is actually asking.
 - **Provenance & trust:** every imported theme keeps its official identifier, house, situation and a
   link back to the source page; `ImportRun` logs every attempt.
 - **Resilience:** rate-limit, retry with backoff, tolerate source downtime without data loss. An
@@ -634,7 +671,10 @@ Three things follow, and all three are load-bearing:
 - **Mandates end, history doesn't:** agents dropped from the official roster get `inOffice = false`
   instead of being deleted — their votes are what the alignment index is built from.
 - **Contract check:** `npm run check:sources` asserts every field the importers read is still present
-  in the live responses, without touching the database. Neither house versions its open data.
+  in the live responses, without touching the database. Neither house versions its open data. It also
+  asserts the chain itself — that the dependency graph resolves, that every dependency precedes the
+  job declaring it, and that the freshness rule decides the five cases correctly (`decide` takes
+  every input as a parameter precisely so this needs no database).
 
 ---
 

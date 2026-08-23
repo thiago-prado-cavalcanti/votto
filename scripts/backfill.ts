@@ -32,6 +32,7 @@
 // Must precede every import that reads `env` at module load.
 import "./load-env";
 import { SYNC_JOBS, type SyncJobDefinition } from "@/lib/integration/jobs";
+import { orderedJobs } from "@/lib/integration/pipeline";
 import { runJob } from "@/lib/integration/runner";
 import type { SyncOptions } from "@/lib/integration/importer";
 import { db } from "@/lib/db";
@@ -141,13 +142,23 @@ function usage(): void {
   );
 }
 
-/** The jobs this run will execute, in registry (dependency) order. */
+/**
+ * The jobs this run will execute, in dependency order.
+ *
+ * Ordering comes from the same topological sort the weekly chain uses, so a
+ * first load and a weekly refresh cannot disagree about what has to come first.
+ * Freshness deliberately does not apply here: a backfill is the operator saying
+ * "import the last six months", and skipping a job because it ran on a 30-day
+ * window last week would silently deliver a fraction of what was asked for.
+ */
 function selectJobs(opts: Options): SyncJobDefinition[] {
-  return SYNC_JOBS.filter((job) => {
-    if (opts.source && !job.name.startsWith(`${opts.source}:`)) return false;
-    if (opts.mode === "agenda" && BROAD_SWEEP_JOBS.has(job.name)) return false;
-    return true;
-  });
+  return orderedJobs(
+    SYNC_JOBS.filter((job) => {
+      if (opts.source && !job.name.startsWith(`${opts.source}:`)) return false;
+      if (opts.mode === "agenda" && BROAD_SWEEP_JOBS.has(job.name)) return false;
+      return true;
+    }),
+  );
 }
 
 /** Per-job options: the wide window for time-bounded jobs, the cap for agenda jobs. */

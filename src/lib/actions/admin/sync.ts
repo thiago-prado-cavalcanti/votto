@@ -9,9 +9,11 @@
  * a killed process.
  */
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireAdmin } from "@/lib/auth/guards";
 import { findJob } from "@/lib/integration/jobs";
-import { runJob } from "@/lib/integration/runner";
+import { PIPELINE_JOB, runJob } from "@/lib/integration/runner";
+import { claimPipeline, pipelineRunningSince, runPipeline } from "@/lib/integration/pipeline";
 import { db } from "@/lib/db";
 import { formatZoned } from "@/lib/integration/schedule";
 
@@ -21,6 +23,58 @@ export interface ActionResult {
 }
 
 const PANEL_PATH = "/admin/sincronizacao";
+
+/**
+ * Run the whole chain: every job in dependency order, skipping what is current.
+ *
+ * The one action an operator should normally need. It does **not** await the
+ * work — a full chain runs for hours, and a browser request held open that long
+ * is a request that dies on a proxy while the import carries on invisibly.
+ * Instead it claims the chain lock synchronously, so the panel can truthfully
+ * answer "em execução" on this very render, and hands the run to `after()`,
+ * which the Node server keeps alive past the response. Progress is read the way
+ * it already was: every job writes its own SyncJob row as it finishes.
+ *
+ * `full` drops the freshness window, for the operator who wants everything
+ * re-imported rather than only what has gone stale.
+ */
+export async function runSyncPipelineAction(
+  _prev: ActionResult | undefined,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const full = formData.get("full") === "1";
+  const claimedAt = await claimPipeline(new Date());
+  if (!claimedAt) {
+    const since = await pipelineRunningSince();
+    revalidatePath(PANEL_PATH);
+    return {
+      ok: false,
+      message: `Já existe uma sincronização em andamento${since ? ` desde ${formatZoned(since)}` : ""}.`,
+    };
+  }
+
+  after(async () => {
+    try {
+      // The claim stamp goes with it: that is what "Interromper" revokes, and
+      // it is how this run knows the revocation was meant for it.
+      await runPipeline({ claimedAt, ...(full ? { maxAgeDays: 0 } : {}) });
+    } catch (err) {
+      // `runPipeline` releases the lock in its own `finally`; this is only so a
+      // chain that died on the database does not vanish from the logs.
+      console.error("Falha na cadeia de sincronização:", err);
+    }
+  });
+
+  revalidatePath(PANEL_PATH);
+  return {
+    ok: true,
+    message: full
+      ? "Sincronização completa iniciada — todos os jobs serão reexecutados. Acompanhe abaixo."
+      : "Sincronização iniciada — os jobs em dia serão pulados. Acompanhe abaixo.",
+  };
+}
 
 /**
  * Run one registered job now, honouring its lock. Long jobs (votes over a 30-day
@@ -60,9 +114,17 @@ export async function runSyncJobAction(
 }
 
 /**
- * Release a job's lock without running it. Only for a claim whose holder is
- * known to be dead — releasing a live one would let two runs import the same
- * window at once.
+ * Release a lock without running anything.
+ *
+ * For **one job**, this is the old escape hatch and carries the old caveat: only
+ * for a claim whose holder is known to be dead, because releasing a live one
+ * would let two runs import the same window at once.
+ *
+ * For **the chain**, it is a genuine interrupt. The running chain checks between
+ * jobs whether its claim is still on the row (`stillHoldsClaim`), so revoking it
+ * makes the chain stand down at the next job boundary — after the current import
+ * finishes, never mid-write. That is why the panel labels this one "Interromper"
+ * and the per-job one "Liberar lock": they read alike and do different things.
  */
 export async function releaseSyncLockAction(
   _prev: ActionResult | undefined,
@@ -70,8 +132,8 @@ export async function releaseSyncLockAction(
 ): Promise<ActionResult> {
   await requireAdmin();
 
-  const name = String(formData.get("job") ?? "");
-  const job = findJob(name);
+  const name = String(formData.get("job") ?? "").trim().toLowerCase();
+  const job = name === PIPELINE_JOB ? { name: PIPELINE_JOB, label: "Sincronização" } : findJob(name);
   if (!job) return { ok: false, message: "Job desconhecido." };
 
   const { count } = await db.syncJob.updateMany({
@@ -80,7 +142,17 @@ export async function releaseSyncLockAction(
   });
   revalidatePath(PANEL_PATH);
 
-  return count > 0
-    ? { ok: true, message: `Lock de ${job.label} liberado.` }
-    : { ok: false, message: "O job não estava travado." };
+  if (count === 0) {
+    return {
+      ok: false,
+      message: name === PIPELINE_JOB ? "Nenhuma sincronização em andamento." : "O job não estava travado.",
+    };
+  }
+  return {
+    ok: true,
+    message:
+      name === PIPELINE_JOB
+        ? "Sincronização interrompida — ela para assim que o job atual terminar. O que não rodou fica para a próxima."
+        : `Lock de ${job.label} liberado.`,
+  };
 }

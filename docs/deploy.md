@@ -168,9 +168,10 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps worker
 docker compose --env-file .env.production -f docker-compose.prod.yml logs -f worker
 ```
 
-On a fresh box it imports everything immediately (no job has a recent successful
-run), which takes roughly 30–60 minutes end to end. After that it only wakes on
-the Sunday early-morning slots. Full details in [integracao.md](integracao.md).
+On a fresh box it imports everything immediately — the chain runs on boot, and no
+job has a recent successful run to skip — which takes roughly 30–60 minutes end to
+end. After that it wakes on the Sunday early-morning slot and skips whatever is
+still current. Full details in [integracao.md](integracao.md).
 
 ## 6. HTTPS with your domain (recommended)
 
@@ -205,11 +206,16 @@ Copy the dump off the box (e.g. to S3). For a managed alternative later, restore
 this dump into **RDS** and point `DATABASE_URL` there.
 
 **Official data (Câmara/Senado)** — handled by the `worker` container, which runs
-every job on its weekly slot and catches up on boot. See
-[integracao.md](integracao.md) for the job list, manual runs and troubleshooting.
+the whole chain on its weekly slot and on boot, skipping what is still current.
+See [integracao.md](integracao.md) for the job list, manual runs and
+troubleshooting. `/admin/sincronizacao` drives the same chain from the browser.
 
 ```bash
-# force a single job now (see integracao.md for the full list)
+# run the chain now (skips what is up to date)
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  run --rm migrate npm run sync
+
+# force a single job, ignoring the freshness window
 docker compose --env-file .env.production -f docker-compose.prod.yml \
   run --rm migrate npm run sync camara:votes
 ```

@@ -1,8 +1,14 @@
 "use client";
 
 /**
- * One row of the synchronization panel: a job's schedule, last outcome and the
- * controls to run it now or release a stuck lock.
+ * One row of the synchronization panel: a job's place in the chain, what the
+ * chain would do with it right now, its last outcome, and the controls to run it
+ * on its own or release a stuck lock.
+ *
+ * The per-job run is the exception, not the normal act — "Sincronizar tudo"
+ * above is. It is kept because an operator does face the single case: one source
+ * that was down, one window to widen. It bypasses the freshness rule by design:
+ * naming a job is an explicit instruction.
  *
  * The run action awaits the whole import, which for the vote jobs can take
  * several minutes — the button therefore stays in its pending state for the full
@@ -18,8 +24,20 @@ export interface SyncJobView {
   name: string;
   label: string;
   description: string;
-  schedule: string;
-  nextRun: string;
+  /** 1-based position in the chain, so the order is readable at a glance. */
+  position: number;
+  /**
+   * Hard dependencies: this job is held back when one of them does not deliver.
+   * Kept apart from {@link SyncJobView.after} on screen, because "adiado" is a
+   * state only these can cause, and an operator staring at a job that did not
+   * run needs to see which relation explains it.
+   */
+  needs: string[];
+  /** Ordering-only dependencies. A failure in one of these holds nobody back. */
+  after: string[];
+  /** Whether the next chain run would skip this job, and why. */
+  upToDate: boolean;
+  planReason: string;
   lastFinishedAt: string | null;
   lastOk: boolean | null;
   lastNote: string | null;
@@ -59,18 +77,53 @@ export function SyncJobRow({ job }: { job: SyncJobView }) {
     <li className="flex flex-col gap-3 px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-ink">{job.label}</p>
+          <p className="text-sm font-semibold text-ink">
+            <span className="mr-2 font-mono text-xs text-[var(--color-muted)]">
+              {String(job.position).padStart(2, "0")}
+            </span>
+            {job.label}
+          </p>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">{job.description}</p>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
-            {job.schedule} · próxima: {job.nextRun}
+            {job.needs.length > 0 ? (
+              <>
+                <span className="text-ink">Exige {job.needs.join(", ")}</span>
+                {job.after.length > 0 ? ` · depois de ${job.after.join(", ")}` : ""}
+              </>
+            ) : job.after.length > 0 ? (
+              `Depois de ${job.after.join(", ")}`
+            ) : (
+              "Início da cadeia"
+            )}
             {job.lastOk ? ` · ${job.lastItemsUpserted.toLocaleString("pt-BR")} registros na última` : ""}
+          </p>
+          <p className="mt-1.5 text-xs">
+            <span
+              className={
+                job.upToDate
+                  ? "border border-line px-1.5 py-0.5 text-[var(--color-muted)]"
+                  : "border border-navy-900 px-1.5 py-0.5 text-navy-900"
+              }
+            >
+              {job.upToDate ? "Na próxima: pulado" : "Na próxima: executado"}
+            </span>
+            <span className="ml-2 text-[var(--color-muted)]">{job.planReason}</span>
           </p>
         </div>
         <StatusBadge job={job} />
       </div>
 
-      {job.lastNote && !job.lastOk ? (
-        <p className="rounded-card bg-[#f7e9e4] px-3 py-2 text-xs text-[var(--color-negative)]">
+      {/* `runJob` clears `lastNote` on every success, so a note on a job that
+          last succeeded can only mean the chain held it back or an operator
+          released its lock — both worth reading, neither an error. */}
+      {job.lastNote ? (
+        <p
+          className={
+            job.lastOk === false
+              ? "rounded-card bg-[#f7e9e4] px-3 py-2 text-xs text-[var(--color-negative)]"
+              : "rounded-card bg-[#f1efe8] px-3 py-2 text-xs text-[var(--color-muted)]"
+          }
+        >
           {job.lastNote}
         </p>
       ) : null}

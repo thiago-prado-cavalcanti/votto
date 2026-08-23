@@ -95,7 +95,9 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
           política pergunta outra coisa, que não depende de concordar:{" "}
           <strong className="font-medium text-navy-900">se ele está fazendo o trabalho</strong>.
           São três medidas, todas tiradas do registro oficial da própria casa, e as
-          três pesam igual.
+          três pesam igual. O método segue o manual da OCDE e do Centro Comum de
+          Investigação da União Europeia para índices compostos — o mesmo que sustenta
+          o Índice de Desenvolvimento Humano.
         </p>
 
         <dl className="mt-5 divide-y divide-[var(--color-line)] border-y border-line">
@@ -111,19 +113,36 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
         </h3>
 
         <dl className="mt-3 divide-y divide-[var(--color-line)] border-y border-line">
-          <Point term="É proporção ao melhor, não nota de prova">
-            Cada barra compara o parlamentar com o melhor dos colegas da mesma casa —
-            e, no custo político, do mesmo estado, porque o teto da cota varia com a
-            distância de Brasília. Se quem mais compareceu esteve em 200 votações, 200 é
-            100% e 100 votações é 50%. No custo a leitura se inverte: o gabinete mais
-            barato é 100%, e um que custa o dobro disso é 50%. O número cru aparece
-            sempre ao lado da barra.
+          <Point term="A régua é fixa e publicada, não o melhor colega">
+            Cada pilar é medido contra uma meta fixa, não contra quem foi melhor
+            naquele momento. Comparecer a todas as votações vale 100; usar metade da
+            cota a que se tem direito vale 100. Isso importa por um motivo prático: a
+            nota de um parlamentar só muda quando <em>ele</em> muda. Antes, medindo
+            contra o melhor da turma, bastava um colega apresentar o dobro de projetos
+            para a nota de todos os outros cair pela metade — sem que ninguém tivesse
+            feito nada diferente.
           </Point>
-          <Point term="Custo político não é o dinheiro que ele traz">
-            É a média mensal do que o mandato consome: gabinete, viagens, combustível,
-            divulgação, segurança. Emenda parlamentar não entra. Quem garantiu um bilhão
-            para escolas no seu estado não é um parlamentar caro — seria o contrário da
-            verdade medir as duas coisas juntas.
+          <Point term="Produzir dez vezes mais não vale dez vezes a nota">
+            A produção é lida em escala logarítmica, porque a distribuição é
+            extremamente desigual: metade da Câmara apresenta cerca de um projeto por
+            mês e alguns apresentam trinta. Numa escala linear, esses poucos achatariam
+            todo o resto no rodapé — e foi o que aconteceu na versão anterior, em que o
+            deputado mediano marcava 5 de 100. A consequência é deliberada: o primeiro
+            projeto conta mais que o quadringentésimo.
+          </Point>
+          <Point term="Custo político é fração da cota, não reais">
+            O teto da cota varia de R$ 41,6 mil no Distrito Federal a R$ 58,5 mil em
+            Roraima, porque paga as passagens de volta para casa. Ranquear por reais
+            ranqueia a distância de Brasília. Aqui o pilar é a fatia da cota
+            efetivamente usada — o que também corrige uma injustiça: um senador do
+            Amazonas gastando 57% do que tem direito desembolsa mais reais que um do
+            Distrito Federal gastando 79%.
+          </Point>
+          <Point term="Falhar num pilar não se compra com os outros">
+            As três notas entram numa média geométrica, não numa média simples. Numa
+            média simples, quem nunca aparece, quem nunca legisla e quem gasta a cota
+            inteira terminavam todos com a mesma nota confortável. É o mesmo motivo pelo
+            qual o Índice de Desenvolvimento Humano trocou de média em 2010.
           </Point>
           <Point term="Sem medida é sem nota, nunca zero">
             Quando falta o dado de um pilar, o peso dele é redistribuído entre os
@@ -151,7 +170,7 @@ const EXPLANATION: Record<string, string> = {
     "Votações nominais a que compareceu, entre as que aconteceram enquanto ocupava a cadeira. Afastamento oficial é descontado, e sessão que ele mesmo presidiu também — quem preside está impedido de votar.",
   production:
     "O que o parlamentar pôs para andar na casa: projetos que apresentou, contando só os que legislam de fato (PL, PEC, PLP, PDL) e não requerimentos, mais os que relatou. Os que avançaram contam em dobro.",
-  cost: "Média mensal da cota parlamentar consumida. Aqui, gastar menos pontua mais.",
+  cost: "Fatia da cota parlamentar a que tem direito que foi efetivamente usada. Aqui, gastar menos pontua mais.",
 };
 
 function Point({ term, children }: { term: string; children: ReactNode }) {

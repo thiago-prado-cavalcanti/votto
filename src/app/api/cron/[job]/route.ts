@@ -1,12 +1,20 @@
 /**
- * Authenticated HTTP trigger for a synchronization job.
+ * Authenticated HTTP trigger for a synchronization job — or for the whole chain.
  *
  * The bundled worker container is the primary scheduler; this endpoint exists so
  * an external scheduler (a platform cron, an uptime pinger, a manual curl during
- * an incident) can drive the same jobs without shell access to the box.
+ * an incident) can drive the same work without shell access to the box.
  *
  *   curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
+ *        https://votto.online/api/cron/all
+ *   curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
  *        https://votto.online/api/cron/camara:votes?days=7
+ *
+ * `all` runs the chain (`src/lib/integration/pipeline.ts`): every job in
+ * dependency order, skipping whatever succeeded inside the freshness window.
+ * That is the one an external cron should call — a per-job schedule out there
+ * would recreate exactly the ordering problem the chain exists to fix. A named
+ * job is the manual escape hatch and always runs.
  *
  * Auth is a shared secret in the `Authorization: Bearer` header, compared in
  * constant time. When `CRON_SECRET` is unset the endpoint refuses every request
@@ -20,6 +28,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { findJob, jobNames } from "@/lib/integration/jobs";
 import { runJob } from "@/lib/integration/runner";
+import { FRESH_FOR_DAYS, runPipeline, summarize } from "@/lib/integration/pipeline";
 import type { SyncOptions } from "@/lib/integration/importer";
 import { env } from "@/lib/env";
 
@@ -41,6 +50,12 @@ function positiveInt(value: string | null): number | undefined {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
 }
 
+/** Read a non-negative integer query param — `0` is meaningful for `maxAge`. */
+function nonNegativeInt(value: string | null): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+}
+
 /** POST /api/cron/{job} — run one registered sync job. */
 export async function POST(
   req: NextRequest,
@@ -60,20 +75,66 @@ export async function POST(
   }
 
   const { job: name } = await params;
-  const job = findJob(decodeURIComponent(name));
+  const target = decodeURIComponent(name).trim().toLowerCase();
+
+  const days = positiveInt(req.nextUrl.searchParams.get("days"));
+  const limit = positiveInt(req.nextUrl.searchParams.get("limit"));
+  const force = req.nextUrl.searchParams.get("force") === "true";
+
+  if (target === "all") {
+    const report = await runPipeline({
+      days,
+      limit,
+      force,
+      maxAgeDays: force ? 0 : (nonNegativeInt(req.nextUrl.searchParams.get("maxAge")) ?? FRESH_FOR_DAYS),
+    });
+
+    if (report.status === "locked") {
+      return NextResponse.json(
+        {
+          job: "all",
+          status: "locked",
+          runningSince: report.runningSince,
+          message: "Outra sincronização já está em andamento.",
+        },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      {
+        job: "all",
+        status: report.status,
+        summary: summarize(report),
+        ran: report.ran,
+        skipped: report.skipped,
+        blocked: report.blocked,
+        failed: report.failed,
+        interrupted: report.interrupted,
+        itemsUpserted: report.itemsUpserted,
+        durationMs: report.durationMs,
+        steps: report.steps.map((s) => ({
+          job: s.name,
+          status: s.status,
+          reason: s.reason,
+          itemsUpserted: s.itemsUpserted,
+          durationMs: s.durationMs,
+        })),
+      },
+      { status: report.failed > 0 ? 500 : 200 },
+    );
+  }
+
+  const job = findJob(target);
   if (!job) {
     return NextResponse.json(
-      { error: "unknown_job", available: jobNames() },
+      { error: "unknown_job", available: ["all", ...jobNames()] },
       { status: 404 },
     );
   }
 
   const opts: SyncOptions = {};
-  const days = positiveInt(req.nextUrl.searchParams.get("days"));
-  const limit = positiveInt(req.nextUrl.searchParams.get("limit"));
   if (days) opts.days = days;
   if (limit) opts.limit = limit;
-  const force = req.nextUrl.searchParams.get("force") === "true";
 
   const outcome = await runJob(job, opts, { force });
 

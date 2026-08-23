@@ -1,51 +1,71 @@
 /**
- * Quality Index (CLAUDE.md §3.3).
+ * Performance política — a composite indicator over three pillars (CLAUDE.md §3.3).
  *
- * The second reading of a public agent, orthogonal to the alignment index:
- * alignment asks whether they agree with *you*, quality asks whether they are
- * doing the job. Four weighted pillars, each derived from the houses' own
- * published record:
+ * Built to the OECD/JRC *Handbook on Constructing Composite Indicators* and the
+ * JRC 10-Step Pocket Guide, because this number is published against a named
+ * person and has to survive being argued with.
  *
- *   1. **Assiduidade** — roll calls attended over roll calls they could have
- *      attended, with officially recorded leave subtracted from the denominator.
- *   2. **Proposições** — substantive bills authored per month in office, with
- *      the ones that got somewhere counted twice.
- *   3. **Relatorias** — bills rapporteured per month in office.
- *   4. **Custeio do mandato** — parliamentary quota spent per month, inverted.
+ * ── Why fixed goalposts, and not a comparison with peers ────────────────────
  *
- * Two decisions carry the whole design:
+ * Every earlier version normalised inside a peer group — first by percentile,
+ * then as a proportion of the group's best. Measured on the real bench, both
+ * were unusable:
  *
- * **Every pillar is a percentile within a peer group, not an absolute score.**
- * This is the `priority.ts` lesson applied again. There, a high base marked 35
- * of 42 tabled bills "urgent" and the badge stopped informing; here, roll-call
- * participation in Brazil clusters near 95% for everyone, so passing the raw
- * ratio through would make the pillar carry no information at all. Ranking also
- * cancels *systematic measurement bias per house*: the Câmara publishes only a
- * bill's last rapporteur, so its rapporteurship counts are a floor rather than a
- * count — but the floor applies equally to every deputy, so comparing deputies
- * only with deputies keeps the ranking valid. And it neutralizes the quota's
- * geographic ceiling, which is why cost is ranked within house *and* state.
+ *   - **Proportion-to-the-best silently rewrote the weights.** The pillars
+ *     nominally weigh a third each; their measured influence on the composite
+ *     was 19% / 60% / 21%. The published claim was false.
+ *   - **It handed one person control of everyone's score.** Doubling the top
+ *     producer's output halved 593 other readings. The cheapest mandate in the
+ *     Câmara — R$1,094/month, certainly a partial record rather than a virtuoso
+ *     of thrift — was the benchmark every other deputy was measured against, and
+ *     the median deputy scored **2 out of 100** on cost.
+ *   - **Small groups published noise.** In a five-member cohort a score carried
+ *     ±27 points of pure sampling variation: half the reading was who else
+ *     happened to be in the room.
+ *   - **Scores moved between editions for members who had not changed.**
  *
- * The cost of ranking is that it manufactures a uniform distribution: half of
- * any parliament sits below 50, and the gap between the 40th and 60th percentile
- * may be two sittings. The mitigation is not in the maths — it is that every
- * pillar also carries a `PillarReading`, the raw figure, which the UI is
- * required to print beside the bar. The percentile drives the index; the plain
- * number is what a citizen actually reads.
+ * So the index does what the HDI, the EPI and the SDG Index do: it scores
+ * against **fixed goalposts, frozen and published**. A member's reading changes
+ * when their own conduct changes, and at no other time. The Handbook's warning
+ * about the alternative is explicit (p. 28): normalising by the group leader
+ * *"is based on extreme values which could be unreliable outliers."*
  *
- * **A pillar that cannot be measured is `null`, and its weight is redistributed
- * across the rest.** Without that, an agent missing one source would be quietly
- * dragged toward zero by a pillar that says nothing about them. Below
- * `MIN_COVERAGE` the whole score is `null` rather than a number built on half a
- * picture — the §3.2 discipline, where a confidently-stated wrong band was
- * judged worse than no band at all.
+ * ── Why production is read on a log scale ───────────────────────────────────
  *
- * The pillar set is a registry so it can grow (§3.3). Two conditions on any new
- * factor: **both houses publish it or neither is scored on it** (the §8
- * comparability rule), and it is **`null` when unknown, never zero**.
+ * The JRC screening rule flags an indicator when |skewness| > 2 and kurtosis
+ * > 3.5. The Câmara's production rate measures **7.20 and 70.81** — an order of
+ * magnitude past it. Winsorising, the rule's first remedy, cannot rescue it:
+ * capping the five most extreme members still leaves skew at 3.6, and the cap
+ * has to reach the median before the scale opens up. The rule's own fallback for
+ * that case is the natural logarithm.
+ *
+ * `log1p(x/α)` rather than `log(x + 1)`: it is exactly 0 at x = 0, so a member
+ * who filed nothing scores zero with no special case, and α is a published rate
+ * with units rather than an arbitrary constant. Note what the choice means —
+ * Handbook p. 84: a log *"leads to the attribution of a higher weight for a
+ * one-unit increase, starting from a low level of performance."* The 400th bill
+ * counts for less than the first. Deliberate, and stated on the page.
+ *
+ * ── Why cost is a utilisation rate ──────────────────────────────────────────
+ *
+ * The quota ceiling is published per state and per house and varies by a factor
+ * of 2.4 (`domain/quota-ceilings.ts`). Dividing by it gives the share of an
+ * entitlement actually drawn — bounded, comparable across states and houses, and
+ * needing no cohort. Its skewness is then mild enough that the screening rule
+ * does not fire, and logging it would make it worse.
+ *
+ * ── Why the geometric mean ──────────────────────────────────────────────────
+ *
+ * An arithmetic mean is fully compensatory: it scored a member who never
+ * attends, one who never legislates and one who spends the whole quota at an
+ * identical, respectable 63. Handbook §6.10 shows additive aggregation requires
+ * preference independence, which these pillars fail — the value of one more bill
+ * is not independent of whether the member turns up. The HDI changed for exactly
+ * this reason in 2010: *"Poor performance in any dimension is now directly
+ * reflected… there is no longer perfect substitutability."*
  *
  * Pure: no database, no cache, no clock. The query wrapper lives in
- * `src/lib/domain/quality.ts`, mirroring `positioning.ts` ↔ `domain/positions.ts`.
+ * `src/lib/domain/quality.ts`.
  */
 
 /** The plain figure shown beside a pillar's bar, so the rank never stands alone. */
@@ -79,11 +99,20 @@ export interface QualityInputs {
     /** Reimbursement documents behind it. Zero means "no data", not "spent nothing". */
     documents: number;
     months: number;
+    /**
+     * The member's published monthly ceiling (`domain/quota-ceilings.ts`).
+     *
+     * Null when we cannot place them — a utilisation rate computed against the
+     * wrong ceiling is worse than no reading, so the pillar declines rather than
+     * guessing.
+     */
+    ceiling: number | null;
   } | null;
 }
 
 /** Which cohort a pillar is ranked inside. */
-export type PeerScope = "house" | "house-uf";
+/** Which chamber a member sits in. The goalposts differ; the method does not. */
+export type QualityHouse = "CAMARA" | "SENADO";
 
 /** One weighted factor of the index. Adding a factor is adding an entry here. */
 export interface QualityPillar {
@@ -91,21 +120,15 @@ export interface QualityPillar {
   /** PT-BR label (presentation only). */
   label: string;
   weight: number;
-  peer: PeerScope;
   /**
-   * Which end of the scale is good. Cost is the one where less is better, and
-   * saying so here is what lets {@link relativeScore} normalize both directions
-   * without a pillar having to hide its meaning behind a negation.
-   */
-  higherIsBetter: boolean;
-  /**
-   * The comparable figure, in its own units — sittings attended over sittings
-   * held, bills per month, reais per month.
+   * The member's own 0–100 against the published goalposts, or null when the
+   * pillar cannot be measured for them — which redistributes its weight rather
+   * than scoring them zero.
    *
-   * `null` when the pillar is not measurable for this agent, which redistributes
-   * its weight instead of scoring it zero.
+   * Takes only the member's own figures and the constants below. Nothing about
+   * anybody else enters, which is the property the whole redesign is for.
    */
-  raw: (i: QualityInputs) => number | null;
+  score: (i: QualityInputs, house: QualityHouse) => number | null;
   reading: (i: QualityInputs) => PillarReading | null;
 }
 
@@ -120,47 +143,87 @@ const MIN_ROLL_CALLS = 10;
  *
  * Leave is subtracted from the denominator on purpose — a deputy licensed to
  * serve as a state secretary is not absent from votes held while they were
- * legitimately away. But subtracting without limit inverts the pillar: an agent
- * away for almost the whole window would score perfectly off the two sittings
- * they attended. In a 20-senator sample, `LICENCA_ATIVIDADE_PARLAMENTAR` alone
- * accounted for 770 of 877 recorded leaves, so the excusable surface is large
- * and this ceiling is doing real work.
+ * legitimately away. But subtracting without limit inverts the pillar: someone
+ * away for almost the whole window would score perfectly off two sittings.
  */
 const MAX_LEAVE_SHARE = 0.4;
 
-/** Months in office before per-month output rates are meaningful. */
+/** Months in office before a per-month rate is meaningful. */
 const MIN_MONTHS = 6;
 
 /**
  * Minimum share of the index's total weight that must be measurable before a
- * score is published at all. Half a picture stated as a number is worse than no
- * number — the `PositionBadge` precedent (§3.2).
+ * score is published. Half a picture stated as a number is worse than no number
+ * — the `PositionBadge` precedent (§3.2).
  */
 export const MIN_COVERAGE = 0.5;
 
-/** Smallest cohort that can produce a percentile. Three peers are not a distribution. */
-const MIN_COHORT = 5;
+/**
+ * Floor applied to every pillar before the geometric mean.
+ *
+ * A geometric mean is zero if any factor is zero, which would collapse every
+ * distinct way of failing into the same "0". One point keeps a total failure on
+ * one pillar visibly bad and still separable from a failure on two.
+ */
+const PILLAR_FLOOR = 1;
 
 /**
- * Largest share of a cohort that may sit in one tie block and still be scored.
+ * The published goalposts. **Frozen constants, not observed extremes.**
  *
- * A pillar where most of the cohort holds the identical value is not measuring
- * those members — it hands them all the same midrank and, through the weighted
- * mean, adds a near-constant that pulls every score toward the middle and
- * dilutes the pillars that do discriminate.
+ * This is the whole point of the redesign: a member's score is a statement about
+ * them, checkable against a number printed on the page, and it does not move
+ * when somebody else's conduct does. Round, human-readable values in the manner
+ * of the HDI's "20 and 85 years" — derived from the real distribution, then
+ * rounded and fixed.
  *
- * This is not hypothetical. On the first real load, 87% of scored agents sat in
- * one block at 50 for relatorias (against 1–3% for the other three pillars),
- * because the Câmara publishes only a bill's last rapporteur and most deputies
- * therefore have none on record. It cost the top of the ranking ~8 points and
- * lifted the bottom by the same, for a pillar that said nothing about either.
- *
- * So the majority block returns `null` and its weight is redistributed — the
- * same rule this index applies everywhere else: no measurement is better than a
- * number that only looks like one. The minority who *are* distinguished keep
- * their score, because "reported bills, which most never do" is a real signal.
+ * Production differs by house because the difference is structural, not merit:
+ * 81 senators share roughly the volume of rapporteurships that 513 deputies do,
+ * so the median senator's rate is about four times the median deputy's. One
+ * shared goalpost would rank the house, not the person. This is a documented
+ * adjustment, which is exactly what the alternative — re-baselining invisibly
+ * inside each house — was not.
  */
-const MAX_TIE_SHARE = 0.5;
+export const GOALPOSTS = {
+  /**
+   * Share of eligible sittings attended. 1.00 is perfect attendance — a real
+   * target, not a percentile. The floor sits near the 5th percentile of the
+   * bench (0.536), so the members it pins are genuinely absent rather than
+   * merely below average.
+   */
+  attendance: { floor: 0.5, target: 1.0 },
+  /**
+   * Substantive items (authored + advanced + rapporteured) per month in office.
+   * `alpha` is the house median — it sets where the log's curvature bites —
+   * and `target` its 95th percentile, rounded.
+   *
+   * The two houses differ because the difference is structural, not merit: 81
+   * senators share roughly the volume of rapporteurships that 513 deputies do,
+   * so the median senator's rate is four times the median deputy's. One shared
+   * benchmark would rank the house, not the person.
+   */
+  production: {
+    CAMARA: { alpha: 1.45, target: 4.6 },
+    SENADO: { alpha: 6.0, target: 16 },
+  },
+  /**
+   * Share of the published quota ceiling drawn, reverse-coded.
+   *
+   * The floor is above 1.00 because the quota accumulates across the financial
+   * year (Ato da Mesa 43/2009 art. 13), so a member can legitimately draw more
+   * than one month's ceiling in a month. 0.50 is the target because the 5th
+   * percentile of the bench sits at 0.63 — half the entitlement is a real,
+   * reachable standard rather than an invented one.
+   */
+  cost: { target: 0.5, floor: 1.1 },
+} as const;
+
+/** Linear goalpost scoring, clamped. The Handbook's `distance to a reference`. */
+function goalpost(value: number, worst: number, best: number): number {
+  const range = best - worst;
+  if (range === 0) return PILLAR_FLOOR;
+  const scaled = ((value - worst) / range) * 100;
+  return Math.max(PILLAR_FLOOR, Math.min(100, Math.round(scaled)));
+}
 
 function brl(value: number): string {
   return value.toLocaleString("pt-BR", {
@@ -171,29 +234,24 @@ function brl(value: number): string {
 }
 
 /**
- * The four pillars and their weights.
+ * The three pillars, each worth a third.
  *
- * Attendance leads because it is the floor of the office — the one duty every
- * mandate shares, whatever the holder believes. Authorship and cost sit level
- * beneath it: initiative, and what the mandate consumes to exercise it.
- *
- * Rapporteurship is deliberately last. A relatoria is *assigned by the
- * leadership*, so it measures standing inside the house at least as much as
- * merit, and on the Câmara side it is a floor rather than a count. Weighting it
- * like the others would score a party's floor power and call it quality.
+ * Relatorias and proposições are one pillar, not two: they are the same thing —
+ * what the member put through the house — and separating them punished the
+ * Câmara twice, since it publishes only a bill's last rapporteur and relatoria
+ * alone could be measured for 75 of 594 members.
  */
 export const QUALITY_PILLARS: QualityPillar[] = [
   {
     key: "attendance",
-    higherIsBetter: true,
     label: "Assiduidade",
     weight: 1 / 3,
-    peer: "house",
-    raw: (i) => {
+    score: (i) => {
       const a = i.attendance;
       if (!a || a.eligible < MIN_ROLL_CALLS) return null;
       if (a.leaveShare > MAX_LEAVE_SHARE) return null;
-      return a.attended / a.eligible;
+      const { floor, target } = GOALPOSTS.attendance;
+      return goalpost(a.attended / a.eligible, floor, target);
     },
     reading: (i) => {
       const a = i.attendance;
@@ -208,23 +266,18 @@ export const QUALITY_PILLARS: QualityPillar[] = [
     key: "production",
     label: "Relatorias e proposições",
     weight: 1 / 3,
-    peer: "house",
-    higherIsBetter: true,
-    // One pillar, not two, because they are one thing: what the parliamentarian
-    // put through the house. Splitting them also punished the Câmara twice over
-    // — it publishes only a bill's last rapporteur, so relatoria alone could be
-    // measured for 75 members out of 594 and was null for everybody else.
-    //
     // Outcome counts twice: filing is the cheap half, so the half that is hard
     // to fake is the half that separates somebody who files from somebody who
     // carries something through.
-    raw: (i) => {
-      const a = i.authorship;
-      const r = i.rapporteurship;
-      const months = a?.months ?? r?.months ?? 0;
-      if (months < MIN_MONTHS) return null;
-      const authored = a ? a.authored + a.advanced : 0;
-      return (authored + (r?.count ?? 0)) / months;
+    score: (i, house) => {
+      const rate = productionRate(i);
+      if (rate === null) return null;
+      const { alpha, target } = GOALPOSTS.production[house];
+      // log1p(x/α) is exactly 0 at x = 0 — a member who filed nothing scores the
+      // floor with no special case, and α is a rate with units rather than an
+      // arbitrary +1.
+      const scaled = Math.log1p(rate / alpha) / Math.log1p(target / alpha);
+      return Math.max(PILLAR_FLOOR, Math.min(100, Math.round(scaled * 100)));
     },
     reading: (i) => {
       const a = i.authorship;
@@ -242,33 +295,50 @@ export const QUALITY_PILLARS: QualityPillar[] = [
     key: "cost",
     label: "Custo político",
     weight: 1 / 3,
-    peer: "house-uf",
-    higherIsBetter: false,
+    // Reverse-coded against the ceiling: drawing all of the entitlement scores
+    // the floor, drawing 40% or less scores 100.
+    //
     // `documents === 0` is null, never a top score. It is the worst false
-    // positive the index could produce: a month the house has not published
-    // yet, or an agent away on leave, is indistinguishable from R$ 0 spent —
-    // and reading that as exemplary frugality would be exactly backwards.
-    raw: (i) => {
+    // positive the index could produce: a month the house has not published yet,
+    // or a member away on leave, is indistinguishable from R$ 0 spent, and
+    // reading that as exemplary frugality would be exactly backwards.
+    score: (i) => {
       const c = i.cost;
-      if (!c || c.documents === 0 || c.months < MIN_MONTHS) return null;
-      return c.spent / c.months;
+      if (!c || c.documents === 0 || c.months < MIN_MONTHS || !c.ceiling) return null;
+      const utilisation = c.spent / c.months / c.ceiling;
+      return goalpost(utilisation, GOALPOSTS.cost.floor, GOALPOSTS.cost.target);
     },
     reading: (i) => {
       const c = i.cost;
       if (!c || c.documents === 0) return null;
+      const perMonth = c.spent / Math.max(1, c.months);
+      const share = c.ceiling ? Math.round((perMonth / c.ceiling) * 100) : null;
       return {
-        value: `${brl(c.spent / Math.max(1, c.months))}/mês`,
-        detail: `média de ${Math.round(c.months)} meses · ${brl(c.spent)} no total`,
+        value: `${brl(perMonth)}/mês`,
+        detail:
+          share === null
+            ? `média de ${Math.round(c.months)} meses`
+            : `${share}% da cota a que tem direito · média de ${Math.round(c.months)} meses`,
       };
     },
   },
 ];
 
+/** Substantive items per month in office, or null when the basis is too thin. */
+function productionRate(i: QualityInputs): number | null {
+  const a = i.authorship;
+  const r = i.rapporteurship;
+  const months = a?.months ?? r?.months ?? 0;
+  if (months < MIN_MONTHS) return null;
+  const authored = a ? a.authored + a.advanced : 0;
+  return (authored + (r?.count ?? 0)) / months;
+}
+
 /** One pillar as it reaches the DTO and the page. */
 export interface QualityPillarResult {
   key: string;
   label: string;
-  /** 0–100 percentile within the peer group, or null when not measurable. */
+  /** 0–100 against the published goalposts, or null when not measurable. */
   score: number | null;
   weight: number;
   reading: PillarReading | null;
@@ -283,77 +353,29 @@ export interface Quality {
 }
 
 /**
- * Score a value against the best in its peer group, as 0–100.
+ * Combine the pillars into the published 0–100, by weighted GEOMETRIC mean.
  *
- * A proportion, not a rank: if the most assiduous member of a house attended 200
- * sittings, 200 is 100 and 100 is 50. That is a different statement from a
- * percentile, which would say "ahead of 80% of your peers" and tell you nothing
- * about the size of the gap — two agents one sitting apart can sit twenty
- * percentile points apart in a tight field, and a hundred apart in a loose one.
+ * `exp(Σ wᵢ·ln xᵢ / Σ wᵢ)` over the pillars that produced a score. Weight is
+ * redistributed across the rest, which is arithmetically the same as imputing
+ * the missing pillar at the geometric mean of the observed ones — worth knowing,
+ * because it means a member whose missing pillar would have been bad is
+ * flattered by the gap. Below `MIN_COVERAGE` nothing is published at all.
  *
- * A pillar where less is better inverts the ratio instead of the value: the
- * cheapest mandate is 100, and one costing twice as much is 50. Same sentence,
- * read from the other end.
- *
- * The cost of a proportion is that one outlier compresses everybody — a member
- * who files four hundred bills where the median is ten leaves the rest scoring
- * in the single digits. That is a real property of the measure and not a bug,
- * but it is why `requality` prints the distribution: a pillar whose whole
- * cohort has been flattened into the bottom fifth has stopped discriminating
- * just as surely as one where they all tie.
- *
- * `null` below `MIN_COHORT`, and `null` when the value shares a tie block
- * covering more than `MAX_TIE_SHARE` of the cohort — a score shared with most of
- * the field ranks nobody.
+ * Needs no cohort and no second pass: everything it reads is the member's own.
  */
-export function relativeScore(
-  value: number,
-  cohort: number[],
-  higherIsBetter = true,
-): number | null {
-  if (cohort.length < MIN_COHORT) return null;
-
-  const tied = cohort.filter((other) => other === value).length;
-  if (tied / cohort.length > MAX_TIE_SHARE) return null;
-
-  if (higherIsBetter) {
-    const best = Math.max(...cohort);
-    // Everybody at zero: there is nothing here to tell them apart.
-    if (best <= 0) return null;
-    return Math.round(Math.max(0, Math.min(100, (value / best) * 100)));
-  }
-
-  // Less is better: the smallest spend is the benchmark. A zero would make every
-  // other agent score nothing, so it is treated as unmeasurable rather than as
-  // the perfect mandate — the same reason `cost` refuses an agent with no
-  // documents at all.
-  const cheapest = Math.min(...cohort.filter((other) => other > 0));
-  if (!Number.isFinite(cheapest) || value <= 0) return null;
-  return Math.round(Math.max(0, Math.min(100, (cheapest / value) * 100)));
-}
-
-/**
- * Combine the pillars into the published 0–100.
- *
- * `scores` maps pillar key → the agent's already-computed 0–100 against its peer
- * group; it comes from the recompute step, which is the only place that holds
- * the whole cohort. A key that is absent or null means the pillar did not
- * produce a score, and its weight is redistributed over the pillars that did.
- */
-export function computeQuality(
-  inputs: QualityInputs,
-  scores: Map<string, number | null>,
-): Quality {
+export function computeQuality(inputs: QualityInputs, house: QualityHouse): Quality {
   const pillars: QualityPillarResult[] = QUALITY_PILLARS.map((pillar) => ({
     key: pillar.key,
     label: pillar.label,
-    score: pillar.raw(inputs) === null ? null : (scores.get(pillar.key) ?? null),
+    score: pillar.score(inputs, house),
     weight: pillar.weight,
     reading: pillar.reading(inputs),
   }));
 
   const totalWeight = QUALITY_PILLARS.reduce((sum, p) => sum + p.weight, 0);
-  const scored = pillars.filter((p) => p.score !== null);
+  const scored = pillars.filter(
+    (p): p is QualityPillarResult & { score: number } => p.score !== null,
+  );
   const measuredWeight = scored.reduce((sum, p) => sum + p.weight, 0);
   const coverage = totalWeight > 0 ? measuredWeight / totalWeight : 0;
 
@@ -361,13 +383,10 @@ export function computeQuality(
     return { score: null, pillars, coverage };
   }
 
-  // Weighted mean over the measured pillars only. Dividing by `measuredWeight`
-  // rather than `totalWeight` is the redistribution: an agent measured on three
-  // pillars is scored on those three, not punished for the fourth.
-  const weighted = scored.reduce((sum, p) => sum + (p.score as number) * p.weight, 0);
-  const score = Math.round(Math.max(0, Math.min(100, weighted / measuredWeight)));
+  const logged = scored.reduce((sum, p) => sum + p.weight * Math.log(p.score), 0);
+  const score = Math.round(Math.exp(logged / measuredWeight));
 
-  return { score, pillars, coverage };
+  return { score: Math.max(0, Math.min(100, score)), pillars, coverage };
 }
 
 /**
@@ -397,7 +416,54 @@ export function isAdvancedSituation(situation: string | null | undefined): boole
   return false;
 }
 
-/** Coarse quality band, for badges and filters. */
+/**
+ * Shape of an indicator's raw values across the bench, for the diagnostic
+ * `requality` prints.
+ *
+ * Nothing scores against this any more — the goalposts are fixed. It is kept
+ * because the screening rule that chose the treatment has to keep being checked:
+ * if the Câmara's production skewness ever falls back inside |2| / 3.5, the log
+ * is no longer mandated and should be revisited; if another indicator drifts out
+ * of it, one is.
+ *
+ * Skewness and kurtosis are here because they are the recognized trigger for
+ * treating an indicator before normalizing it: the convention used by composite
+ * indices (the Global Innovation Index states it explicitly) is that
+ * |skewness| > 2 together with kurtosis > 3.5 marks a distribution one outlier
+ * is driving. Measured on the first real load, the Câmara's production indicator
+ * came in at 7.20 and 70.81 — and the median deputy scored 5 out of 100 on it.
+ */
+export interface CohortShape {
+  n: number;
+  median: number;
+  max: number;
+  skewness: number;
+  kurtosis: number;
+  /** True when the distribution is skewed enough that normalizing it raw misleads. */
+  needsTreatment: boolean;
+}
+
+export function describeCohort(values: number[]): CohortShape | null {
+  const n = values.length;
+  if (n < 5) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mean = values.reduce((sum, v) => sum + v, 0) / n;
+  const sd = Math.sqrt(values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n);
+  const moment = (power: number) =>
+    sd === 0 ? 0 : values.reduce((sum, v) => sum + ((v - mean) / sd) ** power, 0) / n;
+  const skewness = moment(3);
+  const kurtosis = moment(4) - 3;
+  return {
+    n,
+    median: sorted[Math.floor(n / 2)],
+    max: sorted[n - 1],
+    skewness,
+    kurtosis,
+    needsTreatment: Math.abs(skewness) > 2 && kurtosis > 3.5,
+  };
+}
+
+/** Coarse quality band, for badges and filters. *//** Coarse quality band, for badges and filters. */
 export type QualityBand = "EXCELLENT" | "GOOD" | "AVERAGE" | "WEAK";
 
 /**

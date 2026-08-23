@@ -1,39 +1,55 @@
 /**
  * Votto sync worker — the long-running process that keeps the federal data fresh.
  *
- * Runs every job in `src/lib/integration/jobs.ts` on its weekly slot
- * (America/São_Paulo). Started as its own container in production:
+ * Runs the whole synchronization chain (`src/lib/integration/pipeline.ts`) on its
+ * weekly slot, America/São_Paulo. Started as its own container in production:
  *
  *   docker compose -f docker-compose.prod.yml up -d worker
  *
  * Behaviour:
- *   * **Catch-up on boot** — a job whose last successful run is older than
- *     {@link STALE_AFTER_DAYS} runs immediately instead of waiting up to a week.
- *     A fresh deployment therefore populates itself without manual intervention.
- *   * **Sequential execution** — jobs run one at a time even if their slots
- *     overlap, so we never open parallel connection storms against a public API.
- *   * **Failure isolation** — a failing job is logged and the loop continues to
- *     the next slot; `runJob` has already recorded the failure for the dashboard.
+ *   * **One chain, in order** — the jobs are not independent (a bill import
+ *     resolves its authors against the agent roster; the quality index ranks a
+ *     cohort the vote import supplies), so they run as a sequence rather than on
+ *     sixteen clocks that could finish out of order.
+ *   * **Skips what is current** — a job that succeeded inside the freshness
+ *     window is not re-run, which is what makes booting cheap and lets the chain
+ *     be triggered by hand without paying for the whole federal record again.
+ *   * **Catch-up on boot** — the chain simply runs at startup. Freshness does the
+ *     deciding, so a restart costs nothing when everything is in date and a fresh
+ *     deployment populates itself without anyone typing a command.
+ *   * **Failure isolation** — a failing job is logged and the chain continues;
+ *     only a `needs` dependent is held back, for the next run to pick up.
  *   * **Graceful shutdown** — SIGINT/SIGTERM stop the loop after the current job.
  *
- * Concurrency with other triggers (the admin panel, the cron HTTP endpoint) is
- * handled one level down, by the SyncJob lock in `runner.ts`.
+ * Concurrency with the other triggers (admin panel, cron endpoint, CLI) is
+ * handled one level down: the chain takes a lock of its own and every job takes
+ * its own on top of it.
  */
 // Must precede every import that reads `env` at module load.
 import "./load-env";
-import { SYNC_JOBS, type SyncJobDefinition } from "@/lib/integration/jobs";
-import { reapOrphanRuns, runJob } from "@/lib/integration/runner";
+import { PIPELINE_SCHEDULE, SYNC_JOBS } from "@/lib/integration/jobs";
+import { reapOrphanRuns } from "@/lib/integration/runner";
+import {
+  FRESH_FOR_DAYS,
+  orderedJobs,
+  runPipeline,
+  summarize,
+} from "@/lib/integration/pipeline";
 import { describeSchedule, formatZoned, nextOccurrence } from "@/lib/integration/schedule";
 import { db } from "@/lib/db";
-
-/** A job unseen for longer than this is run at startup rather than waited on. */
-const STALE_AFTER_DAYS = 8;
 
 /**
  * Longest single sleep. `setTimeout` is capped at ~24.8 days, and shorter naps
  * let the loop notice a shutdown signal promptly.
  */
 const MAX_SLEEP_MS = 60 * 60 * 1000;
+
+/**
+ * Seconds between progress lines. The heavy jobs run for tens of minutes; a log
+ * that says nothing between "started" and "finished" is indistinguishable from a
+ * hang, which is how an operator ends up killing a healthy import.
+ */
+const HEARTBEAT_SECONDS = 30;
 
 let stopping = false;
 
@@ -51,99 +67,79 @@ function log(message: string): void {
   console.log(`[${formatZoned(new Date())}] ${message}`);
 }
 
-/**
- * Seconds between progress lines. The heavy jobs run for tens of minutes; a
- * log that says nothing between "started" and "finished" is indistinguishable
- * from a hang, which is how an operator ends up killing a healthy import.
- */
-const HEARTBEAT_SECONDS = 30;
+/** Run the chain once, narrating every decision. */
+async function runChain(trigger: string): Promise<void> {
+  log(`Sincronização (${trigger}) — ${SYNC_JOBS.length} jobs na cadeia.`);
 
-/** Run one job and report the outcome, with a throttled progress heartbeat. */
-async function execute(job: SyncJobDefinition): Promise<void> {
-  log(`▶ ${job.name} — ${job.label}`);
-
-  const startedAt = Date.now();
+  let startedAt = Date.now();
   let lastBeat = startedAt;
-  const outcome = await runJob(job, {
-    onProgress: (progress) => {
+
+  const report = await runPipeline({
+    shouldStop: () => stopping,
+    onStep: (step, index, total) => {
+      if (step.action !== "run") return;
+      startedAt = Date.now();
+      lastBeat = startedAt;
+      log(`[${index + 1}/${total}] ▶ ${step.job.name} — ${step.job.label} (${step.reason})`);
+    },
+    onProgress: (_job, progress) => {
       const now = Date.now();
       if (now - lastBeat < HEARTBEAT_SECONDS * 1000) return;
       lastBeat = now;
       const secs = Math.round((now - startedAt) / 1000);
-      log(`  … ${progress.note ?? `${progress.seen} itens`} (${progress.upserted} gravados, ${secs}s)`);
+      log(`      … ${progress.note ?? `${progress.seen} itens`} (${progress.upserted} gravados, ${secs}s)`);
+    },
+    onDone: (step, index, total) => {
+      const position = `[${index + 1}/${total}]`;
+      if (step.status === "ok") {
+        log(
+          `      ✓ ${step.itemsUpserted} atualizados / ${step.itemsSeen} vistos ` +
+            `em ${(step.durationMs / 1000).toFixed(1)}s`,
+        );
+      } else if (step.status === "fresh") {
+        log(`${position} ↷ ${step.name} — em dia (${step.reason})`);
+      } else if (step.status === "failed") {
+        log(`      ✗ ${step.name} falhou: ${step.reason}`);
+      } else {
+        log(`${position} ⏸ ${step.name} — adiado: ${step.reason}`);
+      }
     },
   });
 
-  if (outcome.status === "ok") {
-    const secs = (outcome.durationMs / 1000).toFixed(1);
+  if (report.status === "locked") {
     log(
-      `✓ ${job.name} — ${outcome.result.itemsUpserted} atualizados / ` +
-        `${outcome.result.itemsSeen} vistos em ${secs}s`,
+      "↷ Sincronização já em andamento" +
+        `${report.runningSince ? ` desde ${formatZoned(report.runningSince)}` : ""} — nada a fazer.`,
     );
-  } else if (outcome.status === "skipped") {
-    log(`↷ ${job.name} — já em execução desde ${outcome.runningSince ? formatZoned(outcome.runningSince) : "?"}`);
-  } else {
-    log(`✗ ${job.name} — falhou: ${outcome.error}`);
+    return;
   }
+
+  log(`${report.interrupted ? "⏹" : report.failed === 0 ? "✓" : "⚠"} ${summarize(report)}`);
 }
 
-/**
- * Jobs whose last successful run is missing or older than {@link STALE_AFTER_DAYS}.
- * Preserves registry order so parties are refreshed before agents on a cold start.
- */
-async function staleJobs(): Promise<SyncJobDefinition[]> {
-  const states = await db.syncJob.findMany({
-    where: { name: { in: SYNC_JOBS.map((j) => j.name) } },
-    select: { name: true, lastFinishedAt: true, lastOk: true },
-  });
-  const byName = new Map(states.map((s) => [s.name, s]));
-  const cutoff = Date.now() - STALE_AFTER_DAYS * 86_400_000;
-
-  return SYNC_JOBS.filter((job) => {
-    const state = byName.get(job.name);
-    if (!state?.lastOk || !state.lastFinishedAt) return true;
-    return state.lastFinishedAt.getTime() < cutoff;
-  });
-}
-
-/** Main loop: catch up, then sleep until the next scheduled slot, forever. */
+/** Main loop: run the chain, then sleep until the next weekly slot, forever. */
 async function main(): Promise<void> {
-  log(`Worker iniciado — ${SYNC_JOBS.length} jobs registrados.`);
-  for (const job of SYNC_JOBS) {
-    log(`  · ${job.name} — ${describeSchedule(job.schedule)}`);
+  log(`Worker iniciado — cadeia de ${SYNC_JOBS.length} jobs, ${describeSchedule(PIPELINE_SCHEDULE)}.`);
+  log(`Frescor: um job concluído há menos de ${FRESH_FOR_DAYS} dias é pulado.`);
+  for (const [i, job] of orderedJobs().entries()) {
+    log(`  ${String(i + 1).padStart(2)}. ${job.name} — ${job.label}`);
   }
 
   // A restart is proof that nothing we started is still running. Close whatever
-  // the previous process left open before deciding what is stale, so a job it
-  // was killed mid-run does not look busy — and does not keep its claim.
+  // the previous process left open before deciding anything, so a job it was
+  // killed mid-run neither looks busy nor keeps its claim.
   const reaped = await reapOrphanRuns();
   if (reaped > 0) log(`${reaped} execução(ões) interrompida(s) por um reinício anterior, encerrada(s).`);
 
-  const pending = await staleJobs();
-  if (pending.length > 0) {
-    log(`Recuperando ${pending.length} job(s) sem execução recente…`);
-    for (const job of pending) {
-      if (stopping) break;
-      await execute(job);
-    }
-  }
+  // Boot is just another chain run: freshness decides whether it costs anything.
+  await runChain("na inicialização");
 
   while (!stopping) {
-    const now = new Date();
-    const upcoming = SYNC_JOBS.map((job) => ({ job, at: nextOccurrence(job.schedule, now) })).sort(
-      (a, b) => a.at.getTime() - b.at.getTime(),
-    );
-    const next = upcoming[0];
-
-    log(`Próximo: ${next.job.name} em ${formatZoned(next.at)}.`);
-    await sleepUntil(next.at);
+    const next = nextOccurrence(PIPELINE_SCHEDULE, new Date());
+    log(`Próxima sincronização: ${formatZoned(next)}.`);
+    await sleepUntil(next);
     if (stopping) break;
-
-    // Run every job whose slot has come due (slots can share a minute).
-    for (const { job, at } of upcoming) {
-      if (stopping) break;
-      if (at.getTime() <= Date.now()) await execute(job);
-    }
+    await runChain("agendada");
   }
 
   log("Worker encerrado.");
