@@ -1,8 +1,9 @@
 /**
  * Cost forecast for the `ai:summaries` job, before you commit to running it.
  *
- *   npm run estimate:ai            # usa a contagem real de temas do banco
- *   npm run estimate:ai -- --themes 500
+ *   npm run estimate:ai                  # usa a contagem real de temas do banco
+ *   npm run estimate:ai -- --no-db       # sem banco: volumes hipotéticos
+ *   npm run estimate:ai -- --themes 7000
  *
  * Two modes, automatically:
  *   * **Exato** — with `ANTHROPIC_API_KEY` set, token counts come from the
@@ -13,7 +14,9 @@
  *
  * The theme count comes from the database when reachable (the same query the
  * job itself uses), so the number reflects your actual backlog rather than a
- * guess. Pass `--themes N` to price a hypothetical volume instead.
+ * guess. `--themes N` prices a hypothetical volume; `--no-db` skips the database
+ * entirely, which is what makes this runnable from an environment that is not
+ * allowed to query one.
  */
 // Must precede every import that reads `env` at module load.
 import "./load-env";
@@ -21,6 +24,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 import { env, isAiEnabled } from "@/lib/env";
 import { BRIEF_TOOL, SYSTEM_PROMPT, buildUserContent } from "@/lib/ai/summarize";
+import { AI_ELIGIBLE, DEFAULT_BATCH, MIN_AI_PRIORITY } from "@/lib/integration/summaries";
 
 /**
  * Characters per token, averaged over this prompt's actual mix.
@@ -32,8 +36,32 @@ import { BRIEF_TOOL, SYSTEM_PROMPT, buildUserContent } from "@/lib/ai/summarize"
  */
 const CHARS_PER_TOKEN = 1.85;
 
-/** Haiku 4.5 list price, US$ per million tokens. */
-const PRICE_PER_MTOK = { input: 1.0, output: 5.0 };
+/**
+ * List price and cache floor per model, US$ per million tokens.
+ *
+ * `cacheMinimum` is the shortest prefix the model will cache **at all**, and it
+ * is the field that decides this whole forecast — because ~90% of the input here
+ * is a fixed prefix (system prompt + tool schema) resent identically on every
+ * call. Below the floor nothing caches and no error is raised: you just pay full
+ * price forever and `cache_creation_input_tokens` stays at zero.
+ *
+ * The floor is **not monotonic across generations**, which is the trap. Haiku
+ * 4.5 — the cheap model, the obvious choice — has the *highest* floor of the
+ * current family at 4.096, so the prefix here misses it and every call pays in
+ * full. Sonnet 5 caches from 1.024 and Opus 5 from 512, so both cache it. The
+ * consequence is worth stating plainly: a more expensive model that caches can
+ * come out cheaper per theme than a cheap one that cannot.
+ */
+const MODELS: Record<string, { input: number; output: number; cacheMinimum: number }> = {
+  "claude-haiku-4-5": { input: 1.0, output: 5.0, cacheMinimum: 4096 },
+  "claude-sonnet-5": { input: 3.0, output: 15.0, cacheMinimum: 1024 },
+  "claude-sonnet-4-6": { input: 3.0, output: 15.0, cacheMinimum: 1024 },
+  "claude-opus-4-8": { input: 5.0, output: 25.0, cacheMinimum: 1024 },
+  "claude-opus-5": { input: 5.0, output: 25.0, cacheMinimum: 512 },
+};
+
+/** Cache read costs a tenth of the base rate; a cache write costs 1.25x. */
+const CACHE_READ_MULTIPLIER = 0.1;
 
 /**
  * Output budget per theme. The tool call carries a ~70-char title, a ~300-char
@@ -42,7 +70,7 @@ const PRICE_PER_MTOK = { input: 1.0, output: 5.0 };
  */
 const OUTPUT_TOKENS_PER_THEME = 200;
 
-/** Rough BRL conversion, only to make the figure legible. */
+/** Rough BRL conversion, only to make the figure legible. Not a live rate. */
 const USD_TO_BRL = 5.4;
 
 /** A representative theme, for measuring one request's prompt. */
@@ -132,79 +160,158 @@ function money(usd: number): string {
   return `US$ ${fmt(usd)} (R$ ${fmt(brl)})`;
 }
 
-async function main(): Promise<void> {
-  const override = parseThemeOverride(process.argv.slice(2));
+/** Cost of one theme on one model, with and without the cache floor honoured. */
+function perTheme(
+  price: { input: number; output: number; cacheMinimum: number },
+  inputTokens: number,
+  fixedTokens: number,
+): { usd: number; cached: boolean } {
+  const cached = fixedTokens >= price.cacheMinimum;
+  const input = cached
+    ? (fixedTokens / 1_000_000) * price.input * CACHE_READ_MULTIPLIER +
+      ((inputTokens - fixedTokens) / 1_000_000) * price.input
+    : (inputTokens / 1_000_000) * price.input;
+  return { usd: input + (OUTPUT_TOKENS_PER_THEME / 1_000_000) * price.output, cached };
+}
 
-  // Sample a real pending theme so the forecast reflects your own data.
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  const override = parseThemeOverride(argv);
+  const skipDb = argv.includes("--no-db");
+
   let sample: Sample = FALLBACK_SAMPLE;
   let pending = override;
   let dbReachable = false;
+  let excluded = 0;
 
-  try {
-    const [row, count] = await Promise.all([
-      db.theme.findFirst({
-        where: { status: "ACTIVE", plainSummary: null, summary: { not: "" } },
-        orderBy: [{ inProgress: "desc" }, { priority: "desc" }],
-        select: { identifier: true, name: true, summary: true, keywords: true, classifications: true },
-      }),
-      db.theme.count({ where: { status: "ACTIVE", plainSummary: null, summary: { not: "" } } }),
-    ]);
-    dbReachable = true;
-    if (row) {
-      sample = {
-        identifier: row.identifier,
-        name: row.name,
-        summary: row.summary,
-        keywords: row.keywords,
-        classifications: Array.isArray(row.classifications)
-          ? row.classifications
-              .map((c) => (c && typeof c === "object" ? (c as { label?: unknown }).label : null))
-              .filter((l): l is string => typeof l === "string")
-          : [],
-      };
+  // `--no-db` exists because the forecast is useful from places that must not
+  // touch the database at all; the sample below is a real median bill, so the
+  // per-theme figure is the same either way — only the backlog count is lost.
+  if (!skipDb) {
+    try {
+      // The same predicate the job runs, imported rather than restated: a second
+      // copy would drift and the forecast would quote a queue that no longer
+      // exists. `all` is kept only to show how much the population rule removes.
+      const eligible = { status: "ACTIVE" as const, plainSummary: null, summary: { not: "" }, ...AI_ELIGIBLE };
+      const [row, count, all] = await Promise.all([
+        db.theme.findFirst({
+          where: eligible,
+          orderBy: [{ inProgress: "desc" }, { priority: "desc" }],
+          select: { identifier: true, name: true, summary: true, keywords: true, classifications: true },
+        }),
+        db.theme.count({ where: eligible }),
+        db.theme.count({ where: { status: "ACTIVE", plainSummary: null, summary: { not: "" } } }),
+      ]);
+      excluded = all - count;
+      dbReachable = true;
+      if (row) {
+        sample = {
+          identifier: row.identifier,
+          name: row.name,
+          summary: row.summary,
+          keywords: row.keywords,
+          classifications: Array.isArray(row.classifications)
+            ? row.classifications
+                .map((c) => (c && typeof c === "object" ? (c as { label?: unknown }).label : null))
+                .filter((l): l is string => typeof l === "string")
+            : [],
+        };
+      }
+      pending = override ?? count;
+    } catch {
+      // No database: price the hypothetical volumes only.
     }
-    pending = override ?? count;
-  } catch {
-    // No database: price the hypothetical volumes only.
   }
 
   const { tokens: inputTokens, fixed, exact } = await countInputTokens(sample);
-  const perTheme =
-    (inputTokens / 1_000_000) * PRICE_PER_MTOK.input +
-    (OUTPUT_TOKENS_PER_THEME / 1_000_000) * PRICE_PER_MTOK.output;
+  // Without `count_tokens` the split is derived the same way the total is.
+  const fixedTokens =
+    fixed ??
+    Math.round((SYSTEM_PROMPT.length + JSON.stringify(BRIEF_TOOL).length) / CHARS_PER_TOKEN);
 
-  console.log(`\nModelo: ${env.anthropicSummaryModel}  (US$ ${PRICE_PER_MTOK.input}/MTok entrada, US$ ${PRICE_PER_MTOK.output}/MTok saída)`);
-  console.log(exact ? "Contagem de tokens: exata (count_tokens)" : `Contagem de tokens: estimada (${CHARS_PER_TOKEN} chars/token)`);
-  console.log(`\nPor tema: ~${inputTokens} tokens de entrada + ~${OUTPUT_TOKENS_PER_THEME} de saída = ${money(perTheme)}`);
-  if (fixed !== null) {
-    const share = ((fixed / inputTokens) * 100).toFixed(0);
+  const current = MODELS[env.anthropicSummaryModel];
+  if (!current) {
+    console.error(`\nModelo ${env.anthropicSummaryModel} não está na tabela de preços — adicione-o em MODELS.\n`);
+    process.exit(2);
+  }
+
+  const here = perTheme(current, inputTokens, fixedTokens);
+
+  console.log(`\nModelo: ${env.anthropicSummaryModel}  (US$ ${current.input}/MTok entrada, US$ ${current.output}/MTok saída)`);
+  console.log(exact ? "Contagem de tokens: exata (count_tokens)" : `Contagem de tokens: estimada (${CHARS_PER_TOKEN} chars/token, ±15%)`);
+
+  console.log(`\nPor tema: ~${inputTokens} tokens de entrada + ~${OUTPUT_TOKENS_PER_THEME} de saída = ${money(here.usd)}`);
+  const share = ((fixedTokens / inputTokens) * 100).toFixed(0);
+  console.log(
+    `  Desses, ${fixedTokens} são fixos (system + schema da ferramenta) — ${share}% da entrada,\n` +
+      `  reenviados a cada chamada. O texto da proposição custa ~${inputTokens - fixedTokens} tokens.`,
+  );
+  console.log(
+    here.cached
+      ? `  O prefixo fixo CACHEIA neste modelo (mínimo ${current.cacheMinimum}), e é isso que o preço acima já considera.`
+      : `  O prefixo fixo NÃO cacheia neste modelo (mínimo ${current.cacheMinimum} > ${fixedTokens}): paga-se cheio toda vez.`,
+  );
+
+  // Volumes that mean something operationally, not round numbers.
+  const volumes: Array<[number, string]> = [
+    [DEFAULT_BATCH, `uma execução do job (DEFAULT_BATCH=${DEFAULT_BATCH})`],
+    [DEFAULT_BATCH * 4.33, "um mês de execuções semanais"],
+  ];
+  if (pending != null) {
+    volumes.push([pending, override ? `${pending} temas` : `${pending} temas elegíveis (seu banco)`]);
+  }
+
+  console.log("");
+  for (const [n, label] of volumes) {
+    const total = here.usd * n;
+    console.log(`  ${label.padEnd(44)} ${money(total).padEnd(26)} com Batch API: ${money(total / 2)}`);
+  }
+
+  if (pending != null && pending > DEFAULT_BATCH) {
+    const weeks = Math.ceil(pending / DEFAULT_BATCH);
     console.log(
-      `  Desses, ${fixed} são fixos (system + schema da ferramenta) — ${share}% da entrada,\n` +
-        `  reenviados a cada chamada. O texto da proposição custa ~${inputTokens - fixed} tokens.`,
+      `\n  A ${DEFAULT_BATCH}/semana, limpar ${pending} temas leva ${weeks} semanas (~${(weeks / 4.33).toFixed(1)} meses).\n` +
+        `  Para encurtar: npm run sync ai:summaries -- --limit ${pending}`,
     );
   }
 
-  const volumes = pending != null ? [pending] : [100, 300, 1000, 5000, 13000];
-  console.log("");
-  for (const n of volumes) {
-    const label = pending != null && !override ? `${n} temas sem resumo (no seu banco)` : `${n} temas`;
-    console.log(`  ${label.padEnd(42)} ${money(perTheme * n)}`);
+  console.log("\nOutros modelos, mesmo prompt:");
+  for (const [id, price] of Object.entries(MODELS)) {
+    if (id === env.anthropicSummaryModel) continue;
+    const alt = perTheme(price, inputTokens, fixedTokens);
+    const delta = ((alt.usd / here.usd - 1) * 100).toFixed(0);
+    const sign = alt.usd >= here.usd ? "+" : "";
+    console.log(
+      `  ${id.padEnd(20)} ${money(alt.usd).padEnd(24)} ${sign}${delta}%  ${alt.cached ? `cache OK (min ${price.cacheMinimum})` : `sem cache (min ${price.cacheMinimum})`}`,
+    );
   }
 
   if (pending == null && !dbReachable) {
-    console.log("\n  (banco indisponível — volumes hipotéticos; rode com o banco no ar para o número real)");
+    console.log(`\n  (${skipDb ? "--no-db" : "banco indisponível"} — sem a contagem do backlog; use --themes N)`);
+  }
+
+  if (excluded > 0) {
+    console.log(
+      `\n  A regra de população deixou ${excluded.toLocaleString("pt-BR")} tema(s) de fora — ` +
+        `arquivados ou\n  de baixa prioridade sem voto. Eles ficam com o título e a ementa oficiais.`,
+    );
   }
 
   console.log("\nNotas:");
-  console.log(
-    `  · Cache de prompt não se aplica: o prefixo fixo tem ${fixed ?? "~1.500"} tokens e o\n` +
-      "    mínimo do Haiku 4.5 é 4.096 — não haveria acerto de cache.",
-  );
-  console.log("  · A Batch API cortaria 50%, ao custo de um fluxo assíncrono. Nestes");
-  console.log("    valores absolutos, raramente compensa a complexidade.");
-  console.log("  · O job só processa temas com resumo ausente, então este é um custo");
-  console.log("    de carga inicial; depois, só os temas novos de cada semana.");
-  console.log("  · Reprocessar um tema exige limpar `plainSummary` — não há gasto duplo.\n");
+  console.log("  · O piso de cache é POR MODELO e não cresce com a geração: Haiku 4.5 exige");
+  console.log("    4.096 tokens, Sonnet 5 exige 1.024 e Opus 5 exige 512. Como aqui o prefixo");
+  console.log(`    fixo é ${share}% da entrada, isso pode inverter a ordem de custo — um modelo mais`);
+  console.log("    caro que cacheia sai por menos que um barato que não cacheia.");
+  console.log("  · A Batch API corta 50% e este job é o caso de uso exato dela: assíncrono,");
+  console.log("    semanal, sem ninguém esperando a resposta.");
+  console.log("  · A maior alavanca estrutural é o schema da ferramenta, sozinho a maior parte");
+  console.log("    do prefixo fixo. Encurtá-lo reduz toda chamada, para sempre.");
+  console.log("  · CODING_RUNS=1 hoje. Subir para 2 (dupla codificação, docs/posicionamento.md)");
+  console.log("    dobra exatamente este custo.");
+  console.log(`  · A fila é limitada (AI_ELIGIBLE): temas já votados por um agente, mais os`);
+  console.log(`    em tramitação com prioridade >= ${MIN_AI_PRIORITY}. Sem esse limite a fila não converge —`);
+  console.log("    a varredura ampla importa mais por semana do que o job consegue processar.");
+  console.log(`  · Câmbio fixo de R$ ${USD_TO_BRL.toFixed(2).replace(".", ",")} no código — não é cotação do dia.\n`);
 
   await db.$disconnect().catch(() => {});
 }

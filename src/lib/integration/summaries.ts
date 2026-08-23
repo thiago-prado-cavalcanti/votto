@@ -28,10 +28,67 @@ import {
   type SyncOptions,
   type SyncResult,
 } from "@/lib/integration/importer";
-import type { Prisma } from "@/generated/prisma";
+import { VoterType, type Prisma } from "@/generated/prisma";
 
 /** Themes enriched per run when the caller sets no limit. */
-const DEFAULT_BATCH = 300;
+export const DEFAULT_BATCH = 300;
+
+/**
+ * Priority floor for a bill that has not been voted yet.
+ *
+ * 30 is the bottom of the "Tramitação normal" band (`src/lib/domain/priority.ts`)
+ * — everything below it is the "Baixa prioridade" tail. Not an arbitrary cut: it
+ * is the same line the themes list already draws for the reader.
+ */
+export const MIN_AI_PRIORITY = 30;
+
+/**
+ * Which themes the AI pass is willing to pay for.
+ *
+ * The pass used to accept every ACTIVE theme without a summary, which made its
+ * queue the *whole* imported corpus — and that queue does not converge. The
+ * broad `*:themes` sweep imports everything that moved in the window: ~12.300
+ * Câmara bills in six months by `backfill.ts`'s own measurement, ~470 a week
+ * before the Senado, against a drain of {@link DEFAULT_BATCH} = 300. The backlog
+ * grew by a thousand during a single chain run. "Eventually we summarize
+ * everything" was never true; it was a queue diverging quietly behind a budget
+ * cap that hid it, because the cap bounds the *spend*, not the *shortfall*.
+ *
+ * So the population is bounded by what can still matter, in two clauses:
+ *
+ *  - **Already voted by an agent.** These feed the alignment and positioning
+ *    indexes, and a bill only enters those with a roll-call vote. Deliberately
+ *    NOT gated on priority: `priority` is capped at 10 once a bill is concluded,
+ *    so a priority floor would exclude exactly the finished, voted bills the
+ *    indexes are built from — the failure this clause exists to prevent.
+ *  - **Still in progress, above the low-priority floor.** These have not been
+ *    voted yet but can be, and they are what the themes list ranks highest.
+ *
+ * What is left out is the documented tail: bills filed, moved once, and never
+ * voted. They keep their official title and ementa — the plain-language rewrite
+ * is an enrichment, never the record — so the pages degrade to the source's own
+ * words rather than to nothing.
+ *
+ * Exported so the cost forecast counts the same population the job processes.
+ * Two copies of this predicate would drift, and the drift would be invisible:
+ * the forecast would simply quote a number for a queue that no longer exists.
+ */
+export const AI_VOTED: Prisma.ThemeWhereInput = {
+  votes: { some: { voterType: VoterType.AGENT } },
+};
+
+export const AI_UPCOMING: Prisma.ThemeWhereInput = {
+  inProgress: true,
+  priority: { gte: MIN_AI_PRIORITY },
+};
+
+/**
+ * The union of the two clauses — what the cost forecast counts.
+ *
+ * Composed from them rather than restated, so the population the job walks and
+ * the population the forecast prices cannot come apart.
+ */
+export const AI_ELIGIBLE: Prisma.ThemeWhereInput = { OR: [AI_VOTED, AI_UPCOMING] };
 
 /** Pause between calls, so a long run doesn't burst against the rate limit. */
 const REQUEST_DELAY = 150;
@@ -93,31 +150,77 @@ export async function syncSummaries(opts: SyncOptions = {}): Promise<SyncResult>
 
   const take = opts.limit ?? DEFAULT_BATCH;
   const retryAfter = new Date(Date.now() - RETRY_AFTER_MS);
-  const themes = await db.theme.findMany({
-    // `plainSummary: null` is what keeps a theme from being summarized twice.
-    // The `aiUpdatedAt` clause is what keeps one that FAILED from being paid for
-    // every week: without it a theme the model cannot produce a brief for stays
-    // null, sits at the top of a priority ordering forever, and takes a slot in
-    // every batch — so it is re-sent indefinitely and the themes below it are
-    // never reached at all.
-    where: {
-      status: "ACTIVE",
-      plainSummary: null,
-      summary: { not: "" },
-      OR: [{ aiUpdatedAt: null }, { aiUpdatedAt: { lt: retryAfter } }],
-    },
-    orderBy: [{ inProgress: "desc" }, { priority: "desc" }, { lastActionAt: "desc" }],
+
+  // `plainSummary: null` is what keeps a theme from being summarized twice. The
+  // `aiUpdatedAt` clause is what keeps one that FAILED from being paid for every
+  // week: without it a theme the model cannot produce a brief for stays null,
+  // sits at the top of the ordering forever, takes a slot in every batch, and
+  // the themes below it are never reached at all.
+  const ready: Prisma.ThemeWhereInput = {
+    status: "ACTIVE",
+    plainSummary: null,
+    summary: { not: "" },
+    OR: [{ aiUpdatedAt: null }, { aiUpdatedAt: { lt: retryAfter } }],
+  };
+
+  const columns = {
+    id: true,
+    identifier: true,
+    name: true,
+    summary: true,
+    keywords: true,
+    classifications: true,
+    dimensionsSource: true,
+  } as const;
+
+  // Newest first inside each phase: among equals, the bill that moved most
+  // recently is the one a reader is most likely to be looking at.
+  const within = [{ priority: "desc" }, { lastActionAt: "desc" }] as const;
+
+  // ── Fase 1: o que já foi votado ──────────────────────────────────────────
+  //
+  // Ordering by priority alone buried exactly these. `Theme.priority` is capped
+  // at 10 once a bill is concluded (CLAUDE.md §8), and `inProgress` is false, so
+  // a voted-and-finished bill sorted behind every bill still in committee —
+  // thousands of them. Letting it into the queue (AI_VOTED) was necessary and
+  // not sufficient: the filter admitted it and the ordering entombed it.
+  //
+  // And it is the one the indexes cannot do without. A bill enters the alignment
+  // and positioning maths only through a roll call, so an unclassified voted
+  // bill is a hole in both. Measured live: `metrics:positioning` refused to
+  // publish with "CAMARA: só 3 votações classificadas e divididas (mínimo 20);
+  // SENADO: só 0" — starved of classifications while the queue spent every
+  // batch on bills that had never been voted.
+  //
+  // Not `orderBy: { votes: { _count: "desc" } }`, which was the one-line
+  // version: that counts citizen votes too. It works today only because the
+  // platform has none, and it would rot silently as it gains them — a popular
+  // unvoted bill drifting ahead of a roll call the index is waiting on. Two
+  // queries say what is meant.
+  const voted = await db.theme.findMany({
+    where: { AND: [ready, AI_VOTED] },
+    orderBy: [...within],
     take,
-    select: {
-      id: true,
-      identifier: true,
-      name: true,
-      summary: true,
-      keywords: true,
-      classifications: true,
-      dimensionsSource: true,
-    },
+    select: columns,
   });
+
+  // ── Fase 2: o que ainda pode ser votado ──────────────────────────────────
+  //
+  // `notIn` because the clauses genuinely overlap: a bill voted in committee and
+  // still in progress satisfies both, and would otherwise be sent twice in one
+  // batch — paid for twice, and one slot short for someone else.
+  const remaining = take - voted.length;
+  const upcoming =
+    remaining > 0
+      ? await db.theme.findMany({
+          where: { AND: [ready, AI_UPCOMING, { id: { notIn: voted.map((t) => t.id) } }] },
+          orderBy: [...within],
+          take: remaining,
+          select: columns,
+        })
+      : [];
+
+  const themes = [...voted, ...upcoming];
 
   for (const theme of themes) {
     c.seen++;

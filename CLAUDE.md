@@ -439,6 +439,42 @@ comparative, never evaluative, and their cut points are **provisional** — see 
 - When an Article is ingested (manually or imported), it must pass through an **AI step** that reads
   the article and **incrementally enriches the Theme's summary**.
 
+**The AI pass has a bounded population, and the bound is load-bearing.** It used to accept every
+ACTIVE theme without a summary, which made its queue the whole imported corpus — a queue that does
+not converge. The broad `*:themes` sweep imports everything that moved in the window (~12.300 Câmara
+bills in six months, ~470 a week before the Senado) against a drain of `DEFAULT_BATCH` = 300 a week.
+Observed live: the backlog grew by a thousand during a single chain run. "Eventually we summarize
+everything" was never true, and the weekly budget cap hid it — a cap bounds the *spend*, not the
+*shortfall*.
+
+`AI_ELIGIBLE` in `src/lib/integration/summaries.ts` bounds it to what can still matter:
+
+- **already voted by an agent** — these feed the alignment and positioning indexes, and a bill only
+  enters those with a roll-call vote. Deliberately **not** gated on priority: `priority` is capped at
+  10 once a bill is concluded (§8), so a floor would exclude precisely the finished, voted bills the
+  indexes are built from;
+- **still in progress, at or above `MIN_AI_PRIORITY` (30)** — not voted yet but can be, and the
+  bottom of the "Tramitação normal" band is the same line the themes list already draws.
+
+**Voted bills are processed first, in a phase of their own** — and that is a separate fix from the
+filter, not the same one. Ordering by `priority` buried exactly the bills the indexes need:
+`priority` is capped at 10 once a bill is concluded (§8) and `inProgress` is false, so a
+voted-and-finished bill sorted behind every bill still in committee. Admitting it to the queue was
+necessary and not sufficient — the filter let it in and the ordering entombed it. Measured live:
+`metrics:positioning` refused to publish with *"CAMARA: só 3 votações classificadas e divididas
+(mínimo 20); SENADO: só 0"*, starved of classifications while every batch went to bills that had
+never been voted. The job therefore fills its batch from `AI_VOTED` first and tops up from
+`AI_UPCOMING`, deduplicated (the clauses overlap — a bill voted in committee is in both). Not
+`orderBy: { votes: { _count: "desc" } }`, which counts citizen votes too: that works only while the
+platform has none, and would rot silently as it gains them.
+
+The excluded tail — filed, moved once, never voted — keeps its official title and ementa. The
+plain-language rewrite is an enrichment, never the record, so those pages degrade to the source's
+own words rather than to nothing. The predicate is exported and imported by `npm run estimate:ai`
+rather than restated, for the same reason `Theme.searchText` has one definition: two copies drift,
+and here the drift would be invisible — the forecast would quote a number for a queue that no
+longer exists.
+
 ### Search
 
 The public lists (`/agentes`, `/temas`) each carry a search box, and it lives **inside the filter
@@ -640,9 +676,20 @@ Each method **must have a description** (doc comment). Required operations:
 - **AI step:** Claude (latest model) for incremental theme-summary enrichment from uploaded articles.
 - **Auth:** one OIDC client serving Apple / Google / Meta (citizens), followed by CPF
   confirmation against the official registry; credential + session auth for administrators.
-- **Sync worker:** a separate long-running container running the weekly official-source jobs
-  (`scripts/worker.ts`) plus a one-off historical loader (`scripts/backfill.ts`), kept out of the web process so multi-minute imports never compete with
-  request handling and a redeploy doesn't interrupt a running import.
+- **Sync worker:** a separate long-running container running the weekly synchronization chain
+  (`scripts/worker.ts`) plus a one-off historical loader (`scripts/backfill.ts`), kept out of the
+  web process so multi-minute imports never compete with request handling.
+
+  **Exactly one replica, and that is now load-bearing.** A redeploy *does* interrupt a running
+  import — it recreates the container — and the chain's recovery from that is
+  `releaseChainClaimOnBoot()`, which drops an abandoned chain claim on the reasoning that *a worker
+  booting is proof the worker holding that claim is gone*. True of one replica; false of two, where
+  replica B's boot would release replica A's live claim and leave two chains running side by side.
+  That failure would not announce itself — it does the work twice and only the duplicated request
+  volume against the houses would ever show it, which is worse than the twelve-hour stall the
+  release exists to prevent. So scaling the worker past one replica is not a compose change: it
+  requires replacing that proof with a heartbeat on the chain's row. The cost is written down in the
+  function's docblock.
 
 ### Hosting (Brazil-located, simple, scalable)
 
