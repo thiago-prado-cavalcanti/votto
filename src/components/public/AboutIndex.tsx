@@ -38,6 +38,15 @@ function VoteMark({ value }: { value: "YES" | "NO" | "ABSTENTION" }) {
  * *other* abstention rule visible — the one nobody guesses right, because the
  * obvious arithmetic says the opposite.
  *
+ * **The seven themes are perennial policy areas, never bills in play.** This page
+ * explains what the platform does and must not become a snapshot of a session of
+ * Congress — a named proposal reads as commentary, dates within a legislature,
+ * and drags the whole figure out of date with it. So no bill number, no bracket
+ * in reais, no case currently before the courts: the arithmetic is what the
+ * table teaches, and it teaches it just as well over subjects that will still be
+ * legible in ten years. Resist the pull to make them current again; that is what
+ * `/temas` is for.
+ *
  * That seventh row is the whole reason this figure exists rather than a formula.
  * Two people who each declined to state a position have not agreed about
  * anything, so the theme leaves the numerator AND the denominator. Score it 1
@@ -53,13 +62,13 @@ const EXAMPLE: Array<{
   agent: "YES" | "NO" | "ABSTENTION";
   worth: string;
 }> = [
-  { theme: "Isenção do imposto de renda até R$ 5.000", you: "YES", agent: "YES", worth: "1" },
-  { theme: "Marco legal do saneamento", you: "NO", agent: "NO", worth: "1" },
-  { theme: "Piso salarial da enfermagem", you: "YES", agent: "YES", worth: "1" },
+  { theme: "Isenção de imposto sobre medicamentos", you: "YES", agent: "YES", worth: "1" },
+  { theme: "Regras do saneamento básico", you: "NO", agent: "NO", worth: "1" },
+  { theme: "Reajuste do salário mínimo", you: "YES", agent: "YES", worth: "1" },
   { theme: "Licenciamento ambiental", you: "NO", agent: "NO", worth: "1" },
   { theme: "Reforma administrativa", you: "YES", agent: "ABSTENTION", worth: "½" },
   { theme: "Redução da maioridade penal", you: "NO", agent: "YES", worth: "0" },
-  { theme: "Marco temporal das terras indígenas", you: "ABSTENTION", agent: "ABSTENTION", worth: "—" },
+  { theme: "Demarcação de terras indígenas", you: "ABSTENTION", agent: "ABSTENTION", worth: "—" },
 ];
 
 const RESULT = 75;

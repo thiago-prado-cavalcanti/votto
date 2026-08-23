@@ -570,9 +570,12 @@ export default async function AboutPage() {
                 2024 e 2025. A principal linha de divisão correlaciona{" "}
                 <span className="vt-num">−0,96</span> com apoio ao governo e apenas{" "}
                 <span className="vt-num">+0,49</span> com a escala de esquerda↔direita que
-                a literatura usa. Ela coloca o PSOL em 14º de 18, à direita do PSDB —
-                porque o PSOL se opõe ao governo Lula <em>pela esquerda</em>, e a conta lê
-                oposição como direita.
+                a literatura usa. O sintoma é fácil de reconhecer: um partido de esquerda
+                que faz oposição ao governo do momento aparece <em>à direita</em> de
+                partidos que estão muito longe dele, porque a conta lê oposição como
+                direita. E o erro troca de lado junto com o governo — sob um presidente de
+                direita, os mesmos partidos trocam de lugar sem que nenhum deles tenha
+                mudado de ideia sobre coisa alguma.
               </p>
               <p>
                 Classificar melhor as proposições não resolve: o sinal de coalizão está
@@ -747,10 +750,12 @@ export default async function AboutPage() {
                 nada é publicado.
               </p>
               <p>
-                Há um caso que serve de prova dos nove, e ele é público: o PL é o partido
-                mais à direita do Brasil em todas as réguas disponíveis. Qualquer versão
-                deste índice que o coloque no centro está errada, e é assim que a gente
-                descobre.
+                Isso dá uma prova dos nove. Existem partidos cuja posição não está em
+                disputa por ninguém — aqueles em que todas as réguas independentes
+                concordam, e concordam dentro de uma fração de ponto. É contra eles que o
+                índice é conferido primeiro: se ele puser no centro um partido que nenhuma
+                medida externa põe lá, <Key>está errado</Key> — e é assim que a gente
+                descobre, antes de publicar em vez de depois.
               </p>
             </div>
           </div>
