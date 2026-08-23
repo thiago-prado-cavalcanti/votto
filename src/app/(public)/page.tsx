@@ -19,6 +19,7 @@ import {
   agentBaseAlignments,
   partyBaseAlignments,
 } from "@/lib/indexes/alignment";
+import { partyQualityScores } from "@/lib/domain/quality";
 import { publicReading } from "@/lib/domain/reading";
 import type { Prisma, VoteValue } from "@/generated/prisma";
 
@@ -71,11 +72,12 @@ export default async function HomePage() {
 
   // The published reading (base first, electorate as fallback) + the personal
   // alignment when somebody is logged in.
-  const [agentEngage, partyEngage, agentBase, partyBase] = await Promise.all([
+  const [agentEngage, partyEngage, agentBase, partyBase, partyQuality] = await Promise.all([
     agentElectorateAlignments(),
     partyElectorateAlignments(),
     agentBaseAlignments(),
     partyBaseAlignments(),
+    partyQualityScores(),
   ]);
   let agentAlign: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
   let partyAlign: Map<string, { alignment: number | null; agents: number }> | null = null;
@@ -95,49 +97,49 @@ export default async function HomePage() {
   // Ranking score: personal alignment when logged in, else the published
   // reading — the agent's own base where they have one, the electorate where
   // they do not (`publicReading`).
+  // Every row carries all three readings. Which of them become columns, and
+  // which one ranks the table, is the table's decision — a visitor who is not
+  // logged in has no personal alignment, and until citizens have voted there is
+  // no base reading either, so a ranking that printed only "Alinhamento" was
+  // printing a column of dashes.
   const toAgentRow = (a: AgentWithParty): RankingRow => ({
     kid: a.kid,
     name: `${a.firstName} ${a.lastName}`.trim(),
     subtitle: [a.party?.acronym ?? a.party?.name, a.state].filter(Boolean).join(" · ") || "—",
     imageUrl: a.imageUrl,
-    alignment: isAuthenticated
-      ? agentAlign?.get(a.kid)?.alignment ?? null
-      : publicReading(agentBase.get(a.kid), agentEngage.get(a.kid)?.alignment ?? null).value,
     href: `/agentes/${a.kid}`,
+    quality: a.qualityScore,
+    base: publicReading(agentBase.get(a.kid), agentEngage.get(a.kid)?.alignment ?? null).value,
+    personal: isAuthenticated ? agentAlign?.get(a.kid)?.alignment ?? null : null,
   });
-  const byAlignment = (a: RankingRow, b: RankingRow) =>
-    (b.alignment ?? -1) - (a.alignment ?? -1) || a.name.localeCompare(b.name);
 
-  const topDeputies = deputies.map(toAgentRow).sort(byAlignment).slice(0, 10);
-  const topSenators = senators.map(toAgentRow).sort(byAlignment).slice(0, 10);
+  // Ranked here only to decide WHICH ten make the cut; the table re-sorts by
+  // whichever reading the citizen picks. Performance is the cut-off because it
+  // is the one that exists logged out.
+  const topBy = (rows: RankingRow[], n: number) =>
+    [...rows]
+      .sort(
+        (x, y) =>
+          (y.quality ?? y.base ?? -1) - (x.quality ?? x.base ?? -1) ||
+          x.name.localeCompare(y.name),
+      )
+      .slice(0, n);
 
-  // The quality ranking is not a cut of the alignment one: it answers the other
-  // question the platform asks — not who an agent agrees with, but how the
-  // mandate is exercised — so it is ranked on its own figure and mixes both
-  // houses, which the percentile inside each house makes comparable.
-  const toQualityRow = (a: AgentWithParty): RankingRow => ({
-    ...toAgentRow(a),
-    alignment: a.qualityScore,
-  });
-  const topQuality = [...deputies, ...senators]
-    .map(toQualityRow)
-    // Unmeasured agents sink instead of ranking as zero (CLAUDE.md §3.3).
-    .filter((r) => r.alignment !== null)
-    .sort(byAlignment)
-    .slice(0, 10);
-  const topParties: RankingRow[] = allParties
-    .map((p) => ({
+  const topDeputies = topBy(deputies.map(toAgentRow), 10);
+  const topSenators = topBy(senators.map(toAgentRow), 10);
+  const topParties = topBy(
+    allParties.map((p) => ({
       kid: p.kid,
       name: p.name,
       subtitle: p.acronym ?? "",
       imageUrl: p.logoUrl,
-      alignment: isAuthenticated
-        ? partyAlign?.get(p.kid)?.alignment ?? null
-        : publicReading(partyBase.get(p.kid), partyEngage.get(p.kid)?.alignment ?? null).value,
       href: `/partidos/${p.kid}`,
-    }))
-    .sort(byAlignment)
-    .slice(0, 5);
+      quality: partyQuality.get(p.kid) ?? null,
+      base: publicReading(partyBase.get(p.kid), partyEngage.get(p.kid)?.alignment ?? null).value,
+      personal: isAuthenticated ? partyAlign?.get(p.kid)?.alignment ?? null : null,
+    })),
+    5,
+  );
 
   return (
     <>
@@ -177,6 +179,7 @@ export default async function HomePage() {
 
           <div className="mt-6">
             <RankingTabs
+              isAuthenticated={isAuthenticated}
               tabs={[
                 {
                   key: "deputados",
@@ -190,16 +193,6 @@ export default async function HomePage() {
                   rows: topSenators,
                   hrefAll: "/agentes?type=SENATOR",
                 },
-                ...(topQuality.length > 0
-                  ? [
-                      {
-                        key: "qualidade",
-                        label: "Performance política",
-                        rows: topQuality,
-                        hrefAll: "/agentes?sort=quality",
-                      },
-                    ]
-                  : []),
                 {
                   key: "partidos",
                   label: "Partidos",

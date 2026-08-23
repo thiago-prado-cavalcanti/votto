@@ -25,9 +25,23 @@ export interface RankingRow {
   name: string;
   subtitle: string;
   imageUrl: string | null;
-  alignment: number | null;
   href: string;
+  /** Performance política — the reading that exists whether or not anyone is logged in. */
+  quality: number | null;
+  /** Alinhamento com a base de eleitores. */
+  base: number | null;
+  /** The signed-in citizen's own alignment. Null when logged out. */
+  personal: number | null;
 }
+
+/** The three readings a bench can be ranked by. */
+const SORTS = [
+  { key: "quality", label: "Performance política", pick: (r: RankingRow) => r.quality },
+  { key: "base", label: "Alinhamento com a base", pick: (r: RankingRow) => r.base },
+  { key: "personal", label: "Seu alinhamento", pick: (r: RankingRow) => r.personal },
+] as const;
+
+type SortKey = (typeof SORTS)[number]["key"];
 
 export interface RankingTab {
   key: string;
@@ -49,9 +63,39 @@ function initialsOf(name: string): string {
     .toUpperCase();
 }
 
-export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
+export function RankingTabs({
+  tabs,
+  isAuthenticated = false,
+}: {
+  tabs: RankingTab[];
+  isAuthenticated?: boolean;
+}) {
   const [active, setActive] = React.useState(tabs[0]?.key ?? "");
+  // Performance leads by default: it is the only one of the three that reads
+  // for a visitor who is not logged in, which is most of them.
+  const [sort, setSort] = React.useState<SortKey>("quality");
   const current = tabs.find((t) => t.key === active) ?? tabs[0];
+
+  // A column is offered when it has something to say — the personal one only
+  // to somebody signed in, the others only where the data exists at all. That
+  // is what keeps the table from printing a row of dashes and calling it a
+  // ranking.
+  const columns = React.useMemo(() => {
+    const rows = tabs.flatMap((t) => t.rows);
+    return SORTS.filter((s) => {
+      if (s.key === "personal" && !isAuthenticated) return false;
+      return rows.some((r) => s.pick(r) !== null);
+    });
+  }, [tabs, isAuthenticated]);
+
+  const ordering = columns.find((c) => c.key === sort) ?? columns[0];
+  const rows = React.useMemo(() => {
+    if (!current || !ordering) return current?.rows ?? [];
+    return [...current.rows].sort(
+      (a, b) => (ordering.pick(b) ?? -1) - (ordering.pick(a) ?? -1) || a.name.localeCompare(b.name),
+    );
+  }, [current, ordering]);
+
   if (!current) return null;
   const logo = current.avatarShape === "logo";
   // A party mark gets no plate of its own — it fits whole inside its square and
@@ -101,7 +145,34 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
         ) : null}
       </div>
 
-      {current.rows.length === 0 ? (
+      {/* Ordering is a control, not a tab. The tabs say which bench you are
+          looking at; this says which reading ranks it — and the three readings
+          answer different questions, so one is never a subset of another. */}
+      {columns.length > 1 ? (
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-line py-2.5 text-[0.7rem]">
+          <span className="font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+            Ordenar por
+          </span>
+          {columns.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => setSort(c.key)}
+              aria-pressed={ordering?.key === c.key}
+              className={cn(
+                "transition-colors",
+                ordering?.key === c.key
+                  ? "font-semibold text-navy-900 underline underline-offset-4"
+                  : "text-navy-600 hover:text-navy-900",
+              )}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {rows.length === 0 ? (
         <p className="py-6 text-sm text-[var(--color-muted)]">Sem dados disponíveis.</p>
       ) : (
         <div className="overflow-x-auto">
@@ -117,13 +188,19 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
                 <th scope="col" className="hidden py-2.5 font-semibold sm:table-cell">
                   {logo ? "Sigla" : "Partido · UF"}
                 </th>
-                <th scope="col" className="py-2.5 pl-2 text-right font-semibold">
-                  Alinhamento
-                </th>
+                {columns.map((c) => (
+                  <th
+                    key={c.key}
+                    scope="col"
+                    className="py-2.5 pl-3 text-right font-semibold whitespace-nowrap"
+                  >
+                    {c.label}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody key={current.key} className="vt-rows">
-              {current.rows.map((row, i) => (
+            <tbody key={`${current.key}:${ordering?.key ?? ""}`} className="vt-rows">
+              {rows.map((row, i) => (
                 <tr
                   key={row.kid}
                   className="border-t border-line transition-colors hover:bg-navy-50"
@@ -168,15 +245,23 @@ export function RankingTabs({ tabs }: { tabs: RankingTab[] }) {
                   <td className="hidden py-2.5 align-middle text-sm text-[var(--color-muted)] sm:table-cell">
                     {row.subtitle || "—"}
                   </td>
-                  <td className="py-2.5 pl-2 text-right align-middle">
-                    {row.alignment !== null ? (
-                      <span className="vt-num text-lg" style={{ color: alignmentInk(row.alignment) }}>
-                        {row.alignment}%
-                      </span>
-                    ) : (
-                      <span className="text-xs text-navy-400">—</span>
-                    )}
-                  </td>
+                  {columns.map((c) => {
+                    const value = c.pick(row);
+                    return (
+                      <td key={c.key} className="py-2.5 pl-3 text-right align-middle">
+                        {value !== null ? (
+                          <span
+                            className="vt-num text-lg"
+                            style={{ color: alignmentInk(value) }}
+                          >
+                            {value}%
+                          </span>
+                        ) : (
+                          <span className="text-xs text-navy-400">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

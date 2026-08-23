@@ -17,7 +17,6 @@ import Link from "next/link";
 import { Container, Badge } from "@/components/ui";
 import { RecordIntro, SectionHead } from "@/components/public/Section";
 import { ReadingPlate } from "@/components/public/ReadingPlate";
-import { IndexPlate } from "@/components/public/IndexPlate";
 import { ThemeBriefList, type ThemeBriefItem } from "@/components/public/ThemeBrief";
 import { PositioningChart } from "@/components/public/PositioningChart";
 import { QualityPlate } from "@/components/public/QualityPlate";
@@ -46,13 +45,6 @@ export const dynamic = "force-dynamic";
 
 /** How many authored/rapporteured bills the profile prints. */
 const AUTHORED_LIMIT = 8;
-
-/** The roll-call record, in the vote pigments — abstention always neutral stone. */
-const VOTE_ROWS = [
-  { value: "YES" as const, color: "var(--color-vote-yes)" },
-  { value: "NO" as const, color: "var(--color-vote-no)" },
-  { value: "ABSTENTION" as const, color: "var(--color-vote-abstention)" },
-];
 
 export async function generateMetadata({
   params,
@@ -139,7 +131,6 @@ export default async function AgentDetailPage({
     }),
   ]);
 
-  const votesByValue = new Map(voteTally.map((row) => [row.value, row._count._all]));
   const totalAgentVotes = voteTally.reduce((sum, row) => sum + row._count._all, 0);
 
   const authored: ThemeBriefItem[] = authoredRaw.map((theme) => ({
@@ -174,15 +165,6 @@ export default async function AgentDetailPage({
   }
   const follow = followSlot(agent, session ? follows ?? new Map() : null);
 
-  // The masthead figure is an index reading when there is one to print. Until
-  // citizens have voted there is no alignment for anybody, and a masthead whose
-  // figure is two apologies is weaker than the plain heading it replaced — so the
-  // roll-call record, which exists from the first import, stands in for it.
-  //
-  // Quality counts here too, and it is the reading most likely to exist first:
-  // it is built from the houses' own record and needs no citizen to have voted.
-  const hasReading =
-    reading.value !== null || alignment !== null || agent.qualityScore !== null;
 
   const dto = toPublicAgent(agent);
   const fullName = `${dto.firstName} ${dto.lastName}`.trim();
@@ -230,80 +212,11 @@ export default async function AgentDetailPage({
           </>
         }
         title={fullName}
-        figure={
-          hasReading ? (
-            <ReadingPlate
-              // Three readings that answer different questions — two about who
-              // the agent agrees with, one about how the mandate is exercised —
-              // so the caption names the family, not the first of them.
-              caption="Índices"
-              readings={[
-                {
-                  label: reading.shortLabel,
-                  value: reading.value,
-                  hint:
-                    reading.value === null
-                      ? reading.followers > 0
-                        ? `${followersNote(reading.followers)}, mas ainda não votaram nos temas em que ele se posicionou.`
-                        : "Ainda não há votos de cidadãos suficientes para calcular."
-                      : reading.fromBase
-                        ? `O quanto os votos dele acompanham quem o segue — ${followersNote(reading.followers)}.`
-                        : "O quanto os votos deste agente acompanham o conjunto dos cidadãos. Ainda ninguém o segue.",
-                },
-                {
-                  label: "Performance",
-                  value: agent.qualityScore,
-                  hint:
-                    agent.qualityScore === null
-                      ? "Ainda não há registro suficiente de presença, produção e custeio para calcular."
-                      : "Assiduidade, projetos apresentados e relatados, e custo político — comparado aos pares da mesma casa.",
-                },
-                {
-                  label: "Com você",
-                  // Logged out there is nothing to compute against, and the
-                  // reading says so with the way in rather than disappearing.
-                  value: session ? alignment : null,
-                  hint: !session ? (
-                    <>
-                      <Link href="/login" className="font-medium text-navy-700 hover:text-navy-900">
-                        Entre
-                      </Link>{" "}
-                      para ver o seu alinhamento pessoal.
-                    </>
-                  ) : alignment === null ? (
-                    "Vocês ainda não votaram nos mesmos temas. Vote mais para calcular."
-                  ) : (
-                    `Baseado em ${sharedThemes} ${sharedThemes === 1 ? "tema em comum" : "temas em comum"}.`
-                  ),
-                },
-              ]}
-            />
-          ) : totalAgentVotes > 0 ? (
-            <div>
-              <IndexPlate
-                caption="Registro de votos"
-                note={`${totalAgentVotes.toLocaleString("pt-BR")} ${totalAgentVotes === 1 ? "votação" : "votações"}`}
-                rows={VOTE_ROWS.map((row) => ({
-                  label: voteValueLabel[row.value],
-                  value: votesByValue.get(row.value) ?? 0,
-                  color: row.color,
-                }))}
-              />
-              <p className="mt-4 text-xs leading-relaxed text-[var(--color-muted)]">
-                {session ? (
-                  "Vote nos temas em pauta para calcular o seu alinhamento com este agente."
-                ) : (
-                  <>
-                    <Link href="/login" className="font-medium text-navy-700 hover:text-navy-900">
-                      Entre
-                    </Link>{" "}
-                    e vote nos temas para ver o seu alinhamento com este agente.
-                  </>
-                )}
-              </p>
-            </div>
-          ) : null
-        }
+        // No figure. The masthead is the agent's own record — name, office,
+        // party mark, mandate — and nothing else. The index readings live in the
+        // margin column beside the record below, where they sit next to the
+        // votes they are computed from. They were here, and being here forced
+        // the band to the height of whichever column was taller.
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {dto.party ? (
@@ -437,6 +350,55 @@ export default async function AgentDetailPage({
               its rank on purpose — the rank is a position among peers, and
               printing it alone would assert a difference the data may not hold
               (CLAUDE.md §3.3). */}
+          {/* The index readings, beside the record they are computed from.
+              `ReadingPlate` sets each one full size — a label, a 2.7rem numeral,
+              a bar and a note — which is why it belongs in a column of its own
+              rather than in the masthead, where it decided the height of the
+              whole band. */}
+          <Reveal as="aside" variant="fade" delay={80}>
+            <h2 className="text-xl text-navy-900">Alinhamento</h2>
+            <div className="mt-4">
+              <ReadingPlate
+                caption="Com os eleitores"
+                readings={[
+                  session
+                    ? {
+                        label: "Seu alinhamento",
+                        value: alignment,
+                        hint:
+                          alignment === null
+                            ? "Vocês ainda não votaram nos mesmos temas. Vote mais para calcular."
+                            : `Baseado em ${sharedThemes} ${sharedThemes === 1 ? "tema em comum" : "temas em comum"}.`,
+                      }
+                    : {
+                        label: reading.shortLabel,
+                        value: reading.value,
+                        hint:
+                          reading.value === null ? (
+                            <>
+                              Ainda não há votos de cidadãos suficientes para calcular.{" "}
+                              <Link href="/login" className="font-medium text-navy-700 hover:text-navy-900">
+                                Entre
+                              </Link>{" "}
+                              para ver o seu alinhamento pessoal.
+                            </>
+                          ) : reading.fromBase ? (
+                            `O quanto os votos dele acompanham quem o segue — ${followersNote(reading.followers)}.`
+                          ) : (
+                            "O quanto os votos deste agente acompanham o conjunto dos cidadãos."
+                          ),
+                      },
+                ]}
+              />
+              {totalAgentVotes > 0 ? (
+                <p className="mt-4 text-xs leading-relaxed text-[var(--color-muted)]">
+                  {totalAgentVotes.toLocaleString("pt-BR")}{" "}
+                  {totalAgentVotes === 1 ? "votação registrada" : "votações registradas"}.
+                </p>
+              ) : null}
+            </div>
+          </Reveal>
+
           {agent.qualityScore !== null ? (
             <Reveal as="aside" variant="fade" delay={100}>
               <h2 className="flex items-center text-xl text-navy-900">

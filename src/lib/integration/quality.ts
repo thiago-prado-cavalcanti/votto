@@ -370,7 +370,12 @@ export async function recomputeQualityIndex(
       where: { id: row.id },
       data: {
         qualityScore: quality.score,
-        qualityPillars: quality.pillars as unknown as object,
+        // The raw inputs ride along beside the pillars so the page can FORMAT
+        // the reading at render time instead of replaying a string frozen at
+        // recompute. Without them a wording or rounding fix only reaches a
+        // citizen after the next full recompute — which is exactly how
+        // "R$ 1.276.327 em 34.74775840337093 meses" survived being fixed.
+        qualityPillars: { pillars: quality.pillars, inputs: row.inputs } as unknown as object,
         qualityComputedAt: new Date(),
       },
     });

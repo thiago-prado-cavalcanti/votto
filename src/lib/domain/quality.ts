@@ -12,7 +12,11 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { EntityStatus } from "@/generated/prisma";
-import { QUALITY_PILLARS, type QualityPillarResult } from "@/lib/indexes/quality";
+import {
+  QUALITY_PILLARS,
+  type QualityInputs,
+  type QualityPillarResult,
+} from "@/lib/indexes/quality";
 
 /**
  * Parse the stored pillar breakdown.
@@ -23,34 +27,45 @@ import { QUALITY_PILLARS, type QualityPillarResult } from "@/lib/indexes/quality
  * in registry order so the plate reads the same for every agent.
  */
 export function parseQualityPillars(value: unknown): QualityPillarResult[] {
+  // Two shapes on purpose. The current one is `{ pillars, inputs }`, where the
+  // raw inputs let every reading be FORMATTED here, so a wording or rounding fix
+  // is live for everybody the moment it deploys. The older one is a bare array
+  // of pillars carrying pre-formatted strings; it is still read so pages keep
+  // working between a deploy and the next recompute.
+  const wrapper = value && typeof value === "object" && !Array.isArray(value)
+    ? (value as { pillars?: unknown; inputs?: unknown })
+    : null;
+  const list = Array.isArray(value) ? value : Array.isArray(wrapper?.pillars) ? wrapper.pillars : [];
+  const inputs = wrapper?.inputs as QualityInputs | undefined;
+
   const stored = new Map<string, Record<string, unknown>>();
-  if (Array.isArray(value)) {
-    for (const row of value) {
-      if (row && typeof row === "object" && typeof (row as { key?: unknown }).key === "string") {
-        stored.set((row as { key: string }).key, row as Record<string, unknown>);
-      }
+  for (const row of list) {
+    if (row && typeof row === "object" && typeof (row as { key?: unknown }).key === "string") {
+      stored.set((row as { key: string }).key, row as Record<string, unknown>);
     }
   }
 
   return QUALITY_PILLARS.map((pillar) => {
     const row = stored.get(pillar.key);
     const score = typeof row?.score === "number" ? Math.round(row.score) : null;
-    const reading =
+    const stale =
       row?.reading && typeof row.reading === "object"
         ? (row.reading as { value?: unknown; detail?: unknown })
         : null;
+    const live = inputs ? pillar.reading(inputs) : null;
     return {
       key: pillar.key,
       label: pillar.label,
       weight: pillar.weight,
       score,
       reading:
-        reading && typeof reading.value === "string"
+        live ??
+        (stale && typeof stale.value === "string"
           ? {
-              value: reading.value,
-              detail: typeof reading.detail === "string" ? reading.detail : undefined,
+              value: stale.value,
+              detail: typeof stale.detail === "string" ? stale.detail : undefined,
             }
-          : null,
+          : null),
     };
   });
 }
