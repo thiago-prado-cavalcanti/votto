@@ -246,6 +246,15 @@ model PublicAgent {
   /// nome (Zucco & Lauderdale 2011). NULL quando a casa não publica orientação.
   governismo       Int?
 
+  /// Denominador do governismo: votações com orientação do bloco `Governo` em
+  /// que o agente esteve presente.
+  ///
+  /// Guardado porque a leitura não pode ser publicada sem ele. "78%" e "78% de
+  /// 312 votações" são afirmações diferentes, e a segunda é a única conferível —
+  /// a mesma disciplina que a performance política já segue ao imprimir
+  /// "92% · 312 de 340 votações" ao lado da barra.
+  governismoBase   Int?
+
   /// Accent- and case-folded haystack for the public search box, maintained by
   /// Postgres as a `GENERATED ... STORED` column — see
   /// `docs/migrations/0010_search.sql` for the expression and

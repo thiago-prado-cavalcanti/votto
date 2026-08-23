@@ -42,6 +42,7 @@ import {
   discrimination,
   MIN_DISCRIMINATION,
   MIN_HOUSE_AGENTS,
+  MIN_GOVERNISMO_OPPORTUNITIES,
   MIN_HOUSE_ITEMS,
   parseDimensions,
   POSITIONING_METHODOLOGY,
@@ -120,6 +121,8 @@ export interface AgentScore {
   partyAcronym: string | null;
   position: Position;
   governismo: number | null;
+  /** Votações com orientação do Governo que produziram esse percentual. */
+  governismoBase: number | null;
 }
 
 export interface PartyScore {
@@ -238,7 +241,7 @@ export async function recomputePositioningIndex(
     for (const v of votesByTheme.get(themeId) ?? []) {
       const g = governismo.get(v.agentId);
       if (g === undefined) continue;
-      pairs.push({ a: v.sign, b: g });
+      pairs.push({ a: v.sign, b: g.score });
     }
     const r = pairs.length >= 10 ? pearson(pairs) : null;
     statsByTheme.set(themeId, {
@@ -292,7 +295,8 @@ export async function recomputePositioningIndex(
       house,
       partyAcronym: agent.party?.acronym ?? null,
       position,
-      governismo: governismo.get(agent.id) ?? null,
+      governismo: governismo.get(agent.id)?.score ?? null,
+      governismoBase: governismo.get(agent.id)?.base ?? null,
     });
   }
 
@@ -468,6 +472,7 @@ export async function recomputePositioningIndex(
           // nenhuma das portas — é uma contagem, não uma inferência — e é
           // justamente o número que explica por que a casa foi barrada.
           governismo: s.governismo,
+          governismoBase: s.governismoBase,
         },
       });
     }
@@ -514,7 +519,7 @@ export async function recomputePositioningIndex(
  * abstenção — conta como não apoio. Obstrução é o instrumento da oposição, não
  * indiferença.
  */
-async function computeGovernismo(): Promise<Map<string, number>> {
+async function computeGovernismo(): Promise<Map<string, { score: number; base: number }>> {
   const rollCalls = await db.rollCall.findMany({
     where: { governmentPosition: { not: null } },
     select: { id: true, governmentPosition: true },
@@ -537,13 +542,11 @@ async function computeGovernismo(): Promise<Map<string, number>> {
     tally.set(v.agentId, bucket);
   }
 
-  const out = new Map<string, number>();
+  const out = new Map<string, { score: number; base: number }>();
   for (const [agentId, b] of tally) {
-    // Abaixo de dez oportunidades a razão oscila dezenas de pontos por uma
-    // sessão, e ela é usada como controle — um controle ruidoso barra casas por
-    // acidente.
-    if (b.total < 10) continue;
-    out.set(agentId, Math.round((b.with / b.total) * 100));
+    if (b.total < MIN_GOVERNISMO_OPPORTUNITIES) continue;
+    // O denominador viaja junto com a razão: a leitura não é publicável sem ele.
+    out.set(agentId, { score: Math.round((b.with / b.total) * 100), base: b.total });
   }
   return out;
 }

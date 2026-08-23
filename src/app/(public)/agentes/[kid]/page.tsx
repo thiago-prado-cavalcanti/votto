@@ -19,6 +19,7 @@ import { RecordIntro, SectionHead } from "@/components/public/Section";
 import { ReadingPlate } from "@/components/public/ReadingPlate";
 import { ThemeBriefList, type ThemeBriefItem } from "@/components/public/ThemeBrief";
 import { PositioningPlate } from "@/components/public/PositioningPlate";
+import { GovernismoReading } from "@/components/public/GovernismoReading";
 import { QualityPlate } from "@/components/public/QualityPlate";
 import { PerformanceInfo } from "@/components/public/PerformanceInfo";
 import { parseQualityPillars } from "@/lib/domain/quality";
@@ -30,6 +31,7 @@ import { db } from "@/lib/db";
 import { toPublicAgent } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
 import { getAgentPosition } from "@/lib/domain/positions";
+import { governismoReading } from "@/lib/domain/governismo";
 import {
   citizenAgentAlignment,
   agentElectorateAlignments,
@@ -420,6 +422,13 @@ export default async function AgentDetailPage({
                 economic={position.economic}
                 social={position.social}
                 detail={position.detail}
+              />
+              {/* Fora da placa, de propósito. A placa mostra os dois eixos, que
+                  só existem depois dos três portões do §3.2; esta leitura não
+                  depende de nenhum deles e tem de aparecer quando eles barram —
+                  que é justamente quando a ficha ficaria sem posição alguma. */}
+              <GovernismoReading
+                reading={governismoReading(agent.governismo, agent.governismoBase)}
               />
             </div>
           </Reveal>

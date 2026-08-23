@@ -25,22 +25,50 @@
 import "./load-env";
 import { db } from "@/lib/db";
 
-function parseArgs(argv: string[]): { dryRun: boolean; since: Date | null } {
+function parseArgs(argv: string[]): { dryRun: boolean; since: Date | null; raw: string | null } {
   let since: Date | null = null;
+  let raw: string | null = null;
   const i = argv.indexOf("--since");
   if (i >= 0) {
-    const d = new Date(argv[i + 1]);
+    raw = argv[i + 1] ?? "";
+    const d = new Date(raw);
     if (Number.isNaN(d.getTime())) {
-      console.error(`Data inválida para --since: "${argv[i + 1]}".`);
+      console.error(`Data inválida para --since: "${raw}".`);
       process.exit(2);
     }
     since = d;
   }
-  return { dryRun: argv.includes("--dry"), since };
+  return { dryRun: argv.includes("--dry"), since, raw };
+}
+
+/**
+ * Mostra o instante que `--since` de fato virou, nos dois fusos.
+ *
+ * `new Date("2026-08-23T12:00")` — sem sufixo de fuso — é lido como hora LOCAL,
+ * e o container `migrate` roda em UTC porque, ao contrário do `worker`, ele não
+ * define `TZ`. Então "12:00" digitado pensando em Brasília vira 09:00 de
+ * Brasília, e a janela pega três horas a mais de tentativas do que se queria.
+ * Aconteceu: uma janela para isolar um incidente das 12:23 devolveu 497 temas em
+ * vez de 300, misturando recusas legítimas da manhã.
+ *
+ * O conserto não é adivinhar a intenção — é imprimir o que foi entendido, antes
+ * de tocar em qualquer linha, para o operador conferir contra o que quis dizer.
+ */
+function describeWindow(since: Date, raw: string): string {
+  const brasilia = since.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const semFuso = !/[Zz]|[+-]\d{2}:?\d{2}$/.test(raw.trim());
+  return (
+    `  --since "${raw}" → ${since.toISOString()} (UTC) = ${brasilia} (Brasília)` +
+    (semFuso
+      ? `\n  ⚠ sem fuso no argumento: lido como hora local do container (TZ=${process.env.TZ ?? "UTC"}).` +
+        `\n    Use o sufixo Z para não depender disso, ex.: 2026-08-23T15:20:00Z`
+      : "")
+  );
 }
 
 async function main(): Promise<void> {
-  const { dryRun, since } = parseArgs(process.argv.slice(2));
+  const { dryRun, since, raw } = parseArgs(process.argv.slice(2));
+  if (since && raw !== null) console.log(`\n${describeWindow(since, raw)}`);
 
   const where = {
     status: "ACTIVE" as const,

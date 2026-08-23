@@ -234,6 +234,32 @@ party (the Clemente problem) to a figure that can be printed on the page. `Party
 Hix–Noury–Roland Agreement Index, **not Rice** (Rice ignores abstention, so a bench abstaining in
 disciplined block scores as "completely divided"), corrected for the size bias Desposato documented.
 
+#### Governismo is published on its own, and it is not a consolation prize
+
+`PublicAgent.governismo` — the share of roll calls where the agent voted as the
+`Governo` bloc was instructed — is written **unconditionally**, outside the three gates, because it
+is a count and not an inference: each roll call is a document and the orientation is published by
+the house itself. So it appears on a record page even when the axes cannot, which is exactly when
+the page would otherwise carry no position at all.
+
+It is also not second best. Zucco & Lauderdale show government↔opposition is the *first* dimension
+of Brazilian roll-call behaviour — that is precisely why it contaminates the economic axis, and why
+on its own it is the most faithful reading a nominal vote here supports.
+
+Three rules, and the first is not negotiable:
+
+- **Never labelled ideology, spectrum, or left↔right.** A PSOL deputy and a NOVO deputy can both
+  score 20% for opposite reasons. The page prints that caveat beside the number rather than hiding
+  it, because otherwise the reader concludes "ideology" unaided — the error the falsification gate
+  refuses to make in the maths, committed by hand in the UI instead.
+- **No bands and no adjectives.** "Governista" is a loaded word; it would turn a count into an
+  accusation.
+- **The denominator always travels with it** (`governismoBase`, §4). "78%" and "78% of 312 votações"
+  are different claims. Below `MIN_GOVERNISMO_OPPORTUNITIES` (10) there is no reading.
+
+Party-level governismo does not exist yet — the column is on the agent only. Aggregating it is the
+obvious next step and needs the same care `pooling.ts` already applies to the axes.
+
 > **The five-band verdict is still NOT displayed.** The gates decide whether the *axes* may be
 > published; `bandGate` additionally refuses a band whose 95% interval straddles a cut point, since
 > each band is 40 points wide and a label decided by noise is worse than none. `PositionBadge` and
@@ -396,7 +422,8 @@ comparative, never evaluative, and their cut points are **provisional** — see 
   establishes identity, so collecting it would add risk for nothing.
   Carries the computed indexes: `qualityScore` (§3.3) and, from §3.2, `positionEconomic`,
   `positionSocial`, `positionDetail` (the per-axis reading — items, margin, most influential bill,
-  methodology stamp), `positionComputedAt` and `governismo`. All nullable with no default: "not
+  methodology stamp), `positionComputedAt`, `governismo` and `governismoBase` (its denominator —
+  the reading is not publishable without it). All nullable with no default: "not
   measured" must stay distinguishable from "measured at zero", which on the economic axis is the
   coordinate of a perfect centrist. `governismo` is written even for a house the §3.2 gates blocked
   — it is a count, not an inference.

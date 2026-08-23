@@ -397,6 +397,17 @@ export const MIN_EFFECTIVE_ITEMS = 8;
  */
 export const MIN_HOUSE_ITEMS = 20;
 
+/**
+ * Votações com orientação do bloco `Governo` de que um agente precisa antes de
+ * ter governismo medido.
+ *
+ * Abaixo de dez a razão oscila dezenas de pontos por uma única sessão. Isso já
+ * importava quando o governismo era só o controle do índice — um controle
+ * ruidoso barra casas por acidente —, e importa mais agora que ele é publicado:
+ * a afirmação é sobre uma pessoa nomeada.
+ */
+export const MIN_GOVERNISMO_OPPORTUNITIES = 10;
+
 /** Agentes medidos de que uma casa precisa antes de a correlação significar algo. */
 export const MIN_HOUSE_AGENTS = 30;
 
