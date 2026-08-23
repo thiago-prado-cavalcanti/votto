@@ -7,36 +7,39 @@
  * confrontar o resultado com uma medida construída por outro método, por outras
  * pessoas, antes de existirmos — e no Brasil essa medida existe.
  *
- * ── A âncora ────────────────────────────────────────────────────────────────
+ * ── Duas âncoras, e por que duas ────────────────────────────────────────────
  *
- * O **Brazilian Legislative Survey** (Power & Zucco) pergunta a parlamentares
- * federais, sob anonimato, onde cada partido está numa escala de 1 a 10. Nove
- * ondas desde 1990; a nona (2021) reúne parlamentares da legislatura anterior à
- * atual. As posições são estimadas com correção à la Aldrich–McKelvey — cada
- * respondente tem seu próprio deslocamento e sua própria escala, e o modelo os
- * separa da posição do partido —, o que resolve o problema de que "5" não
- * significa a mesma coisa para um deputado do PSOL e para um do PL. A validação
- * publicada contra a pesquisa de especialistas PREPPS dá r = 0,97.
+ * **Bolognesi et al. (2022)** é a primária: 515 cientistas políticos filiados à
+ * ABCP posicionando 32 partidos. **BLS-9** (Power & Zucco) é a secundária:
+ * parlamentares federais, sob anonimato, posicionando os partidos numa escala de
+ * 1 a 10, com correção à la Aldrich–McKelvey para o fato de que "5" não
+ * significa a mesma coisa para um deputado do PSOL e um do PL.
  *
- * É exatamente a âncora que Zucco & Lauderdale usam para separar ideologia de
- * governismo nas votações da Câmara, e é pública: Harvard Dataverse,
- * doi:10.7910/DVN/WM9IZ8.
+ * Duas porque uma régua sozinha é uma régua, e duas que concordam a 0,979 são
+ * uma checagem. Elas também erram de formas diferentes — uma é julgamento de
+ * acadêmicos sobre partidos, a outra é julgamento de pares dentro do Congresso —
+ * e ainda assim chegam à mesma ordenação. É esse acordo que dá direito de tratar
+ * a ordenação como fato externo e não como opinião de um grupo.
  *
- * ── Por que uma tabela no código, e não um import ───────────────────────────
+ * ── Por que tabelas no código, e não um import ──────────────────────────────
  *
- * São vinte e um números que não mudam — uma onda de survey publicada é um
- * documento fechado. Um job de importação para lê-los seria uma dependência de
- * rede numa checagem que precisa rodar exatamente igual toda vez, inclusive
- * quando a fonte estiver fora do ar. Os valores estão aqui com a citação ao
- * lado, e conferi-los é abrir o apêndice.
+ * São números que não mudam: uma onda de survey publicada é um documento
+ * fechado. Um job de importação para lê-los seria uma dependência de rede numa
+ * checagem que precisa rodar exatamente igual toda vez, inclusive quando a fonte
+ * estiver fora do ar. Os valores estão aqui com a citação ao lado, e conferi-los
+ * é abrir o apêndice.
  *
- * ── O que fazer com um partido que não está na tabela ───────────────────────
+ * ── O que fazer com um partido que não está nas tabelas ─────────────────────
  *
- * **Nada.** Partidos sem âncora simplesmente não entram na correlação. A
- * tentação é interpolar — UNIÃO é a fusão de DEM (+0,431) e PSL (+0,803), então
- * "+0,617" parece inofensivo —, mas um valor inventado dentro da régua que
- * valida o índice é a última coisa que pode existir aqui: ele passaria a
- * validar a interpolação.
+ * **Nada.** Partidos sem âncora simplesmente não entram na correlação, e a
+ * cobertura que sobrou é reportada junto do resultado.
+ *
+ * A tentação é interpolar. O PRD é a fusão de PTB (+0,544) e Patriota (+0,720),
+ * então "+0,63" parece inofensivo — mas um valor inventado dentro da régua que
+ * valida o índice é a última coisa que pode existir aqui: ele passaria a validar
+ * a interpolação. (UNIÃO já foi este exemplo, quando só havia a âncora do BLS;
+ * hoje Bolognesi o publica diretamente, em +0,698, o que é precisamente o
+ * argumento a favor de buscar mais uma fonte em vez de estimar a que falta.)
  */
 
 /**

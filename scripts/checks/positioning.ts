@@ -23,6 +23,7 @@
  */
 import {
   computePosition, discrimination, itemWeight, parseDimensions, bandGate,
+  MIN_EFFECTIVE_ITEMS,
   type ScorableVote,
 } from "@/lib/indexes/positioning";
 import { pool, betweenVariance, agreementIndex, excessCohesion, expectedRandomAgreement } from "@/lib/indexes/pooling";
@@ -58,29 +59,48 @@ const mk = (i: number, value: "YES" | "NO", dir: -1 | 1, yes: number, no: number
   dimensions: parseDimensions({ version: 2, scoreable: true, reason: null,
     economic: { direction: dir, magnitude: 1, confidence: 1 }, social: null, salience: 0.5 }),
 });
-// Seis votações divididas, todas marcadas +1, todas votadas SIM → +100.
-const allYes = Array.from({ length: 6 }, (_, i) => mk(i, "YES", 1, 50, 50));
+// O tamanho das amostras vem do PISO, não de um número escrito à mão: assim a
+// checagem continua testando o comportamento depois de o piso ser recalibrado
+// (§11 diz que ele será), em vez de quebrar ou, pior, passar por acidente.
+// Cada item aqui vale peso 1 (dividido ao meio, confiança e magnitude cheias).
+const N = MIN_EFFECTIVE_ITEMS;
+
+// Todas marcadas +1 e votadas SIM → +100.
+const allYes = Array.from({ length: N }, (_, i) => mk(i, "YES", 1, 50, 50));
 const p1 = computePosition(allYes);
 ok("coerente = +100", p1.economic.value === 100, `(${p1.economic.value})`);
 ok("eixo sem tag fica null", p1.social.value === null);
-// Metade e metade → 0, mas COM leitura (é medida, não ausência).
-const split = [...Array.from({ length: 3 }, (_, i) => mk(i, "YES", 1, 50, 50)),
-               ...Array.from({ length: 3 }, (_, i) => mk(i + 3, "NO", 1, 50, 50))];
+
+// A fronteira do piso, nos dois lados. É a asserção que mais importa do arquivo:
+// um item abaixo do piso NÃO pode devolver 0, porque 0 é a coordenada do centro.
+const atFloor = computePosition(Array.from({ length: N }, (_, i) => mk(i, "YES", 1, 50, 50)));
+const belowFloor = computePosition(Array.from({ length: N - 1 }, (_, i) => mk(i, "YES", 1, 50, 50)));
+ok("exatamente no piso → publica", atFloor.economic.value !== null, `(${N} itens)`);
+ok("um abaixo do piso → null, nunca 0", belowFloor.economic.value === null, `(${N - 1} itens)`);
+
+// Metade e metade → 0, mas COM leitura (é medida, não ausência). São coisas
+// diferentes que o tipo não distingue sozinho, daí a checagem de `items`.
+const half = Math.floor(N / 2);
+const split = [...Array.from({ length: half }, (_, i) => mk(i, "YES", 1, 50, 50)),
+               ...Array.from({ length: N - half }, (_, i) => mk(i + half, "NO", 1, 50, 50))];
 const p2 = computePosition(split);
-ok("dividido = 0 COM leitura", p2.economic.value === 0 && p2.economic.items === 6);
-// Cobertura insuficiente → null, não 0.
-const thin = [mk(0, "YES", 1, 50, 50), mk(1, "YES", 1, 50, 50)];
-ok("cobertura fina → null (não 0)", computePosition(thin).economic.value === null);
-// Só votações unânimes → null.
-const unanimous = Array.from({ length: 20 }, (_, i) => mk(i, "YES", 1, 490, 10));
-ok("só unânimes → null", computePosition(unanimous).economic.value === null);
-// Abstenção não move.
-const withAbs = [...allYes, { ...mk(9, "YES", -1, 50, 50), value: "ABSTENTION" as const }];
-ok("abstenção não move", computePosition(withAbs).economic.value === 100);
-// Influência é detectada.
-const oneOff = [...Array.from({ length: 5 }, (_, i) => mk(i, "YES", 1, 50, 50)), mk(5, "NO", 1, 50, 50)];
+ok("dividido ≈ 0 COM leitura", p2.economic.value !== null && Math.abs(p2.economic.value) <= 100 / N && p2.economic.items === N,
+   `(${p2.economic.value}, ${p2.economic.items} itens)`);
+
+// Só votações unânimes → null, por mais que sejam.
+const unanimous = Array.from({ length: N * 4 }, (_, i) => mk(i, "YES", 1, 490, 10));
+ok("só unânimes → null", computePosition(unanimous).economic.value === null, `(${N * 4} itens unânimes)`);
+
+// Abstenção não move nada, nem entra na cobertura.
+const withAbs = [...allYes, { ...mk(N + 1, "YES", -1, 50, 50), value: "ABSTENTION" as const }];
+const pAbs = computePosition(withAbs);
+ok("abstenção não move", pAbs.economic.value === 100 && pAbs.economic.items === N);
+
+// Influência é detectada: um item destoando de N−1 concordantes.
+const oneOff = [...Array.from({ length: N - 1 }, (_, i) => mk(i, "YES", 1, 50, 50)), mk(N, "NO", 1, 50, 50)];
 const p3 = computePosition(oneOff);
-ok("item mais influente identificado", p3.economic.influence !== null, `(${p3.economic.influence?.themeKey}, ${p3.economic.influence?.delta})`);
+ok("item mais influente identificado", p3.economic.influence !== null,
+   `(${p3.economic.influence?.themeKey}, ${p3.economic.influence?.delta})`);
 
 console.log("\nFaixa");
 ok("sem validação, sem faixa", bandGate({ value: 80, standardError: 3, items: 40, effectiveItems: 40, influence: null }, false).blocked === "unvalidated");

@@ -366,15 +366,24 @@ export interface Position {
 }
 
 /**
- * Piso de cobertura por eixo, em peso efetivo.
+ * Piso de cobertura por eixo, em **peso efetivo** — não em contagem de votos.
  *
- * Não é uma contagem de votos: oito votações unânimes somam peso quase nulo e
- * não deveriam habilitar leitura nenhuma. Oito é a ordem de grandeza de um
- * *scorecard* da ADA (vinte votações escolhidas a dedo) descontada pela divisão
- * média do plenário — e é o número a recalibrar contra o histograma real assim
- * que a classificação dos temas existir em escala (§11).
+ * A distinção é a razão de o piso existir: oito votações unânimes somam peso
+ * quase nulo e não deveriam habilitar leitura nenhuma, enquanto oito votações
+ * disputadas e bem classificadas somam quase oito. O piso mede o segundo caso.
+ *
+ * **Oito**, e o número vem de uma analogia com escala: um *scorecard* da ADA usa
+ * vinte votações escolhidas a dedo, e vinte votações reais descontadas pela
+ * divisão média do plenário e pela confiança das tags somam algo em torno de
+ * oito unidades de peso. Na prática, portanto, o piso pede da ordem de **vinte
+ * proposições classificadas e disputadas** por eixo.
+ *
+ * Este é o número a recalibrar primeiro contra o histograma real (§11): ele
+ * decide se um eixo é publicado ou fica `null`, e um piso baixo demais devolve o
+ * defeito que a reconstrução inteira existe para fechar — uma posição publicada
+ * sobre quase nada.
  */
-export const MIN_EFFECTIVE_ITEMS = 4;
+export const MIN_EFFECTIVE_ITEMS = 8;
 
 const EMPTY_AXIS: AxisReading = {
   value: null,
