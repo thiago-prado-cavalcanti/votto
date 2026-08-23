@@ -34,12 +34,23 @@ const rowBeat = (i: number) => ({ "--vt-d": `${360 + i * 90}ms` }) as CSSPropert
 export function IndexPlate({
   caption,
   note,
+  hint,
   rows,
 }: {
   /** What the rows cut the subject by — "Por prioridade", "Maiores bancadas". */
   caption: string;
   /** The universe the cut is taken from — "1.284 temas". */
   note?: string;
+  /**
+   * What the universe leaves out, when it leaves something out.
+   *
+   * A cut of a filtered set prints a total that is smaller than the archive, and
+   * without this the figure reads as the whole holding. `/temas` hides concluded
+   * bills by default: the plate said "7.041 temas" while the platform held 8.000,
+   * and the home — counting the archive — announced the larger number, so the
+   * two pages disagreed with no explanation between them.
+   */
+  hint?: React.ReactNode;
   rows: IndexPlateRow[];
 }) {
   const max = Math.max(...rows.map((r) => r.value), 1);
@@ -81,6 +92,12 @@ export function IndexPlate({
           </li>
         ))}
       </ul>
+
+      {hint ? (
+        <p className="border-t border-line pt-2 text-[0.7rem] leading-relaxed text-[var(--color-muted)]">
+          {hint}
+        </p>
+      ) : null}
     </figure>
   );
 }

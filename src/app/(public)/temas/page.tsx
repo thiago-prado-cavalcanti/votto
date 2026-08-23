@@ -19,6 +19,7 @@
  * chances for the appended rows to answer a different question than the ones
  * already on screen.
  */
+import Link from "next/link";
 import { Container, Field, Select, Input } from "@/components/ui";
 import { PageIntro } from "@/components/public/Section";
 import { IndexPlate } from "@/components/public/IndexPlate";
@@ -77,7 +78,7 @@ export default async function ThemesPage({
   // The masthead plate counts the WHOLE match, not the page of it that happens
   // to be printed, so it describes the query the citizen just made. Four indexed
   // counts on `priority`.
-  const [page, bandCounts] = await Promise.all([
+  const [page, bandCounts, withConcluded] = await Promise.all([
     loadThemePage(query, Number(p) || 1),
     Promise.all(
       PRIORITY_BAND_RANGES.map((range) =>
@@ -89,9 +90,25 @@ export default async function ThemesPage({
         }),
       ),
     ),
+    // The same query with the default "em tramitação" restriction lifted, so the
+    // plate can say how much of the archive it is not showing. Concluded bills
+    // are the platform's history — how an agent actually voted — and the list
+    // hiding them silently was the reason the home announced a larger number
+    // than this page did.
+    themeOnlyOpen(open)
+      ? db.theme.count({ where: themeListWhere({ ...query, open: "0" }) })
+      : Promise.resolve(null),
   ]);
 
   const matchedThemes = bandCounts.reduce((sum, n) => sum + n, 0);
+  const concludedHidden = withConcluded === null ? 0 : withConcluded - matchedThemes;
+  // Preserve every other control when offering the wider view: the link is the
+  // same form the citizen already filled in, with one field changed.
+  const includeConcludedHref = `/temas?${new URLSearchParams(
+    Object.entries({ scope, state, house, q, order })
+      .filter(([, v]) => Boolean(v))
+      .concat([["open", "0"]]) as [string, string][],
+  ).toString()}`;
   const currentVotes = session
     ? await themeVotesFor(session.cpfHash, page.themes.map((t) => t.kid))
     : {};
@@ -106,7 +123,24 @@ export default async function ThemesPage({
           matchedThemes > 0 ? (
             <IndexPlate
               caption="Por prioridade"
-              note={`${matchedThemes.toLocaleString("pt-BR")} ${matchedThemes === 1 ? "tema" : "temas"}`}
+              note={
+                onlyOpen
+                  ? `${matchedThemes.toLocaleString("pt-BR")} em tramitação`
+                  : `${matchedThemes.toLocaleString("pt-BR")} ${matchedThemes === 1 ? "tema" : "temas"}`
+              }
+              hint={
+                concludedHidden > 0 ? (
+                  <>
+                    {concludedHidden.toLocaleString("pt-BR")}{" "}
+                    {concludedHidden === 1 ? "proposição encerrada não está" : "proposições encerradas não estão"}{" "}
+                    nesta lista.{" "}
+                    <Link href={includeConcludedHref} className="text-ink underline underline-offset-2">
+                      Incluir o histórico
+                    </Link>
+                    .
+                  </>
+                ) : null
+              }
               rows={PRIORITY_BAND_RANGES.map((range, i) => ({
                 label: priorityBandLabel[range.band],
                 value: bandCounts[i],
