@@ -116,11 +116,29 @@ export interface RecoveryOptions {
   skipComponents?: number;
 }
 
-/** O que a decomposição descobriu sobre uma votação. */
+/**
+ * O que a decomposição descobriu sobre uma votação.
+ *
+ * **A carga é assinada mas o eixo ainda não está orientado.** Um componente
+ * principal não tem sinal: `+v` e `−v` explicam a mesma variância, e qual das
+ * duas pontas se chama "Mercado" não é medível a partir dos votos. Decidir isso
+ * é ato externo, e ele acontece uma vez só, em
+ * `orientAxis` (`src/lib/integration/positioning.ts`), depois que os escores
+ * existem — nunca aqui.
+ *
+ * Foi por não respeitar isso que a rodada de 24/08/2026 publicou o espectro
+ * espelhado: a orientação era decidida em dois lugares com duas medidas
+ * diferentes — a semente da iteração, pela projeção ponderada pela carga, e um
+ * flip posterior, pela contagem não-ponderada de sinais. As duas discordaram e o
+ * flip desfez a semente. Uma decisão, um lugar.
+ */
 export interface RecoveredItem {
   /** 0..1 — quanto a votação separa a casa ao longo do eixo. Substitui o peso da tag. */
   weight: number;
-  /** Para que lado um SIM empurra, segundo os votos. Substitui `tag.direction`. */
+  /**
+   * Para que lado um SIM empurra ao longo do componente, **numa das duas
+   * pontas ainda não nomeadas**. Substitui `tag.direction`.
+   */
   direction: -1 | 1;
 }
 
@@ -132,18 +150,19 @@ export interface RecoveryDiagnostics {
   explained: number;
   /**
    * Concordância entre os sinais recuperados e os etiquetados, sobre os itens
-   * com tag, em −1..1.
+   * com tag, em −1..1. **Diagnóstico de qualidade de tag, e nada mais** — não
+   * orienta o eixo.
    *
-   * É o número que diz o que a rodada anterior deixou implícito. Perto de 1 as
-   * tags e os votos concordam e o estimador antigo falhou por peso; perto de 0
-   * as tags são ruído, e é aí que a troca de estimador ganha o que ganha. O
-   * sinal em si não informa — a orientação já foi resolvida por ele.
+   * Medido em 24/08/2026: **−0,10 na Câmara** sobre 164 itens etiquetados e
+   * **+0,63 no Senado** sobre 32. O primeiro é ruído puro. O segundo parece bom
+   * e não é: o eixo que ele "concordava" saiu invertido contra a âncora, isto é
+   * as tags do Senado apontam confiantemente para o lado errado. É a medição
+   * direta do que §11 deduziu de PT e PL colados, e é a razão pela qual
+   * orientar por tag foi abandonado.
    */
   tagAgreement: number;
-  /** Quantos itens com tag sustentaram a orientação. */
-  oriented: number;
-  /** Verdadeiro quando não havia tag alguma e a ponta do eixo é arbitrária. */
-  unoriented: boolean;
+  /** Quantos itens com tag entraram nessa concordância. */
+  tagged: number;
 }
 
 export interface RecoveryResult {
@@ -185,14 +204,7 @@ export function recoverAxis(
 
   const empty: RecoveryResult = {
     items: new Map(),
-    diagnostics: {
-      agents: N,
-      items: M,
-      explained: 0,
-      tagAgreement: 0,
-      oriented: 0,
-      unoriented: true,
-    },
+    diagnostics: { agents: N, items: M, explained: 0, tagAgreement: 0, tagged: 0 },
   };
   if (N === 0 || M === 0) return empty;
 
@@ -260,12 +272,22 @@ export function recoverAxis(
   for (let j = 0; j < M; j++) for (let i = 0; i < N; i++) totalSS += x[j][i] * x[j][i];
 
   // ── Iteração de potência sobre XᵀX, com deflação dos anteriores ───────────
+  // A semente é um vetor pseudoaleatório **determinístico** e independente das
+  // tags. As duas propriedades são necessárias e por motivos diferentes:
+  //
+  //  - determinística porque `Math.random()` faria duas execuções sobre os
+  //    mesmos dados convergirem para eixos espelhados;
+  //  - independente das tags porque semear com `tagDirection` é orientar o eixo
+  //    pelas tags de forma escondida. Foi assim que a rodada de 24/08/2026
+  //    publicou o espectro invertido: o flip explícito foi removido e a
+  //    orientação continuou vindo daqui.
+  //
+  // Um vetor de uns seria determinístico e ruim: as cargas de um componente
+  // costumam se equilibrar entre positivas e negativas, então `[1,1,…,1]` fica
+  // perto de ortogonal ao que se procura e a iteração parte quase do pior lugar
+  // possível.
   const seed = new Float64Array(M);
-  let seeded = false;
-  for (let j = 0; j < M; j++) {
-    if (items[j].tagDirection !== 0) { seed[j] = items[j].tagDirection; seeded = true; }
-  }
-  if (!seeded) for (let j = 0; j < M; j++) seed[j] = 1;
+  for (let j = 0; j < M; j++) seed[j] = hashUnit(j);
 
   // Anotado, e não inferido: `power` devolve `Float64Array<ArrayBufferLike>` e
   // `new Float64Array` é `<ArrayBuffer>`, que é o mais estreito dos dois.
@@ -273,6 +295,7 @@ export function recoverAxis(
   let componentSS = 0;
   for (let k = 0; k <= skip; k++) {
     w = power(x, seed, N, M, iterations);
+    canonicaliseSign(w);
     const s = project(x, w, N, M);
     componentSS = 0;
     for (let i = 0; i < N; i++) componentSS += s[i] * s[i];
@@ -289,23 +312,22 @@ export function recoverAxis(
   }
   const explained = totalSS > 0 ? Math.min(1, componentSS / totalSS) : 0;
 
-  // ── Orientar pelas tags ───────────────────────────────────────────────────
-  // A soma dos produtos decide a ponta. Um item etiquetado ao contrário não
-  // desloca a leitura de ninguém: ele apenas deixa de contribuir para esta
-  // soma. É toda a robustez do estimador, e ela é local a estas quatro linhas.
+  // ── Concordância com as tags, como diagnóstico ────────────────────────────
+  // Ponderada pela carga, e não uma contagem de sinais: um item com carga
+  // desprezível não tem opinião sobre nada, e contá-lo igual a um item que
+  // define o eixo é o que fez a medida anterior discordar da semente.
   let agree = 0;
-  let oriented = 0;
-  let normW = 0;
+  let agreeWeight = 0;
+  let tagged = 0;
   for (let j = 0; j < M; j++) {
-    normW += Math.abs(w[j]);
     if (items[j].tagDirection === 0) continue;
-    oriented++;
-    agree += Math.sign(w[j]) * items[j].tagDirection;
+    tagged++;
+    agree += w[j] * items[j].tagDirection;
+    agreeWeight += Math.abs(w[j]);
   }
-  const tagAgreement = oriented > 0 ? agree / oriented : 0;
-  const flip = tagAgreement < 0 ? -1 : 1;
+  const tagAgreement = agreeWeight > 0 ? agree / agreeWeight : 0;
 
-  // ── Peso e direção por item ───────────────────────────────────────────────
+  // ── Peso e direção por item, na ponta ainda não nomeada ───────────────────
   // Normalizado pelo máximo e não pela soma: o peso tem de continuar
   // comparável ao da tag (0..1, com `MIN_EFFECTIVE_ITEMS` medido nessa escala),
   // e uma normalização pela soma faria o piso de cobertura depender de quantas
@@ -315,24 +337,16 @@ export function recoverAxis(
   const out = new Map<string, RecoveredItem>();
   if (maxAbs > 0) {
     for (let j = 0; j < M; j++) {
-      const loading = w[j] * flip;
       out.set(items[j].themeId, {
-        weight: Math.abs(loading) / maxAbs,
-        direction: loading < 0 ? -1 : 1,
+        weight: Math.abs(w[j]) / maxAbs,
+        direction: w[j] < 0 ? -1 : 1,
       });
     }
   }
 
   return {
     items: out,
-    diagnostics: {
-      agents: N,
-      items: M,
-      explained,
-      tagAgreement,
-      oriented,
-      unoriented: oriented === 0 || normW === 0,
-    },
+    diagnostics: { agents: N, items: M, explained, tagAgreement, tagged },
   };
 }
 
@@ -379,6 +393,38 @@ function project(x: Float64Array[], w: Float64Array, N: number, M: number): Floa
     for (let i = 0; i < N; i++) s[i] += col[i] * wj;
   }
   return s;
+}
+
+/**
+ * Fixar o sinal do componente por uma regra que só olha os dados.
+ *
+ * A carga de maior módulo fica positiva, com empate resolvido pelo menor índice.
+ * Assim o vetor devolvido é função pura da matriz — nem da semente, nem das
+ * tags —, e **toda** a decisão sobre qual ponta é "Mercado" fica concentrada em
+ * `orientAxis`. Sem isto a orientação teria dois donos, que é o defeito que
+ * inverteu a leitura de 498 deputados.
+ */
+function canonicaliseSign(w: Float64Array): void {
+  let best = 0;
+  for (let j = 1; j < w.length; j++) {
+    if (Math.abs(w[j]) > Math.abs(w[best]) + 1e-12) best = j;
+  }
+  if (w[best] < 0) for (let j = 0; j < w.length; j++) w[j] = -w[j];
+}
+
+/**
+ * Um valor determinístico em (−1, 1) a partir de um índice.
+ *
+ * Hash inteiro no lugar de um gerador com estado: não precisa de semente
+ * global, dá o mesmo vetor para a mesma casa em qualquer execução, e não tem a
+ * estrutura que faria o vetor cair perto de ortogonal ao componente.
+ */
+function hashUnit(j: number): number {
+  let h = (j + 1) * 0x9e3779b1;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return ((h >>> 0) / 0xffffffff) * 2 - 1;
 }
 
 /** Normalizar em L2 no lugar. Devolve a norma anterior, 0 se degenerado. */

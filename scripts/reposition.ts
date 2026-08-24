@@ -253,18 +253,25 @@ async function main(): Promise<void> {
       );
     }
     if (h.recovery) {
-      // `tags` é o número que diz por que o estimador antigo falhou: quanto os
-      // sinais que os votos revelam concordam com os que a IA etiquetou.
+      // A concordância com as tags é DIAGNÓSTICO e não orienta nada. Ela mede a
+      // qualidade da classificação: perto de 0, a IA etiquetou ruído.
       for (const axis of ["economic", "social"] as const) {
         const r = h.recovery[axis];
         const flag = Math.abs(r.tagAgreement) < 0.3 ? "  ⚠ tags ≈ ruído" : "";
         console.log(
           `        ${axis === "economic" ? "PC1 econômico" : "PC2 social   "} — ` +
             `${(r.explained * 100).toFixed(0)}% da variância · ` +
-            `concordância com as tags ${r.tagAgreement >= 0 ? "+" : ""}${r.tagAgreement.toFixed(2)} ` +
-            `sobre ${r.oriented} itens etiquetados${flag}` +
-            (r.unoriented ? "  ⚠ sem tag alguma: a ponta do eixo é arbitrária" : ""),
+            `tags concordam ${r.tagAgreement >= 0 ? "+" : ""}${r.tagAgreement.toFixed(2)} ` +
+            `sobre ${r.tagged} itens etiquetados${flag}`,
         );
+        const o = h.orientation?.[axis];
+        if (o) {
+          console.log(
+            o.left.length > 0
+              ? `          pontas nomeadas por ${o.left.join(", ")} ↔ ${o.right.join(", ")}`
+              : "          ⚠ sem âncora suficiente para nomear as pontas — eixo não orientado",
+          );
+        }
       }
     }
     if (h.unanchored.length > 0) {

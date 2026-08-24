@@ -105,6 +105,72 @@ const VARIANCE_FLOOR = 25;
  */
 export type Estimator = "tags" | "pca";
 
+/**
+ * Quantos partidos de cada ponta da régua decidem para que lado o eixo aponta.
+ *
+ * Três, e o número é conservador de propósito: com um só, uma bancada pequena e
+ * excêntrica decidiria a orientação de toda a casa.
+ */
+const ORIENTATION_POLES = 3;
+
+/**
+ * Nomear as pontas de um eixo recuperado.
+ *
+ * ── Por que isto não é circular, e onde exatamente ele custa ─────────────────
+ *
+ * Um componente principal **não tem sinal**: `+v` e `−v` explicam a mesma
+ * variância, e nada dentro da matriz de votos diz qual das duas pontas se chama
+ * "Mercado". Orientar não é medir; é rotular. É por isso que todo método desta
+ * família — W-NOMINATE, Optimal Classification, análise fatorial — orienta *post
+ * hoc*, por referência externa, e ninguém chama isso de circularidade.
+ *
+ * A rodada de 24/08/2026 mostrou o que acontece sem uma referência confiável: o
+ * eixo saiu com |ρ| = 0,79 contra a âncora — o espectro brasileiro inteiro, de
+ * PSOL a PL — e **espelhado**, porque a orientação vinha das tags e a
+ * concordância delas era −0,10 na Câmara. Um bit decidido por ruído inverte a
+ * leitura de 498 deputados.
+ *
+ * Então o bit vem da âncora, e vem de forma limitada e declarada: dos
+ * `ORIENTATION_POLES` partidos mais à esquerda e mais à direita **entre os que
+ * a casa tem e a régua cobre**. O eixo é virado, se preciso, para que a média
+ * dos primeiros fique abaixo da média dos segundos.
+ *
+ * **O custo é real e tem tamanho.** A porta 4 compara a nossa ordenação
+ * partidária com a régua por Spearman sobre ~16 partidos; fixando o sinal por 6
+ * deles, o que resta de teste são os outros ~10 mais a *magnitude* sobre todos.
+ * Ou seja: a porta passa a testar a ordenação, não o sinal. Isso tem de estar
+ * escrito na metodologia — dizer "ρ ≥ 0,85 contra o BLS" sem dizer que o sinal
+ * veio do BLS seria descrever um teste mais forte do que o que roda.
+ *
+ * O que a porta continua pegando, e é o que importa: um eixo que ordene PSOL
+ * junto de PL, ou que ponha o centrão nos extremos, reprova com o sinal fixado
+ * do mesmo jeito. Foi exactamente assim que o estimador de tags reprovou.
+ */
+function orientAxis(
+  partyMeans: Array<{ acronym: string; mean: number }>,
+): { flip: -1 | 1; left: string[]; right: string[] } {
+  const anchored = partyMeans
+    .map((p) => ({ ...p, anchor: anchorFor(p.acronym) }))
+    .filter((p): p is { acronym: string; mean: number; anchor: number } => p.anchor !== null)
+    .sort((a, b) => a.anchor - b.anchor);
+
+  // Sem régua não há como nomear as pontas. Devolver `1` não é orientar — é
+  // deixar como está —, e quem recusa a publicação é a porta 4, que sem âncora
+  // não tem cobertura para passar de qualquer forma.
+  if (anchored.length < 2 * ORIENTATION_POLES) {
+    return { flip: 1, left: [], right: [] };
+  }
+
+  const left = anchored.slice(0, ORIENTATION_POLES);
+  const right = anchored.slice(-ORIENTATION_POLES);
+  const avg = (xs: typeof left) => xs.reduce((sum, p) => sum + p.mean, 0) / xs.length;
+  return {
+    flip: avg(left) > avg(right) ? -1 : 1,
+    left: left.map((p) => p.acronym),
+    right: right.map((p) => p.acronym),
+  };
+}
+
 /** Por que uma casa não foi gravada. */
 export type HouseBlock =
   | { kind: "items"; items: number }
@@ -162,13 +228,13 @@ export interface HouseReport {
    * O que a decomposição encontrou, quando o estimador é `pca`. `null` sob
    * `tags`.
    *
-   * `tagAgreement` é o número a ler: é a concordância entre o sinal que os
-   * votos revelam e o que a IA etiquetou. Perto de 1, as tags estavam certas e
-   * o estimador antigo falhou por peso; perto de 0, as tags eram ruído — e é
-   * essa a leitura que a rodada de 24/08/2026 tornou provável, porque nenhum
-   * tamanho de amostra explica PT e PL colados.
+   * `tagAgreement` é diagnóstico de qualidade de tag e **não** orienta nada:
+   * a concordância entre o sinal que os votos revelam e o que a IA etiquetou.
+   * Perto de 0 as tags são ruído — medido em −0,10 na Câmara sobre 164 itens.
    */
   recovery: Record<AxisKey, RecoveryDiagnostics> | null;
+  /** Os partidos que nomearam as pontas de cada eixo (`orientAxis`). */
+  orientation: Record<AxisKey, { left: string[]; right: string[] }> | null;
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -503,6 +569,44 @@ export async function recomputePositioningIndex(
     });
   }
 
+  // ── Nomear as pontas de cada eixo recuperado ──────────────────────────────
+  //
+  // Depois de pontuar e antes das portas, porque orientar precisa das médias
+  // partidárias e as portas precisam do eixo já orientado. Um passo, um lugar —
+  // ver `orientAxis` para por que o bit vem da âncora e o que isso custa à
+  // porta 4.
+  const orientationByHouse = new Map<House, Record<AxisKey, { left: string[]; right: string[] }>>();
+  if (estimator === "pca") {
+    for (const house of [House.CAMARA, House.SENADO]) {
+      const inHouse = scored.filter((s) => s.house === house);
+      if (inHouse.length === 0) continue;
+      const orientation = {} as Record<AxisKey, { left: string[]; right: string[] }>;
+      for (const axis of AXIS_KEYS) {
+        const byParty = new Map<string, number[]>();
+        for (const s of inHouse) {
+          const value = s.position[axis].value;
+          if (value === null || !s.partyAcronym) continue;
+          const list = byParty.get(s.partyAcronym) ?? [];
+          list.push(value);
+          byParty.set(s.partyAcronym, list);
+        }
+        const partyMeans = [...byParty].map(([acronym, values]) => ({
+          acronym,
+          mean: values.reduce((sum, v) => sum + v, 0) / values.length,
+        }));
+        const { flip, left, right } = orientAxis(partyMeans);
+        if (flip === -1) {
+          for (const s of inHouse) {
+            const reading = s.position[axis];
+            if (reading.value !== null) reading.value = -reading.value;
+          }
+        }
+        orientation[axis] = { left, right };
+      }
+      orientationByHouse.set(house, orientation);
+    }
+  }
+
   // ── As portas, por casa ───────────────────────────────────────────────────
   //
   // **Mede tudo primeiro, julga depois.** A versão anterior decidia e saía com
@@ -574,6 +678,7 @@ export async function recomputePositioningIndex(
       })),
       itemsUncontrolled,
       recovery: recoveryByHouse.get(house) ?? null,
+      orientation: orientationByHouse.get(house) ?? null,
       unanchored: [],
       blocked: null,
     };

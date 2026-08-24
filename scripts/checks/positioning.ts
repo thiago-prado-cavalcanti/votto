@@ -121,31 +121,40 @@ ok(
   [...rec.items.values()].every((it) => Math.abs(it.weight - 1) < 1e-6),
 );
 ok(
-  "orienta pelas tags: +1 → direção +1",
+  "sinal canônico: a carga de maior módulo fica positiva",
   [...rec.items.values()].every((it) => it.direction === 1),
 );
-ok("concordância total com as tags", Math.abs(rec.diagnostics.tagAgreement - 1) < 1e-9);
+ok("concordância com as tags é medida, não imposta", Math.abs(rec.diagnostics.tagAgreement - 1) < 1e-9);
 
-// A ponta do eixo é decidida pelas tags e por nada mais: a mesma matriz, com as
-// tags invertidas, tem de devolver o eixo espelhado. É o que torna o estimador
-// robusto a tag ruim de item — só a soma dos sinais decide.
-const flipped = recoverAxis(
-  syn.votes,
-  synthetic(20, 10, -1).items,
-  new Map(),
-  { residualise: false },
+// **As tags não orientam o eixo.** A mesma matriz com as tags invertidas tem de
+// devolver as MESMAS cargas: um componente principal não tem sinal, e nomear as
+// pontas é ato externo que acontece em `orientAxis`, sobre médias partidárias.
+// Foi por orientar aqui que a rodada de 24/08/2026 publicou o espectro
+// espelhado — a concordância das tags era −0,10, e um bit decidido por ruído
+// inverte a leitura de 498 deputados.
+const flipped = recoverAxis(syn.votes, synthetic(20, 10, -1).items, new Map(), {
+  residualise: false,
+});
+ok(
+  "inverter as tags não mexe nas cargas",
+  [...rec.items.keys()].every(
+    (k) => rec.items.get(k)!.direction === flipped.items.get(k)!.direction,
+  ),
 );
 ok(
-  "tags invertidas → eixo espelhado",
-  [...flipped.items.values()].every((it) => it.direction === -1),
+  "e a concordância com as tags inverte de sinal, como diagnóstico",
+  Math.abs(flipped.diagnostics.tagAgreement + 1) < 1e-9,
 );
 
-// Sem tag alguma o componente ainda existe, mas a ponta é arbitrária — e o
-// diagnóstico tem de dizer isso em vez de publicar um sinal inventado.
+// Sem tag alguma o componente ainda existe e as cargas são as mesmas — só o
+// diagnóstico fica sem o que comparar.
 const blind = recoverAxis(syn.votes, synthetic(20, 10, 0).items, new Map(), {
   residualise: false,
 });
-ok("sem tags → marcado como não orientado", blind.diagnostics.unoriented);
+ok(
+  "sem tags as cargas continuam iguais",
+  blind.diagnostics.tagged === 0 && blind.items.size === rec.items.size,
+);
 
 // Uma votação unânime não tem variância, então o componente lhe dá carga zero
 // sem que ninguém precise reaplicar `discrimination()`.
