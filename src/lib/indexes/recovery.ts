@@ -109,8 +109,27 @@ export interface RecoveryOptions {
    * O preço: o resíduo é ortogonal ao governismo por construção, então a porta
    * de falseamento passa a medir ~0 e para de testar. Desligar serve para medir
    * o eixo cru e ver a porta 2 dizer algo.
+   *
+   * ── Um número entre 0 e 1 desenha a fronteira ───────────────────────────────
+   *
+   * `true` = 1 (desconta inteiro), `false` = 0. **O intervalo existe para mapear
+   * uma fronteira, não para escolher um valor conveniente**, e a distinção é o
+   * que separa calibragem de fabricação de resultado.
+   *
+   * A fronteira existe porque as duas dimensões não se separam. Medido na Câmara
+   * em 24/08/2026: sem desconto o PC1 mede governismo −0,83 e âncora 0,94; com
+   * desconto inteiro, −0,34 e 0,75. E o segundo componente não resgata nada —
+   * sem desconto ele mede governismo +0,66 e âncora **−0,17**, ou seja a
+   * ideologia não sobreviveu nele. Toda direção que correlaciona bem com a régua
+   * nesta matriz correlaciona bem com governismo.
+   *
+   * Varrer λ desenha a curva (ρ, governismo). Se ela não passar pela região que
+   * as portas exigem — ρ ≥ `MIN_ANCHOR_CORRELATION` **junto de** |governismo| ≤
+   * `MAX_GOVERNMENT_CORRELATION` —, então a região é vazia para este corpus, e
+   * isso é uma resposta. Escolher o λ que passa raspando nas duas seria
+   * fabricar o resultado com um parâmetro sem fonte.
    */
-  residualise?: boolean;
+  residualise?: boolean | number;
   /** Iterações da iteração de potência. 100 converge com folga nesta escala. */
   iterations?: number;
   /**
@@ -231,6 +250,7 @@ export function recoverAxis(
   opts: RecoveryOptions = {},
 ): RecoveryResult {
   const residualise = opts.residualise ?? true;
+  const lambda = residualise === true ? 1 : residualise === false ? 0 : residualise;
   const iterations = opts.iterations ?? 100;
   const skip = opts.skipComponents ?? 0;
 
@@ -284,7 +304,7 @@ export function recoverAxis(
   // todas as colunas daquele mandato. Coluna sem mandato conhecido passa
   // incólume: não há controle, e residualizar contra o governo errado é pior do
   // que não residualizar.
-  if (residualise) {
+  if (lambda > 0) {
     const controls = new Map<string, { g: Float64Array; has: Uint8Array }>();
     for (const [term, byAgent] of governismo) {
       const g = new Float64Array(N);
@@ -318,7 +338,7 @@ export function recoverAxis(
       const b = num / den;
       for (let i = 0; i < N; i++) {
         if (!present[j][i] || !has[i]) continue;
-        x[j][i] -= b * g[i];
+        x[j][i] -= lambda * b * g[i];
       }
     }
   }

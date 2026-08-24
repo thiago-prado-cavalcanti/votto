@@ -274,6 +274,21 @@ export interface HouseReport {
   /** Os partidos que nomearam as pontas de cada eixo (`orientAxis`). */
   orientation: Record<AxisKey, { left: string[]; right: string[] }> | null;
   /**
+   * O que **cada componente recuperado** mede, medido e não suposto.
+   *
+   * Hoje a atribuição é posicional — PC1 vira o eixo econômico, PC2 o social — e
+   * isso é uma suposição que nunca foi verificada. A medição de 24/08/2026 dá
+   * motivo para duvidar dela: sem residualizar, o PC1 correlaciona −0,83 com
+   * governismo, ou seja **PC1 é a dimensão governo↔oposição**, não a econômica.
+   * Se a ideologia sobrevive em algum lugar dessa matriz, é no PC2.
+   *
+   * Estas duas correlações, por componente, são o que permite **nomear** em vez
+   * de supor — a governista pela correlação com `governismo`, a ideológica pela
+   * âncora. É a diferença entre subtrair uma dimensão (que leva ideologia junto,
+   * medido: `--score=residual` derruba ρ para 0,56) e separar as duas.
+   */
+  components: Record<AxisKey, { governismo: number | null; anchor: number | null }> | null;
+  /**
    * A mesma correlação **sem pesar pela bancada**, sobre os mesmos pares.
    *
    * Impressa ao lado da outra de propósito: é o que diz quanto do resultado vem
@@ -373,7 +388,7 @@ export async function recomputePositioningIndex(
     /** De onde vêm direção e peso. Ausente é a metodologia em vigor. */
     estimator?: Estimator;
     /** Só para `pca`: residualizar as colunas contra o governismo antes de decompor. */
-    residualise?: boolean;
+    residualise?: boolean | number;
     /**
      * Só para `pca`: descontar o governismo também dos **escores**, não só das
      * cargas. Muda a ordenação, então é hipótese a medir — ver
@@ -820,8 +835,12 @@ export async function recomputePositioningIndex(
         // Um eixo que não pode ser orientado não pode ser publicado: das duas
         // pontas, nada diz qual é qual, e um sinal inventado é pior que nenhum
         // número. O PC2 continua existindo para a figura; o número sai.
+        // **Não zerar aqui.** Zerar é decisão de PUBLICAÇÃO, e tomá-la neste
+        // ponto destrói a MEDIÇÃO: o diagnóstico que diz o que cada componente
+        // mede roda depois, e sem os valores do PC2 ele não tem o que medir —
+        // que é exatamente a pergunta em aberto (se a ideologia sobreviveu no
+        // segundo componente). O eixo sem régua sai na escrita, lá embaixo.
         if (axis !== "economic") {
-          for (const s of inHouse) s.position[axis].value = null;
           orientation[axis] = { left: [], right: [] };
           continue;
         }
@@ -927,6 +946,7 @@ export async function recomputePositioningIndex(
       itemsByTerm,
       recovery: recoveryByHouse.get(house) ?? null,
       orientation: orientationByHouse.get(house) ?? null,
+      components: null,
       droppedNonPolicy: droppedByHouse.get(house) ?? 0,
       unanchored: [],
       blocked: null,
@@ -949,6 +969,43 @@ export async function recomputePositioningIndex(
     report.socialCollinear =
       report.axisCorrelation !== null &&
       Math.abs(report.axisCorrelation) > MAX_AXIS_CORRELATION;
+
+    // O que cada componente mede — antes de julgar, e para os dois eixos, porque
+    // a atribuição posicional (PC1 = econômico) é suposição e não medição.
+    if (estimator === "pca") {
+      const components = {} as Record<
+        AxisKey,
+        { governismo: number | null; anchor: number | null }
+      >;
+      for (const axis of AXIS_KEYS) {
+        const scored2 = inHouse.filter((s) => s.position[axis].value !== null);
+        const gp = scored2
+          .filter((s) => s.governismo !== null)
+          .map((s) => ({ a: s.position[axis].value as number, b: s.governismo as number }));
+        const byP = new Map<string, number[]>();
+        for (const s of scored2) {
+          if (!s.partyAcronym) continue;
+          const list = byP.get(s.partyAcronym) ?? [];
+          list.push(s.position[axis].value as number);
+          byP.set(s.partyAcronym, list);
+        }
+        const pairs: Array<{ a: number; b: number; w: number }> = [];
+        for (const [acronym, values] of byP) {
+          const anchor = anchorFor(acronym);
+          if (anchor === null) continue;
+          pairs.push({
+            a: values.reduce((sum, v) => sum + v, 0) / values.length,
+            b: anchor,
+            w: values.length,
+          });
+        }
+        components[axis] = {
+          governismo: gp.length >= MIN_HOUSE_AGENTS ? pearson(gp) : null,
+          anchor: weightedSpearman(pairs),
+        };
+      }
+      report.components = components;
+    }
 
     // Falseamento contra o governismo.
     const govPairs = withReading
@@ -1064,7 +1121,10 @@ export async function recomputePositioningIndex(
       // O eixo social colinear continua no detalhe — a figura o desenha — mas
       // sai da coluna publicada, que é a que uma lista ordena e uma placa
       // imprime como leitura própria.
-      const publishSocial = publish && !collinear.has(s.house);
+      // Sob o estimador de recuperação o eixo social não tem régua externa que
+      // o oriente, então não é publicável — a decisão que antes era tomada lá em
+      // cima, ao custo de apagar o diagnóstico.
+      const publishSocial = publish && !collinear.has(s.house) && estimator !== "pca";
       await db.publicAgent.update({
         where: { id: s.id },
         data: {

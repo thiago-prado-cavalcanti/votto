@@ -1356,6 +1356,50 @@ be), but the reference is a printed record, not a fintech app.
   supports it: `itemsByTerm` measures **41% of Câmara items from 2019–2022** and 59% from 2023+
   (Senado 68%/32%), so the sign inversion that identifies the two dimensions is present in the data.
 
+  **The frontier was then mapped, and the region the gates require is EMPTY for this corpus.**
+  Partial residualisation (`--residual=<λ>`, λ ∈ [0,1]) traces the trade-off directly. Câmara,
+  `--items=substantive`:
+
+  | λ | anchor ρ | governismo | spread |
+  |---|---|---|---|
+  | 0 | 0.94 | −0.83 | 112% |
+  | 0.7 | 0.93 | −0.62 | 120% |
+  | **0.8** | **0.83** | **−0.49** | 99% |
+  | 0.9 | 0.75 | −0.40 | 86% |
+  | 1 | 0.75 | −0.34 | 76% |
+
+  At the exact λ where governismo crosses inside `MAX_GOVERNMENT_CORRELATION` (0.8 → −0.49), ρ is
+  **0.83** — two hundredths under the bar. The curve grazes both limits and never enters
+  (ρ ≥ 0.85 **and** |gov| ≤ 0.50).
+
+  **λ = 0.8 is the number not to propose.** It clears gate 2 by 0.01, the parameter has no source,
+  and choosing the value that squeaks past two thresholds is fabricating the result — which is why
+  `RecoveryOptions.residualise` says, in writing and before the sweep was run, that the interval
+  exists to draw the frontier and not to pick a point on it. It would fail gate 4 regardless.
+  **The only λ with a justification is 1**: "remove a known confounder entirely" is a claim,
+  "remove 80% of it" is not.
+
+  **And the two-dimensional repair does not work here — measured, not assumed.** The plan was to
+  recover both dimensions and *name* them rather than subtract one. The second component does not
+  carry ideology: on the Câmara without residualisation PC2 measures governismo **+0.66** and anchor
+  **−0.17**; with residualisation, governismo **+0.81** and anchor **−0.92**. Every direction in this
+  matrix that correlates well with the ruler also correlates well with governismo. They are not two
+  dimensions to separate — they are one, exactly as Izumi and Zucco & Lauderdale describe, now
+  measured on our own data.
+
+  **So the standing position is: roll-call positioning is not publishable for Brazil under these
+  gates.** The best justified configuration is λ = 1, `--estimator=pca --items=substantive`, at
+  ρ 0.75 / governismo −0.34 / spread 76% / signal 5.7×, which fails gate 4 by 0.10. What is *not* in
+  doubt is the machinery: the estimator change took the Câmara from 0.63 to 0.75 and rescued the
+  Senado from unmeasurable, and gate 2 caught a 0.94 that would otherwise have been published as
+  ideology. `governismo` remains published on its own (§3.2), which is the reading a Brazilian
+  nominal vote actually supports.
+
+  Three ways forward, and all three are product decisions rather than engineering ones: restate the
+  provenance of `MIN_ANCHOR_CORRELATION` (see below) and decide what bar a *roll-call-against-survey*
+  comparison deserves; find a data source that is not roll calls; or accept publishing governismo
+  alone and retire the axes.
+
   **When a configuration finally passes, `/sobre` and `/metodologia` must be rewritten in the same
   change** — the formulas, the constants in force, the gates and what each one refuses. §2 makes
   `/metodologia` the page where every published constant is *imported* rather than typed, so a

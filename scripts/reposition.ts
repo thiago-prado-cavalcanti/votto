@@ -171,13 +171,20 @@ function parseScore(argv: string[]): boolean {
 }
 
 /** Ler `--residual=on|off`. Só tem efeito sob `--estimator=pca`. */
-function parseResidual(argv: string[]): boolean {
+function parseResidual(argv: string[]): boolean | number {
   const arg = argv.find((a) => a.startsWith("--residual"));
   if (!arg) return true;
   const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
   if (value === "on") return true;
   if (value === "off") return false;
-  console.error(`Valor inválido para --residual: "${value}". Use "on" ou "off".`);
+  const n = Number(value);
+  // Um número entre 0 e 1 desconta parcialmente, para desenhar a fronteira
+  // (ρ, governismo) — ver `RecoveryOptions.residualise`. Não é para escolher o
+  // valor que passa nas duas portas: isso seria fabricar o resultado.
+  if (Number.isFinite(n) && n >= 0 && n <= 1) return n;
+  console.error(
+    `Valor inválido para --residual: "${value}". Use "on", "off" ou um número entre 0 e 1.`,
+  );
   process.exit(1);
 }
 
@@ -356,6 +363,27 @@ async function main(): Promise<void> {
           `          tags concordam ${r.tagAgreement >= 0 ? "+" : ""}${r.tagAgreement.toFixed(2)} ` +
             `sobre ${r.tagged} itens etiquetados${tagFlag}`,
         );
+        // O que ESTE componente mede, medido. A atribuição posicional
+        // (PC1 = econômico) é suposição, e a medição pode contradizê-la.
+        const cm = h.components?.[axis];
+        if (cm) {
+          const g = cm.governismo === null ? "—" : cm.governismo.toFixed(2);
+          const a = cm.anchor === null ? "—" : cm.anchor.toFixed(2);
+          // O veredito compara os DOIS COMPONENTES entre si, não as duas
+          // correlações de um deles: na Câmara sem residualizar, o PC1 mede
+          // governismo −0,83 E âncora 0,94, e a segunda ser maior não diz nada —
+          // dentro de uma presidência a coalizão é ideologicamente ordenada, que
+          // é a razão de a porta 2 existir. Quem é a dimensão governista é
+          // aquele que correlaciona MAIS com governismo que o outro.
+          const other = axis === "economic" ? h.components?.social : h.components?.economic;
+          const verdict =
+            cm.governismo !== null && other?.governismo != null
+              ? Math.abs(cm.governismo) > Math.abs(other.governismo)
+                ? "  ← o mais governista dos dois"
+                : "  ← o menos governista dos dois"
+              : "";
+          console.log(`          governismo ${g} · âncora ${a}${verdict}`);
+        }
         const o = h.orientation?.[axis];
         if (o) {
           console.log(
