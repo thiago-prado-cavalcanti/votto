@@ -183,6 +183,35 @@ ok(
   pc2.diagnostics.explained < 1e-6 && rec.diagnostics.explained > 0.9,
 );
 
+// O piso de ruído de Marchenko–Pastur: `(1 + √(M/N))² / M`. É o que torna "17%
+// da variância" uma afirmação — sem ele, o mesmo percentual significa coisas
+// opostas numa matriz larga e numa estreita.
+{
+  const wide = recoverAxis(...Object.values(synthetic(250, 200, 1)).slice(0, 2) as [
+    RecoveryVote[],
+    RecoveryItem[],
+  ], new Map(), { residualise: false });
+  const narrow = recoverAxis(...Object.values(synthetic(30, 20, 1)).slice(0, 2) as [
+    RecoveryVote[],
+    RecoveryItem[],
+  ], new Map(), { residualise: false });
+  ok(
+    "piso de ruído cai quando a matriz é larga",
+    wide.diagnostics.noiseFloor < narrow.diagnostics.noiseFloor,
+    `(${(wide.diagnostics.noiseFloor * 100).toFixed(2)}% vs ${(narrow.diagnostics.noiseFloor * 100).toFixed(2)}%)`,
+  );
+  ok(
+    "clivagem perfeita fica muito acima do piso nos dois formatos",
+    wide.diagnostics.signalRatio > 2 && narrow.diagnostics.signalRatio > 2,
+  );
+  // A fórmula, conferida à mão sobre uma forma conhecida.
+  const expected = (1 + Math.sqrt(20 / 60)) ** 2 / 20;
+  ok(
+    "o piso bate com (1 + √(M/N))² / M",
+    Math.abs(narrow.diagnostics.noiseFloor - expected) < 1e-12,
+  );
+}
+
 // Residualizar contra o governismo tem de remover a clivagem que É o
 // governismo. Aqui os dois blocos são exatamente governo e oposição, então o
 // resíduo não deve sobrar nada — que é o teste de que o controle age.

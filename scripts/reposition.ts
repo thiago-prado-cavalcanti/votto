@@ -49,6 +49,7 @@ import {
   DEFAULT_WEIGHT_MODE,
   MIN_EFFECTIVE_ITEMS,
   POSITIONING_AXES,
+
   type AxisKey,
   type WeightMode,
 } from "@/lib/indexes/positioning";
@@ -56,6 +57,8 @@ import {
   anchorsFor,
   MAX_GOVERNMENT_CORRELATION,
   MIN_ANCHOR_CORRELATION,
+  MIN_ANCHOR_BENCH,
+  MIN_SIGNAL_RATIO,
   MIN_SPREAD_RATIO,
 } from "@/lib/domain/anchors";
 
@@ -221,10 +224,21 @@ async function main(): Promise<void> {
     }
     if (h.anchorCorrelation !== null) {
       const flag = h.anchorCorrelation < MIN_ANCHOR_CORRELATION ? "  ⚠" : "";
+      // Os dois números lado a lado, sempre: o piso de bancada não pode ser um
+      // lugar onde a conclusão muda sem que dê para ver.
+      const all =
+        h.anchorCorrelationAll !== null && h.anchorCorrelationAll !== h.anchorCorrelation
+          ? ` · sem piso de bancada ρ=${h.anchorCorrelationAll.toFixed(2)}`
+          : "";
       console.log(
         `        âncora BLS ρ=${h.anchorCorrelation.toFixed(2)} ` +
-          `(mín ${MIN_ANCHOR_CORRELATION}) · cobertura ${(h.anchorCoverage * 100).toFixed(0)}% das cadeiras${flag}`,
+          `(mín ${MIN_ANCHOR_CORRELATION}) · cobertura ${(h.anchorCoverage * 100).toFixed(0)}% das cadeiras${all}${flag}`,
       );
+      if (h.thinBenches.length > 0) {
+        console.log(
+          `          fora da correlação, bancada < ${MIN_ANCHOR_BENCH}: ${h.thinBenches.join(", ")}`,
+        );
+      }
     }
     if (h.axisCorrelation !== null) {
       console.log(
@@ -257,19 +271,28 @@ async function main(): Promise<void> {
       // qualidade da classificação: perto de 0, a IA etiquetou ruído.
       for (const axis of ["economic", "social"] as const) {
         const r = h.recovery[axis];
-        const flag = Math.abs(r.tagAgreement) < 0.3 ? "  ⚠ tags ≈ ruído" : "";
+        // "17% da variância" não é afirmação sozinha: o piso de ruído depende
+        // do formato da matriz. A razão contra Marchenko–Pastur é o número.
+        const ratioFlag = r.signalRatio < MIN_SIGNAL_RATIO ? "  ⚠ ≈ ruído" : "";
+        const tagFlag = Math.abs(r.tagAgreement) < 0.3 ? "  ⚠ tags ≈ ruído" : "";
         console.log(
           `        ${axis === "economic" ? "PC1 econômico" : "PC2 social   "} — ` +
-            `${(r.explained * 100).toFixed(0)}% da variância · ` +
-            `tags concordam ${r.tagAgreement >= 0 ? "+" : ""}${r.tagAgreement.toFixed(2)} ` +
-            `sobre ${r.tagged} itens etiquetados${flag}`,
+            `${(r.explained * 100).toFixed(0)}% da variância contra piso de ruído de ` +
+            `${(r.noiseFloor * 100).toFixed(1)}% = ${r.signalRatio.toFixed(2)}× ` +
+            `(mín ${MIN_SIGNAL_RATIO}×)${ratioFlag}`,
+        );
+        console.log(
+          `          tags concordam ${r.tagAgreement >= 0 ? "+" : ""}${r.tagAgreement.toFixed(2)} ` +
+            `sobre ${r.tagged} itens etiquetados${tagFlag}`,
         );
         const o = h.orientation?.[axis];
         if (o) {
           console.log(
             o.left.length > 0
               ? `          pontas nomeadas por ${o.left.join(", ")} ↔ ${o.right.join(", ")}`
-              : "          ⚠ sem âncora suficiente para nomear as pontas — eixo não orientado",
+              : axis === "economic"
+                ? "          ⚠ sem âncora suficiente para nomear as pontas — eixo não orientado"
+                : "          sem régua externa para o eixo social — número não publicado (só a figura)",
           );
         }
       }

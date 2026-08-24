@@ -350,3 +350,49 @@ export function stdDev(values: number[]): number | null {
  * assentado, o ponto exato se recalibra contra o histograma real.
  */
 export const MIN_SPREAD_RATIO = 0.4;
+
+/**
+ * `MIN_ANCHOR_BENCH` — bancada medida mínima para um partido entrar na
+ * correlação com a âncora.
+ *
+ * A porta 4 compara ordenação partidária por Spearman, e Spearman trata todo
+ * ponto igual: sem este piso, a média de **dois** deputados pesa o mesmo que a
+ * de cento e onze. Uma média de dois membros não estima a posição de um
+ * partido — estima aqueles dois. Medido na Câmara em 24/08/2026 com o estimador
+ * de recuperação: CIDADANIA (n = 2) leu como o partido mais à direita da casa,
+ * onde a régua a põe no centro, e sozinha custou dez postos de erro.
+ *
+ * Isto **não afrouxa** a exigência, transfere-a: é a mesma disciplina que
+ * `MIN_EFFECTIVE_ITEMS` aplica a uma pessoa, `MIN_GOVERNISMO_OPPORTUNITIES` a um
+ * governismo e `MIN_COVERAGE` a um índice de qualidade. A porta 4 era o único
+ * lugar do código que aceitava dado fino sem reclamar. E o que impede o piso de
+ * virar escolha de conveniência é `MIN_ANCHOR_COVERAGE`, que continua exigindo
+ * 60% das cadeiras medidas dentro dos partidos ancorados — excluir bancada
+ * pequena é barato em partidos e caro em cadeiras, então não há como esvaziar a
+ * porta por aqui.
+ *
+ * Dez, e o número tem de ser calibrado contra o histograma como os outros
+ * (§11). O relatório imprime ρ **com e sem** o piso, de propósito: um limiar que
+ * mudasse a conclusão sem que os dois números aparecessem lado a lado seria
+ * indistinguível de escolher o resultado.
+ */
+export const MIN_ANCHOR_BENCH = 10;
+
+/**
+ * `MIN_SIGNAL_RATIO` — quantas vezes acima do ruído um componente recuperado
+ * precisa estar para ser publicado.
+ *
+ * O denominador é a borda de Marchenko–Pastur (`RecoveryDiagnostics.noiseFloor`):
+ * a fatia de variância que o primeiro componente alcançaria sobre dados iid da
+ * mesma forma de matriz. Sem essa normalização, "17% da variância" não é
+ * afirmação nenhuma — o piso de ruído de uma matriz 498 × 217 é 1,3% e o de uma
+ * 67 × 38 é 8%, seis vezes maior, então o mesmo percentual significa coisas
+ * opostas nas duas casas.
+ *
+ * Dois é provisório e conservador, e o relatório imprime a razão para calibrar.
+ * As três medições de 24/08/2026: Câmara PC1 **13,4×**, Câmara PC2 **2,4×**,
+ * Senado PC1 **1,85×** — o que reprova o Senado por um motivo que nenhuma das
+ * outras portas enxergava, e que não é falta de itens: é que 38 votações sobre
+ * 67 senadores não sustentam um componente distinguível de ruído.
+ */
+export const MIN_SIGNAL_RATIO = 2;

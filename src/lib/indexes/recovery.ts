@@ -149,6 +149,27 @@ export interface RecoveryDiagnostics {
   /** Fatia da variância da matriz capturada pelo componente. */
   explained: number;
   /**
+   * Fatia que o componente principal alcançaria sobre **puro ruído** da mesma
+   * forma de matriz.
+   *
+   * Não é intuição: é a borda de Marchenko–Pastur. O maior autovalor da matriz
+   * de covariância de dados iid converge para `(1 + √(M/N))²` vezes o autovalor
+   * médio, então em fração da variância total isso é `(1 + √(M/N))² / M`. É a
+   * régua padrão da teoria de matrizes aleatórias para decidir se um componente
+   * é sinal, e o que ela mede aqui é o único jeito de responder "17% é muito?" —
+   * porque a resposta depende inteiramente do formato da matriz. Na Câmara
+   * (498 × 217) o piso é ~1,3% e o PC1 mede 17%, treze vezes acima. No Senado
+   * (67 × 38) o piso salta para ~8%, e o PC1 de 15% fica a menos de duas vezes
+   * dele.
+   *
+   * É aproximação: MP supõe entradas iid de variância igual, e as nossas colunas
+   * são ±1 centradas com taxas de preenchimento diferentes. Serve como piso de
+   * ordem de grandeza, que é o que se pede dela.
+   */
+  noiseFloor: number;
+  /** `explained / noiseFloor`. Abaixo de ~1 o componente é indistinguível de ruído. */
+  signalRatio: number;
+  /**
    * Concordância entre os sinais recuperados e os etiquetados, sobre os itens
    * com tag, em −1..1. **Diagnóstico de qualidade de tag, e nada mais** — não
    * orienta o eixo.
@@ -204,7 +225,15 @@ export function recoverAxis(
 
   const empty: RecoveryResult = {
     items: new Map(),
-    diagnostics: { agents: N, items: M, explained: 0, tagAgreement: 0, tagged: 0 },
+    diagnostics: {
+      agents: N,
+      items: M,
+      explained: 0,
+      noiseFloor: 1,
+      signalRatio: 0,
+      tagAgreement: 0,
+      tagged: 0,
+    },
   };
   if (N === 0 || M === 0) return empty;
 
@@ -344,9 +373,19 @@ export function recoverAxis(
     }
   }
 
+  const noiseFloor = M > 0 && N > 0 ? (1 + Math.sqrt(M / N)) ** 2 / M : 1;
+
   return {
     items: out,
-    diagnostics: { agents: N, items: M, explained, tagAgreement, tagged },
+    diagnostics: {
+      agents: N,
+      items: M,
+      explained,
+      noiseFloor,
+      signalRatio: noiseFloor > 0 ? explained / noiseFloor : 0,
+      tagAgreement,
+      tagged,
+    },
   };
 }
 

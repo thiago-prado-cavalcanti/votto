@@ -79,7 +79,9 @@ import {
   MIN_SPREAD_RATIO,
   stdDev,
   MAX_AXIS_CORRELATION,
+  MIN_ANCHOR_BENCH,
   MIN_ANCHOR_COVERAGE,
+  MIN_SIGNAL_RATIO,
   pearson,
   spearman,
   UNANCHORED_PARTIES,
@@ -177,6 +179,7 @@ export type HouseBlock =
   | { kind: "agents"; agents: number }
   | { kind: "orientations" }
   | { kind: "degenerate" }
+  | { kind: "noise"; ratio: number }
   | { kind: "governismo"; correlation: number }
   | { kind: "spread"; ratio: number | null }
   | { kind: "anchor"; correlation: number | null; coverage: number };
@@ -235,6 +238,16 @@ export interface HouseReport {
   recovery: Record<AxisKey, RecoveryDiagnostics> | null;
   /** Os partidos que nomearam as pontas de cada eixo (`orientAxis`). */
   orientation: Record<AxisKey, { left: string[]; right: string[] }> | null;
+  /**
+   * A mesma correlação **sem** o piso de bancada de `MIN_ANCHOR_BENCH`.
+   *
+   * Impressa ao lado da outra de propósito: um limiar que mudasse a conclusão
+   * sem que os dois números aparecessem juntos seria indistinguível de escolher
+   * o resultado.
+   */
+  anchorCorrelationAll: number | null;
+  /** Partidos ancorados que ficaram fora da correlação por bancada fina. */
+  thinBenches: string[];
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -582,6 +595,21 @@ export async function recomputePositioningIndex(
       if (inHouse.length === 0) continue;
       const orientation = {} as Record<AxisKey, { left: string[]; right: string[] }>;
       for (const axis of AXIS_KEYS) {
+        // **O eixo social não tem régua externa.** `anchors.ts` publica só
+        // esquerda-direita (Bolognesi, BLS-9); não há GALTAN por partido
+        // brasileiro ali. Orientar o PC2 por `anchorFor` seria nomear as pontas
+        // de um eixo de costumes com uma régua econômica — e foi exatamente o
+        // que a rodada de 24/08/2026 imprimiu, com polos idênticos nos dois
+        // eixos.
+        //
+        // Um eixo que não pode ser orientado não pode ser publicado: das duas
+        // pontas, nada diz qual é qual, e um sinal inventado é pior que nenhum
+        // número. O PC2 continua existindo para a figura; o número sai.
+        if (axis !== "economic") {
+          for (const s of inHouse) s.position[axis].value = null;
+          orientation[axis] = { left: [], right: [] };
+          continue;
+        }
         const byParty = new Map<string, number[]>();
         for (const s of inHouse) {
           const value = s.position[axis].value;
@@ -670,6 +698,8 @@ export async function recomputePositioningIndex(
       anchorCorrelation: null,
       anchorCoverage: 0,
       spreadRatio: null,
+      anchorCorrelationAll: null,
+      thinBenches: [],
       axisCorrelation: null,
       socialCollinear: false,
       contaminationBands: BANDS.map((maxContamination, i) => ({
@@ -719,8 +749,10 @@ export async function recomputePositioningIndex(
       byParty.set(s.partyAcronym, list);
     }
     const anchorPairs: Array<{ a: number; b: number }> = [];
+    const allAnchorPairs: Array<{ a: number; b: number }> = [];
     let anchoredSeats = 0;
     const unanchored: string[] = [];
+    const thinBenches: string[] = [];
     for (const [acronym, values] of byParty) {
       const anchor = anchorFor(acronym);
       if (anchor === null) {
@@ -728,15 +760,26 @@ export async function recomputePositioningIndex(
         unanchored.push(`${acronym} (${why})`);
         continue;
       }
-      anchoredSeats += values.length;
-      anchorPairs.push({
+      const pair = {
         a: values.reduce((sum, v) => sum + v, 0) / values.length,
         b: anchor,
-      });
+      };
+      allAnchorPairs.push(pair);
+      // A bancada fina fica fora da correlação e **dentro** da cobertura: é o
+      // que impede o piso de virar uma forma de esvaziar a porta. Ver
+      // `MIN_ANCHOR_BENCH`.
+      anchoredSeats += values.length;
+      if (values.length < MIN_ANCHOR_BENCH) {
+        thinBenches.push(`${acronym} (n=${values.length})`);
+        continue;
+      }
+      anchorPairs.push(pair);
     }
     report.unanchored = unanchored.sort();
+    report.thinBenches = thinBenches.sort();
     report.anchorCoverage = withReading.length > 0 ? anchoredSeats / withReading.length : 0;
     report.anchorCorrelation = spearman(anchorPairs);
+    report.anchorCorrelationAll = spearman(allAnchorPairs);
 
     // Dispersão contra a régua, sobre exatamente os pares que a porta 3 usa.
     const ourSd = stdDev(anchorPairs.map((p) => p.a));
@@ -745,10 +788,16 @@ export async function recomputePositioningIndex(
       ourSd !== null && anchorSd !== null && anchorSd > 0 ? ourSd / anchorSd : null;
 
     // ── Julgamento, na ordem em que as portas se fecham ─────────────────────
+    const signal = report.recovery?.economic.signalRatio ?? null;
     if (items < MIN_HOUSE_ITEMS) {
       report.blocked = { kind: "items", items };
     } else if (withReading.length < MIN_HOUSE_AGENTS) {
       report.blocked = { kind: "agents", agents: withReading.length };
+    } else if (signal !== null && signal < MIN_SIGNAL_RATIO) {
+      // Antes de tudo o que pressupõe sinal. Um componente indistinguível de
+      // ruído ainda produz ordenação, dispersão e correlação — e todas as três
+      // seriam leituras de matriz aleatória.
+      report.blocked = { kind: "noise", ratio: signal };
     } else if (govPairs.length < MIN_HOUSE_AGENTS) {
       report.blocked = { kind: "orientations" };
     } else if (govR === null) {
@@ -1099,6 +1148,11 @@ export function describeBlock(block: HouseBlock): string {
       return "sem orientação do bloco Governo — o teste de falseamento não pode rodar";
     case "degenerate":
       return "o governismo não varia entre os agentes — o teste de falseamento não discrimina";
+    case "noise":
+      return (
+        `o componente recuperado está a ${block.ratio.toFixed(2)}× o piso de ruído ` +
+        `(mínimo ${MIN_SIGNAL_RATIO}×) — indistinguível de matriz aleatória do mesmo formato`
+      );
     case "governismo":
       return `o eixo econômico correlaciona ${block.correlation.toFixed(2)} com governismo (máximo ${MAX_GOVERNMENT_CORRELATION})`;
     case "spread":
