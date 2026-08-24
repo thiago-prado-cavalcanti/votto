@@ -53,6 +53,7 @@ import {
   type AxisKey,
   type ItemStats,
   type Position,
+  type ThemeDimensions,
   type AxisKey as PositioningAxisKey,
   type ItemWeigher,
   type ScorableVote,
@@ -93,6 +94,37 @@ import { AgentType, EntityStatus, House, Prisma, VoteValue } from "@/generated/p
 
 /** Piso de variância para um membro, evitando divisão por zero no encolhimento. */
 const VARIANCE_FLOOR = 25;
+
+/**
+ * Quantos temas por consulta ao buscar os votos dos parlamentares.
+ *
+ * Existe por memória e não por velocidade. Uma casa com quinhentos agentes e mil
+ * temas votados são quinhentas mil linhas; o pico não é a matriz — que é
+ * `Float64Array` e cabe em poucos megabytes — mas o array de objetos que o
+ * Prisma materializa de uma vez. Duzentos temas mantêm cada lote na ordem de
+ * grandeza que o índice já processava antes do backfill de 2019.
+ */
+const VOTE_FETCH_BATCH = 200;
+
+/**
+ * O que um tema sem passagem pela IA vale para o estimador de recuperação.
+ *
+ * Admissível e sem tag: entra na matriz, e `MIN_DISCRIMINATION` decide se
+ * carrega informação. Nenhum eixo marcado significa que ele não orienta nada —
+ * só contribui com a coluna de votos, que é tudo o que o componente principal
+ * pede.
+ */
+const UNTAGGED_DIMENSIONS: ThemeDimensions = {
+  version: 0,
+  scoreable: true,
+  reason: null,
+  economic: null,
+  social: null,
+  salience: 0,
+  yesMeans: null,
+  evidence: null,
+  legacy: false,
+};
 
 /**
  * De onde saem a direção e o peso de cada votação.
@@ -407,13 +439,45 @@ export async function recomputePositioningIndex(
   const governismo =
     governismoByTerm.get(CURRENT_TERM.key) ?? new Map<string, { score: number; base: number }>();
 
-  // ── Temas classificados, e o que a casa fez com cada um ───────────────────
+  // ── Os temas que entram na conta ──────────────────────────────────────────
+  //
+  // **E aqui os dois estimadores pedem coisas diferentes.** O de tags precisa de
+  // `direction` e `confidence` por item, então só admite tema classificado. O de
+  // recuperação não precisa de nenhum dos dois — direção e peso saem do
+  // componente principal, e a ponta do eixo sai da âncora —, então restringir a
+  // matriz ao que a IA alcançou seria jogar fora a maior parte do acervo por uma
+  // exigência que não é dele.
+  //
+  // Isso não é hipotético: medido em 24/08/2026, depois de um backfill que
+  // trouxe as votações de 2019 em diante, a matriz continuou com **217 itens** —
+  // exatamente os que a fila da IA tinha classificado. Milhares de votações
+  // nominais caíram fora deste `where`, e o piso de ruído de Marchenko–Pastur,
+  // que cai com M, continuou onde estava.
   const themes = await db.theme.findMany({
-    where: { status: EntityStatus.ACTIVE, dimensions: { not: Prisma.DbNull } },
+    where:
+      estimator === "pca"
+        ? { status: EntityStatus.ACTIVE, votes: { some: { voterType: "AGENT" } } }
+        : { status: EntityStatus.ACTIVE, dimensions: { not: Prisma.DbNull } },
     select: { id: true, kid: true, dimensions: true },
   });
+  // **"Nunca classificado" e "classificado e excluído" não são a mesma coisa**, e
+  // `parseDimensions(null)` devolve `scoreable: false` para os dois. A diferença
+  // é informação real: `dimensions = null` é a fila da IA que ainda não chegou
+  // ali, enquanto `scoreable: false` com tag presente é o classificador dizendo
+  // que a votação não é sobre mérito — homenagem, questão de ordem, requerimento
+  // procedural. O segundo continua excluído nos dois estimadores; o primeiro
+  // entra na matriz do `pca`, que não precisa de tag para nada.
   const dimensionsByTheme = new Map(
-    themes.map((t) => [t.id, { kid: t.kid, dims: parseDimensions(t.dimensions) }]),
+    themes.map((t) => [
+      t.id,
+      {
+        kid: t.kid,
+        dims:
+          estimator === "pca" && t.dimensions === null
+            ? UNTAGGED_DIMENSIONS
+            : parseDimensions(t.dimensions),
+      },
+    ]),
   );
   const scorableThemeIds = [...dimensionsByTheme.entries()]
     .filter(([, t]) => t.dims.scoreable)
@@ -423,12 +487,25 @@ export async function recomputePositioningIndex(
   // propósito: `Vote` guarda a POSIÇÃO do agente sobre a proposição, uma por
   // tema, que é o que um eixo de valor pergunta. O livro de votações responde
   // "compareceu?", que é outra pergunta e pertence à assiduidade.
-  const votes = scorableThemeIds.length
-    ? await db.vote.findMany({
-        where: { voterType: "AGENT", themeId: { in: scorableThemeIds } },
-        select: { agentId: true, themeId: true, value: true, occurredAt: true },
-      })
-    : [];
+  //
+  // **Em lotes de temas**, e a razão é a mesma de `computeCohesion`: com o
+  // acervo de 2019 em diante isto passa de ~100 mil linhas para a ordem do
+  // milhão, e o pico de memória é o array que o Prisma devolve, não a matriz
+  // (que é `Float64Array` e cabe em alguns megabytes). O laço reduz cada lote
+  // para os mapas compactos e solta as linhas.
+  const votes: Array<{
+    agentId: string | null;
+    themeId: string;
+    value: VoteValue;
+    occurredAt: Date | null;
+  }> = [];
+  for (let i = 0; i < scorableThemeIds.length; i += VOTE_FETCH_BATCH) {
+    const batch = await db.vote.findMany({
+      where: { voterType: "AGENT", themeId: { in: scorableThemeIds.slice(i, i + VOTE_FETCH_BATCH) } },
+      select: { agentId: true, themeId: true, value: true, occurredAt: true },
+    });
+    votes.push(...batch);
+  }
 
   // A que mandato cada tema pertence — pela data da votação que fixou a posição
   // vigente. É o que permite medir contaminação e residualizar cada coluna
