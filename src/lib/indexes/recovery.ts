@@ -82,6 +82,21 @@ export interface RecoveryItem {
   themeId: string;
   /** Direção etiquetada, ou 0 quando o eixo não é tocado. Só orienta. */
   tagDirection: -1 | 0 | 1;
+  /**
+   * Mandato presidencial a que a votação pertence (`src/lib/domain/terms.ts`),
+   * ou `null` fora de todos.
+   *
+   * Decide contra **qual** governismo esta coluna é residualizada. Um corpus que
+   * atravessa uma troca de presidente é a única identificação disponível para
+   * separar ideologia de apoio ao Executivo — mas só funciona se o controle
+   * souber de quem era o governo naquele dia. Residualizar uma votação de 2020
+   * contra a coalizão de 2026 não é um controle ruim, é o controle de outra
+   * coisa.
+   *
+   * `null` deixa a coluna **sem residualizar**, o que é o comportamento certo:
+   * não há controle disponível, e inventar um seria pior que não ter.
+   */
+  term?: string | null;
 }
 
 export interface RecoveryOptions {
@@ -204,13 +219,15 @@ function mean(xs: number[]): number {
  * entra como "sem informação" e não como posição intermediária — que é o
  * tratamento certo: quem não votou não votou no meio.
  *
- * `governismo` é opcional por agente; quem não tem não participa da
- * residualização daquela coluna, mas continua na decomposição.
+ * `governismo` é indexado por **mandato** e depois por agente, e cada coluna usa
+ * o do seu próprio `term` — ver `RecoveryItem.term`. Quem não tem governismo
+ * medido naquele mandato não participa da residualização daquela coluna, mas
+ * continua na decomposição.
  */
 export function recoverAxis(
   votes: RecoveryVote[],
   items: RecoveryItem[],
-  governismo: Map<string, number>,
+  governismo: Map<string, Map<string, number>>,
   opts: RecoveryOptions = {},
 ): RecoveryResult {
   const residualise = opts.residualise ?? true;
@@ -262,32 +279,45 @@ export function recoverAxis(
   }
 
   // ── Residualizar contra o governismo, coluna por coluna ───────────────────
+  //
+  // Um vetor de controle **por mandato**, centrado uma vez e reaproveitado por
+  // todas as colunas daquele mandato. Coluna sem mandato conhecido passa
+  // incólume: não há controle, e residualizar contra o governo errado é pior do
+  // que não residualizar.
   if (residualise) {
-    const g = new Float64Array(N);
-    const hasG = new Uint8Array(N);
-    const gs: number[] = [];
-    for (const [id, score] of governismo) {
-      const i = agentIndex.get(id);
-      if (i === undefined) continue;
-      g[i] = score;
-      hasG[i] = 1;
-      gs.push(score);
+    const controls = new Map<string, { g: Float64Array; has: Uint8Array }>();
+    for (const [term, byAgent] of governismo) {
+      const g = new Float64Array(N);
+      const has = new Uint8Array(N);
+      const seen: number[] = [];
+      for (const [id, score] of byAgent) {
+        const i = agentIndex.get(id);
+        if (i === undefined) continue;
+        g[i] = score;
+        has[i] = 1;
+        seen.push(score);
+      }
+      const gMean = mean(seen);
+      for (let i = 0; i < N; i++) g[i] = has[i] ? g[i] - gMean : 0;
+      controls.set(term, { g, has });
     }
-    const gMean = mean(gs);
-    for (let i = 0; i < N; i++) g[i] = hasG[i] ? g[i] - gMean : 0;
 
     for (let j = 0; j < M; j++) {
+      const term = items[j].term;
+      const control = term ? controls.get(term) : undefined;
+      if (!control) continue;
+      const { g, has } = control;
       let num = 0;
       let den = 0;
       for (let i = 0; i < N; i++) {
-        if (!present[j][i] || !hasG[i]) continue;
+        if (!present[j][i] || !has[i]) continue;
         num += x[j][i] * g[i];
         den += g[i] * g[i];
       }
       if (den <= 0) continue;
       const b = num / den;
       for (let i = 0; i < N; i++) {
-        if (!present[j][i] || !hasG[i]) continue;
+        if (!present[j][i] || !has[i]) continue;
         x[j][i] -= b * g[i];
       }
     }

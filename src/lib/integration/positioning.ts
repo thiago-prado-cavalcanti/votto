@@ -88,6 +88,7 @@ import {
   UNANCHORED_PARTIES,
   anchorKey,
 } from "@/lib/domain/anchors";
+import { CURRENT_TERM, currentTermStart, termOf } from "@/lib/domain/terms";
 import { AgentType, EntityStatus, House, Prisma, VoteValue } from "@/generated/prisma";
 
 /** Piso de variância para um membro, evitando divisão por zero no encolhimento. */
@@ -398,7 +399,13 @@ export async function recomputePositioningIndex(
   }
 
   // ── Governismo, a partir do livro de votações ─────────────────────────────
-  const governismo = await computeGovernismo();
+  const governismoByTerm = await computeGovernismo();
+  // **Publicado é o mandato corrente, e só ele.** "Votou com Bolsonaro" e
+  // "votou com Lula" são fatos diferentes; a média dos dois não é fato nenhum,
+  // e um deputado reeleito teria a coluna somando os dois governos sob um nome.
+  // O corpus longo existe para o CONTROLE (ver `terms.ts`), não para a leitura.
+  const governismo =
+    governismoByTerm.get(CURRENT_TERM.key) ?? new Map<string, { score: number; base: number }>();
 
   // ── Temas classificados, e o que a casa fez com cada um ───────────────────
   const themes = await db.theme.findMany({
@@ -419,9 +426,18 @@ export async function recomputePositioningIndex(
   const votes = scorableThemeIds.length
     ? await db.vote.findMany({
         where: { voterType: "AGENT", themeId: { in: scorableThemeIds } },
-        select: { agentId: true, themeId: true, value: true },
+        select: { agentId: true, themeId: true, value: true, occurredAt: true },
       })
     : [];
+
+  // A que mandato cada tema pertence — pela data da votação que fixou a posição
+  // vigente. É o que permite medir contaminação e residualizar cada coluna
+  // contra o governismo *do governo que estava lá*, e não contra o de agora.
+  const termByTheme = new Map<string, string | null>();
+  for (const v of votes) {
+    const term = termOf(v.occurredAt);
+    if (term && !termByTheme.has(v.themeId)) termByTheme.set(v.themeId, term);
+  }
 
   // Divisão do plenário por tema — a discriminação de cada item.
   const tallies = new Map<string, { yes: number; no: number }>();
@@ -449,9 +465,13 @@ export async function recomputePositioningIndex(
 
   const statsByTheme = new Map<string, ItemStats>();
   for (const [themeId, tally] of tallies) {
+    // Contra o governismo do mandato DAQUELA votação. Usar o do mandato
+    // corrente mediria a coalizão de 2026 numa votação de 2020, o que não é uma
+    // medida ruim — é uma medida de outra coisa.
+    const termGovernismo = governismoByTerm.get(termByTheme.get(themeId) ?? "");
     const pairs: Array<{ a: number; b: number }> = [];
     for (const v of votesByTheme.get(themeId) ?? []) {
-      const g = governismo.get(v.agentId);
+      const g = termGovernismo?.get(v.agentId);
       if (g === undefined) continue;
       pairs.push({ a: v.sign, b: g.score });
     }
@@ -482,7 +502,12 @@ export async function recomputePositioningIndex(
   const weigherByHouse = new Map<House, ItemWeigher>();
   const recoveryByHouse = new Map<House, Record<PositioningAxisKey, RecoveryDiagnostics>>();
   if (estimator === "pca") {
-    const govScores = new Map([...governismo].map(([id, g]) => [id, g.score]));
+    const govByTerm = new Map(
+      [...governismoByTerm].map(([term, byAgent]) => [
+        term,
+        new Map([...byAgent].map(([id, g]) => [id, g.score])),
+      ]),
+    );
     for (const house of [House.CAMARA, House.SENADO]) {
       const houseAgents = agents.filter((a) => agentHouse.get(a.id) === house);
       if (houseAgents.length === 0) continue;
@@ -504,7 +529,7 @@ export async function recomputePositioningIndex(
         if (weights === "clean") {
           if (stats.contamination === null || stats.contamination > maxContamination) continue;
         }
-        matrixItems.push({ themeId, tagDirection: 0 });
+        matrixItems.push({ themeId, tagDirection: 0, term: termByTheme.get(themeId) ?? null });
         kidByTheme.set(themeId, theme.kid);
       }
 
@@ -527,10 +552,10 @@ export async function recomputePositioningIndex(
       const diagnostics = {} as Record<PositioningAxisKey, RecoveryDiagnostics>;
       for (const [skipComponents, axis] of AXIS_KEYS.entries()) {
         const oriented = matrixItems.map((it) => ({
-          themeId: it.themeId,
+          ...it,
           tagDirection: dimensionsByTheme.get(it.themeId)?.dims[axis]?.direction ?? 0,
         }));
-        const result = recoverAxis(matrixVotes, oriented, govScores, {
+        const result = recoverAxis(matrixVotes, oriented, govByTerm, {
           residualise,
           skipComponents,
         });
@@ -964,14 +989,18 @@ export async function recomputePositioningIndex(
  * abstenção — conta como não apoio. Obstrução é o instrumento da oposição, não
  * indiferença.
  */
-async function computeGovernismo(): Promise<Map<string, { score: number; base: number }>> {
+async function computeGovernismo(): Promise<
+  Map<string, Map<string, { score: number; base: number }>>
+> {
   const rollCalls = await db.rollCall.findMany({
     where: { governmentPosition: { not: null } },
-    select: { id: true, governmentPosition: true },
+    select: { id: true, governmentPosition: true, occurredAt: true },
   });
   if (rollCalls.length === 0) return new Map();
 
-  const orientation = new Map(rollCalls.map((r) => [r.id, r.governmentPosition]));
+  const orientation = new Map(
+    rollCalls.map((r) => [r.id, { want: r.governmentPosition, term: termOf(r.occurredAt) }]),
+  );
   const rollCallVotes = await db.rollCallVote.findMany({
     where: { rollCallId: { in: rollCalls.map((r) => r.id) } },
     select: { agentId: true, rollCallId: true, value: true },
@@ -979,19 +1008,25 @@ async function computeGovernismo(): Promise<Map<string, { score: number; base: n
 
   const tally = new Map<string, { with: number; total: number }>();
   for (const v of rollCallVotes) {
-    const want = orientation.get(v.rollCallId);
-    if (!want) continue;
-    const bucket = tally.get(v.agentId) ?? { with: 0, total: 0 };
+    const meta = orientation.get(v.rollCallId);
+    if (!meta?.want || !meta.term) continue;
+    const key = `${meta.term}:${v.agentId}`;
+    const bucket = tally.get(key) ?? { with: 0, total: 0 };
     bucket.total++;
-    if (v.value === want) bucket.with++;
-    tally.set(v.agentId, bucket);
+    if (v.value === meta.want) bucket.with++;
+    tally.set(key, bucket);
   }
 
-  const out = new Map<string, { score: number; base: number }>();
-  for (const [agentId, b] of tally) {
+  const out = new Map<string, Map<string, { score: number; base: number }>>();
+  for (const [key, b] of tally) {
     if (b.total < MIN_GOVERNISMO_OPPORTUNITIES) continue;
+    const split = key.indexOf(":");
+    const term = key.slice(0, split);
+    const agentId = key.slice(split + 1);
+    const byAgent = out.get(term) ?? new Map<string, { score: number; base: number }>();
     // O denominador viaja junto com a razão: a leitura não é publicável sem ele.
-    out.set(agentId, { score: Math.round((b.with / b.total) * 100), base: b.total });
+    byAgent.set(agentId, { score: Math.round((b.with / b.total) * 100), base: b.total });
+    out.set(term, byAgent);
   }
   return out;
 }
@@ -1122,7 +1157,14 @@ function memberList(members: AgentScore[], axis: AxisKey): Array<Member<string>>
  * inverso do tamanho da bancada, que é o artefato que Desposato documentou.
  */
 async function computeCohesion(): Promise<Map<string, number>> {
+  // **Recortado ao mandato corrente**, por duas razões que apontam para o mesmo
+  // lugar. A de conteúdo: coesão é uma propriedade da bancada de agora, e uma
+  // média sobre sete anos misturaria duas legislaturas e as trocas de partido
+  // entre elas. A de escala: sem `where`, isto lia a tabela inteira de
+  // `RollCallVote` para a memória — algo em torno de um milhão de linhas depois
+  // do backfill de 2019, contra ~80 mil antes.
   const rows = await db.rollCallVote.findMany({
+    where: { rollCall: { occurredAt: { gte: currentTermStart() } } },
     select: { rollCallId: true, value: true, agent: { select: { partyId: true } } },
   });
 

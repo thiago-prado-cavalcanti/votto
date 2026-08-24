@@ -110,6 +110,7 @@ function synthetic(nPerBloc: number, nItems: number, tagDirection: -1 | 0 | 1) {
   const items: RecoveryItem[] = Array.from({ length: nItems }, (_, j) => ({
     themeId: `t${j}`,
     tagDirection,
+    term: "2023",
   }));
   return { votes, items };
 }
@@ -188,14 +189,10 @@ ok(
 // da variância" uma afirmação — sem ele, o mesmo percentual significa coisas
 // opostas numa matriz larga e numa estreita.
 {
-  const wide = recoverAxis(...Object.values(synthetic(250, 200, 1)).slice(0, 2) as [
-    RecoveryVote[],
-    RecoveryItem[],
-  ], new Map(), { residualise: false });
-  const narrow = recoverAxis(...Object.values(synthetic(30, 20, 1)).slice(0, 2) as [
-    RecoveryVote[],
-    RecoveryItem[],
-  ], new Map(), { residualise: false });
+  const w = synthetic(250, 200, 1);
+  const n = synthetic(30, 20, 1);
+  const wide = recoverAxis(w.votes, w.items, new Map(), { residualise: false });
+  const narrow = recoverAxis(n.votes, n.items, new Map(), { residualise: false });
   ok(
     "piso de ruído cai quando a matriz é larga",
     wide.diagnostics.noiseFloor < narrow.diagnostics.noiseFloor,
@@ -252,17 +249,42 @@ ok(
 // Residualizar contra o governismo tem de remover a clivagem que É o
 // governismo. Aqui os dois blocos são exatamente governo e oposição, então o
 // resíduo não deve sobrar nada — que é o teste de que o controle age.
-const govMap = new Map<string, number>();
+const govTerm = new Map<string, number>();
 for (let i = 0; i < 20; i++) {
-  govMap.set(`esq${i}`, 100);
-  govMap.set(`dir${i}`, 0);
+  govTerm.set(`esq${i}`, 100);
+  govTerm.set(`dir${i}`, 0);
 }
+const govMap = new Map([["2023", govTerm]]);
 const resid = recoverAxis(syn.votes, syn.items, govMap, { residualise: true });
 ok(
   "residualizar remove a clivagem governista",
   resid.diagnostics.explained < 1e-6,
   `(explicada ${(resid.diagnostics.explained * 100).toFixed(1)}%)`,
 );
+
+// O controle é POR MANDATO: uma coluna de outro governo não pode ser
+// residualizada contra a coalizão de hoje, e uma sem mandato conhecido passa
+// incólume. Sem isso, um corpus que atravessa a troca de presidente — que é a
+// única identificação disponível para separar ideologia de governismo — mediria
+// 2020 com a régua de 2026.
+const otherTerm = recoverAxis(
+  syn.votes,
+  syn.items.map((it) => ({ ...it, term: "2019" })),
+  govMap,
+  { residualise: true },
+);
+ok(
+  "coluna de outro mandato não é residualizada contra este",
+  otherTerm.diagnostics.explained > 0.9,
+  `(explicada ${(otherTerm.diagnostics.explained * 100).toFixed(1)}%)`,
+);
+const noTerm = recoverAxis(
+  syn.votes,
+  syn.items.map((it) => ({ ...it, term: null })),
+  govMap,
+  { residualise: true },
+);
+ok("coluna sem mandato passa incólume", noTerm.diagnostics.explained > 0.9);
 ok(
   "e sem residualizar ela continua lá",
   rec.diagnostics.explained > 0.9,
