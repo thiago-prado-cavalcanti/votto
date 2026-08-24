@@ -445,8 +445,67 @@ Retuning needs no re-import: every input is a stored column, so `npm run requali
 twin of `npm run reprioritize`. Bands (Muito acima / Acima / Na média / Abaixo da média) are
 comparative, never evaluative, and their cut points are **provisional** — see §11.
 
+### 3.4 Alinhamento por área
+
+Where §3.1 asks *how much* a citizen and an agent agree, this asks **where**. Same arithmetic,
+partitioned by policy area: `src/lib/indexes/area-alignment.ts`, on the map in
+`src/lib/domain/policy-areas.ts`.
+
+**It is the reading that replaced the spectrum**, and the reason it survives where §3.2 failed is
+epistemic, not technical: *"you voted the same way on 30% of the rights bills you both voted on"* is
+a **count over public documents**, defensible bill by bill. It needs no external ruler, so there is
+nothing for an anchor gate to refuse. Positioning had to assert where a person sits on a spectrum,
+and that assertion failed three independent tests.
+
+**Nine areas, and the number was measured rather than chosen.** A panel of four independent
+classifiers proposed 7 and 9; what decided was the count of voted-and-classified bills per area —
+none of the nine falls under the floor of ten in either house (Câmara 24–86, Senado 15–75). Two
+fusions that looked necessary died when measured: **Saúde with Trabalho** (the scenario justifying
+it assumed ×0.6 of the agenda and the assumption was wrong) and **Ambiente with Infraestrutura**.
+
+`Ciência e Tecnologia` is **not** an area of its own, and the reason is the sharpest illustration of
+the two readings having different denominators: **195 bills filed against 7 voted** in the Câmara.
+Congress legislates heavily on technology and almost never takes it to a nominal vote, so as an
+agreement axis it would be permanently empty — while on the authorship radar it is robust. It rides
+inside "Educação e Ciência" so the name does not disappear.
+
+Three rules the map lives by, each written down because each already failed once:
+
+- **The wording of the official label decides**, not our reading of the subject. `codTema 67` is
+  called *"**Direito** e Defesa do Consumidor"* and goes to Segurança e Justiça; `codTema 74` is
+  called *"**Política**, Partidos e Eleições"* and goes to Gestão pública. Two neighbouring subjects,
+  opposite outcomes, one written rule — which is what lets someone holding the official lists check
+  every line without agreeing with anyone's taste.
+- **The Senado is matched by hierarchy path, never by leaf label.** Its environmental leaves are
+  called `Proteção aos Animais`, `Mudanças Climáticas`, `Vegetação Nativa` — not one contains the
+  word "ambiente", and matching by name silently lost **90 of its 125** environmental bills.
+  `SENADO_RULES` is therefore an *ordered* list of path prefixes, escapes before macro defaults.
+- **A theme belongs to every area it touches.** Both taxonomies are multi-label (2.16 labels per
+  bill in the Câmara), so a sanitation bill is health *and* infrastructure. The consequence is that
+  **the slices do not sum to 100%** — correct for agreement, where each axis is independent, and
+  wrong for an authorship distribution, which will have to use `relevance === 1` instead.
+
+**`Direitos Humanos e Minorias` is not comparable across houses.** In the Câmara it is 1.605
+occurrences — 34% of the whole corpus, an umbrella; in the Senado the label of *identical name* is
+worth **29**, because children, women, PcD, the elderly and indigenous peoples are carved into
+leaves of their own. Source defect, not map defect — but that axis must never be compared between
+houses without normalising by each house's own base rate, for the same reason `pooling.ts` refuses
+to mix houses.
+
+**One filter is still missing and does not belong to the map.** `Rádio e TV` is 589 of the Senado's
+2.730 bills — 21.6%, and 96% of the Comunicações branch — and they are broadcasting concession
+decrees ratified near-unanimously. They are not parliamentary authorship (outside the authorship
+reading) and they do not divide the house (inert in the agreement one), but they would inflate
+`infraestrutura`. The cut is by **proposition type**, mechanical, and belongs in the importer.
+
+**Two readings, and they are not symmetric.** Vote distribution across areas is a trait of the
+*citizen*, who chooses what to vote on — not of the parliamentarian, who reacts to the agenda the
+Mesa set. Measured: across 623 deputies the per-area distribution of votes varies ±5 points around
+a shared profile, because it is the agenda and not the person. What *is* the parliamentarian's own
+choice is what they **file**, which is the second radar (§11).
+
 > The data architecture is **not rigid**. Propose improvements where pertinent — especially around
-> how themes map to positioning dimensions.
+> how themes map to policy areas.
 
 ---
 
@@ -1102,8 +1161,13 @@ be), but the reference is a printed record, not a fintech app.
   public filters. `Select` replaces the OS dropdown with a paper listbox while the native
   `<select>` stays the field, so filtering still works without JavaScript; radio and checkbox are
   ink ballot marks. Never reach for a bare `<input>`, `<select>` or `type="radio"`.
-- The **animated `AlignmentRadar`** is the brand made visible — and, until per-area alignment is
-  computed, it is illustration, not a chart (see §11). `PositioningChart` is its **still form**:
+- The **animated `AlignmentRadar`** is the brand made visible, and its data is still fictional —
+  but the construction now draws a measured reading too: `AreaAgreementPlate` is the same curve,
+  same mass and same terracotta colourway, stopped, over the per-area agreement of §3.4. What
+  changed in `src/lib/viz/figure.ts` to allow it is `blobThrough`, which takes explicit points
+  instead of evenly spaced values — a reading can have **holes**, and an axis without enough basis
+  must not be drawn at zero, because zero is a reading and absence is not.
+  `PositioningChart` is the other **still form**:
   the same mass, hairlines and hand-drawn petal (geometry shared in `src/lib/viz/figure.ts`),
   leaning toward the quadrant a voting record points at. Unlike the radar it is **not**
   illustration — it draws a measured reading, and on a record page it never appears alone:
@@ -1569,10 +1633,32 @@ be), but the reference is a printed record, not a fintech app.
 - Confirm hosting choice (Fly.io `gru` vs AWS `sa-east-1`).
 - Which state/municipal bodies expose open data, and whether the AI enrichment step (§4) should run
   on the newly imported bills (it is not wired into the importers yet).
-- **Per-area alignment** for the hero's `AlignmentRadar`: it needs themes grouped by policy area
-  and the alignment maths run per group (the same computation as `citizenAgentAlignments`, only
-  partitioned). Until then the radar's data is fictional and it stands as brand illustration —
-  see `docs/design.md` §4.
+- **Per-area alignment is built** (§3.4); the hero's `AlignmentRadar` stays fictional until it is
+  fed from the same computation.
+- **The authorship radar — what a parliamentarian chooses to work on — is costed but unbuilt.**
+  It is the honest answer to "which areas is this person about", and it needs a *complete*
+  enumeration of what they filed: measured on 2026-08-24, our corpus holds **14** of Erika Kokay's
+  bills against the **≥100** the Câmara publishes since 2023, because the importer sweeps what
+  *moved* and not what was *filed*. Publishing a focus profile from a movement-selected 14% would
+  describe the Câmara's agenda filtered through her, not her interests.
+  The cost is measured and the Câmara is cheap, because three properties of the API compose:
+  `codTema` accepts repetition as a union, `idDeputadoAutor` combines with it, and `itens=1` plus
+  the `last` link yields the exact count **without downloading any bill**. That is
+  **513 × (9 areas + 1 total) ≈ 5.100 requests, ~40 min**. The Senado is 5× dearer for a sixth of
+  the people — its `/processo` list has no classification filter (six parameter names tested, all
+  ignored), so classification only comes from the per-bill detail: ~16.500 distinct bills over the
+  legislature, ~2 h.
+  Two things to settle before building: the reading must be **descriptive, never inferential**
+  (*"of the 47 bills he filed, 40% are health"* is a census with no error bar; *"he cares about
+  health"* is an estimate of a latent trait, and with the median deputy filing 4–6 bills that
+  estimate is ±40pp); and the slices need `relevance === 1`, since the labels are multi-label and
+  otherwise sum to 2.16 rather than 1 — while the code comment in `senado.ts` says the Senado does
+  **not** order its classifications, so "principal" is our convention there and must be measured
+  before it is trusted.
+- **`Direitos Humanos` may be a modifier rather than a subject**, and it is one Jaccard away from
+  being known. It is 34.1% of every Câmara bill at 2.16 labels per bill; if it co-occurs above ~0.3
+  with Saúde or Educação, that axis is an adjective and measures the classifier's vocabulary rather
+  than a policy area. Two of the four panel classifiers reached this suspicion by different routes.
 - The two layouts the humanized study proposed but this pass did not apply: agent/party lists as
   tables, and the theme detail page with the official record as a marginal column
   (`docs/design.md` §7).
