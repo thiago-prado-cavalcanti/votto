@@ -33,7 +33,14 @@ import {
   type RecoveryVote,
 } from "@/lib/indexes/recovery";
 import { pool, betweenVariance, agreementIndex, excessCohesion, expectedRandomAgreement } from "@/lib/indexes/pooling";
-import { spearman, pearson, anchorFor, stdDev, MIN_SPREAD_RATIO } from "@/lib/domain/anchors";
+import {
+  spearman,
+  weightedSpearman,
+  pearson,
+  anchorFor,
+  stdDev,
+  MIN_SPREAD_RATIO,
+} from "@/lib/domain/anchors";
 
 let fails = 0;
 const ok = (name: string, cond: boolean, extra = "") => {
@@ -403,6 +410,31 @@ ok("PL à direita", (anchorFor("PL") ?? 0) > 0.7, `(${anchorFor("PL")})`);
 ok("PSOL à esquerda", (anchorFor("PSOL") ?? 0) < -0.7, `(${anchorFor("PSOL")})`);
 ok("UNIÃO agora tem âncora", anchorFor("União Brasil") !== null || anchorFor("UNIÃO") !== null, `(${anchorFor("UNIÃO")})`);
 ok("PCdoB normaliza", anchorFor("PCdoB") !== null);
+// Spearman ponderado: com pesos iguais tem de ser o Spearman de sempre, e um
+// par de peso desprezível não pode decidir a correlação. É o que substituiu o
+// piso de bancada — excluir jogava fora informação e bloqueou o Senado inteiro.
+{
+  const good = [
+    { a: 1, b: 1, w: 50 },
+    { a: 2, b: 2, w: 50 },
+    { a: 3, b: 3, w: 50 },
+    { a: 4, b: 4, w: 50 },
+  ];
+  const withOutlier = [...good, { a: 5, b: -10, w: 1 }];
+  const unweighted = spearman(withOutlier.map((p) => ({ a: p.a, b: p.b })));
+  const weighted = weightedSpearman(withOutlier);
+  ok(
+    "pesos iguais reproduzem o Spearman simples",
+    Math.abs((weightedSpearman(good) ?? 0) - (spearman(good.map((p) => ({ a: p.a, b: p.b }))) ?? 1)) <
+      1e-9,
+  );
+  ok(
+    "bancada de um não decide a correlação",
+    weighted !== null && unweighted !== null && weighted > unweighted + 0.2,
+    `(ponderado ${weighted?.toFixed(2)} vs simples ${unweighted?.toFixed(2)})`,
+  );
+}
+
 ok("spearman perfeito = 1", Math.abs(spearman([{a:1,b:1},{a:2,b:2},{a:3,b:3},{a:4,b:4}])! - 1) < 1e-9);
 ok("spearman invertido = −1", Math.abs(spearman([{a:1,b:4},{a:2,b:3},{a:3,b:2},{a:4,b:1}])! + 1) < 1e-9);
 ok("pearson perfeito = 1", Math.abs(pearson([{a:1,b:2},{a:2,b:4},{a:3,b:6}])! - 1) < 1e-9);

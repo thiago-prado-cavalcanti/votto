@@ -60,7 +60,6 @@ import {
   anchorsFor,
   MAX_GOVERNMENT_CORRELATION,
   MIN_ANCHOR_CORRELATION,
-  MIN_ANCHOR_BENCH,
   MIN_SIGNAL_RATIO,
   MIN_SPREAD_RATIO,
 } from "@/lib/domain/anchors";
@@ -252,17 +251,12 @@ async function main(): Promise<void> {
       // lugar onde a conclusão muda sem que dê para ver.
       const all =
         h.anchorCorrelationAll !== null && h.anchorCorrelationAll !== h.anchorCorrelation
-          ? ` · sem piso de bancada ρ=${h.anchorCorrelationAll.toFixed(2)}`
+          ? ` · sem pesar pela bancada ρ=${h.anchorCorrelationAll.toFixed(2)}`
           : "";
       console.log(
         `        âncora BLS ρ=${h.anchorCorrelation.toFixed(2)} ` +
           `(mín ${MIN_ANCHOR_CORRELATION}) · cobertura ${(h.anchorCoverage * 100).toFixed(0)}% das cadeiras${all}${flag}`,
       );
-      if (h.thinBenches.length > 0) {
-        console.log(
-          `          fora da correlação, bancada < ${MIN_ANCHOR_BENCH}: ${h.thinBenches.join(", ")}`,
-        );
-      }
     }
     if (h.axisCorrelation !== null) {
       console.log(

@@ -193,6 +193,37 @@ export function anchorsFor(acronym: string | null | undefined): {
  * médio.
  */
 export function spearman(pairs: Array<{ a: number; b: number }>): number | null {
+  return weightedSpearman(pairs.map((p) => ({ ...p, w: 1 })));
+}
+
+/**
+ * Spearman com cada par pesado pelo tamanho da bancada.
+ *
+ * ── Por que pesar em vez de excluir ──────────────────────────────────────────
+ *
+ * Spearman trata todo ponto igual, então a média de **dois** deputados conta
+ * tanto quanto a de cento e onze. O problema é real — uma bancada de dois não
+ * estima a posição de um partido, estima aqueles dois — mas a primeira correção
+ * tentada aqui foi um piso de bancada, e **medir mostrou que a forma estava
+ * errada**:
+ *
+ *  - na Câmara custou nas duas vezes em que rodou (ρ 0,79 → 0,78 e depois
+ *    0,71 → 0,65), porque tirava junto partidos bem colocados;
+ *  - e no Senado **bloqueou a casa inteira**: com 81 senadores repartidos em
+ *    quinze partidos, quase nenhuma bancada alcança dez, os pares ficaram
+ *    vazios e a dispersão saiu `null` — a casa reprovou por não ter sido
+ *    medida, que é o pior desfecho possível para uma porta.
+ *
+ * Excluir joga fora informação para conter ruído. Pesar contém o ruído e mantém
+ * a informação: o par continua lá, valendo o que a bancada dele sustenta. Não
+ * precisa de limiar e não tem casa em que se comporte mal.
+ *
+ * Mecânica: postos com empates pela média, depois **Pearson ponderado sobre os
+ * postos** — que é a definição de Spearman quando todos os pesos são 1.
+ */
+export function weightedSpearman(
+  pairs: Array<{ a: number; b: number; w: number }>,
+): number | null {
   const n = pairs.length;
   if (n < 3) return null;
 
@@ -212,7 +243,10 @@ export function spearman(pairs: Array<{ a: number; b: number }>): number | null 
 
   const ra = rank(pairs.map((p) => p.a));
   const rb = rank(pairs.map((p) => p.b));
-  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const w = pairs.map((p) => (Number.isFinite(p.w) && p.w > 0 ? p.w : 0));
+  const sumW = w.reduce((s, x) => s + x, 0);
+  if (sumW <= 0) return null;
+  const mean = (xs: number[]) => xs.reduce((s, x, i) => s + w[i] * x, 0) / sumW;
   const ma = mean(ra);
   const mb = mean(rb);
 
@@ -220,9 +254,9 @@ export function spearman(pairs: Array<{ a: number; b: number }>): number | null 
   let da = 0;
   let db = 0;
   for (let i = 0; i < n; i++) {
-    num += (ra[i] - ma) * (rb[i] - mb);
-    da += (ra[i] - ma) ** 2;
-    db += (rb[i] - mb) ** 2;
+    num += w[i] * (ra[i] - ma) * (rb[i] - mb);
+    da += w[i] * (ra[i] - ma) ** 2;
+    db += w[i] * (rb[i] - mb) ** 2;
   }
   if (da === 0 || db === 0) return null;
   return num / Math.sqrt(da * db);
@@ -350,33 +384,6 @@ export function stdDev(values: number[]): number | null {
  * assentado, o ponto exato se recalibra contra o histograma real.
  */
 export const MIN_SPREAD_RATIO = 0.4;
-
-/**
- * `MIN_ANCHOR_BENCH` — bancada medida mínima para um partido entrar na
- * correlação com a âncora.
- *
- * A porta 4 compara ordenação partidária por Spearman, e Spearman trata todo
- * ponto igual: sem este piso, a média de **dois** deputados pesa o mesmo que a
- * de cento e onze. Uma média de dois membros não estima a posição de um
- * partido — estima aqueles dois. Medido na Câmara em 24/08/2026 com o estimador
- * de recuperação: CIDADANIA (n = 2) leu como o partido mais à direita da casa,
- * onde a régua a põe no centro, e sozinha custou dez postos de erro.
- *
- * Isto **não afrouxa** a exigência, transfere-a: é a mesma disciplina que
- * `MIN_EFFECTIVE_ITEMS` aplica a uma pessoa, `MIN_GOVERNISMO_OPPORTUNITIES` a um
- * governismo e `MIN_COVERAGE` a um índice de qualidade. A porta 4 era o único
- * lugar do código que aceitava dado fino sem reclamar. E o que impede o piso de
- * virar escolha de conveniência é `MIN_ANCHOR_COVERAGE`, que continua exigindo
- * 60% das cadeiras medidas dentro dos partidos ancorados — excluir bancada
- * pequena é barato em partidos e caro em cadeiras, então não há como esvaziar a
- * porta por aqui.
- *
- * Dez, e o número tem de ser calibrado contra o histograma como os outros
- * (§11). O relatório imprime ρ **com e sem** o piso, de propósito: um limiar que
- * mudasse a conclusão sem que os dois números aparecessem lado a lado seria
- * indistinguível de escolher o resultado.
- */
-export const MIN_ANCHOR_BENCH = 10;
 
 /**
  * `MIN_SIGNAL_RATIO` — quantas vezes acima do ruído um componente recuperado

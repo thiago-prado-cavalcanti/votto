@@ -81,11 +81,11 @@ import {
   MIN_SPREAD_RATIO,
   stdDev,
   MAX_AXIS_CORRELATION,
-  MIN_ANCHOR_BENCH,
   MIN_ANCHOR_COVERAGE,
   MIN_SIGNAL_RATIO,
   pearson,
   spearman,
+  weightedSpearman,
   UNANCHORED_PARTIES,
   anchorKey,
 } from "@/lib/domain/anchors";
@@ -273,15 +273,13 @@ export interface HouseReport {
   /** Os partidos que nomearam as pontas de cada eixo (`orientAxis`). */
   orientation: Record<AxisKey, { left: string[]; right: string[] }> | null;
   /**
-   * A mesma correlação **sem** o piso de bancada de `MIN_ANCHOR_BENCH`.
+   * A mesma correlação **sem pesar pela bancada**, sobre os mesmos pares.
    *
-   * Impressa ao lado da outra de propósito: um limiar que mudasse a conclusão
-   * sem que os dois números aparecessem juntos seria indistinguível de escolher
-   * o resultado.
+   * Impressa ao lado da outra de propósito: é o que diz quanto do resultado vem
+   * da ponderação, e sem ela ao lado a ponderação seria indistinguível de uma
+   * escolha conveniente.
    */
   anchorCorrelationAll: number | null;
-  /** Partidos ancorados que ficaram fora da correlação por bancada fina. */
-  thinBenches: string[];
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -841,7 +839,6 @@ export async function recomputePositioningIndex(
       anchorCoverage: 0,
       spreadRatio: null,
       anchorCorrelationAll: null,
-      thinBenches: [],
       axisCorrelation: null,
       socialCollinear: false,
       contaminationBands: BANDS.map((maxContamination, i) => ({
@@ -890,11 +887,14 @@ export async function recomputePositioningIndex(
       list.push(s.position.economic.value as number);
       byParty.set(s.partyAcronym, list);
     }
-    const anchorPairs: Array<{ a: number; b: number }> = [];
-    const allAnchorPairs: Array<{ a: number; b: number }> = [];
+    // Todo partido ancorado entra, **pesado pela bancada**. Ver
+    // `weightedSpearman`: excluir bancada fina foi tentado, custou nas duas
+    // rodadas da Câmara e bloqueou o Senado inteiro por deixar a dispersão sem
+    // pares. Pesar contém o mesmo ruído sem jogar fora a informação, e não
+    // precisa de limiar.
+    const anchorPairs: Array<{ a: number; b: number; w: number }> = [];
     let anchoredSeats = 0;
     const unanchored: string[] = [];
-    const thinBenches: string[] = [];
     for (const [acronym, values] of byParty) {
       const anchor = anchorFor(acronym);
       if (anchor === null) {
@@ -902,26 +902,19 @@ export async function recomputePositioningIndex(
         unanchored.push(`${acronym} (${why})`);
         continue;
       }
-      const pair = {
+      anchoredSeats += values.length;
+      anchorPairs.push({
         a: values.reduce((sum, v) => sum + v, 0) / values.length,
         b: anchor,
-      };
-      allAnchorPairs.push(pair);
-      // A bancada fina fica fora da correlação e **dentro** da cobertura: é o
-      // que impede o piso de virar uma forma de esvaziar a porta. Ver
-      // `MIN_ANCHOR_BENCH`.
-      anchoredSeats += values.length;
-      if (values.length < MIN_ANCHOR_BENCH) {
-        thinBenches.push(`${acronym} (n=${values.length})`);
-        continue;
-      }
-      anchorPairs.push(pair);
+        w: values.length,
+      });
     }
     report.unanchored = unanchored.sort();
-    report.thinBenches = thinBenches.sort();
     report.anchorCoverage = withReading.length > 0 ? anchoredSeats / withReading.length : 0;
-    report.anchorCorrelation = spearman(anchorPairs);
-    report.anchorCorrelationAll = spearman(allAnchorPairs);
+    report.anchorCorrelation = weightedSpearman(anchorPairs);
+    // Sem peso, ao lado: é o número que diz quanto do resultado vem da
+    // ponderação, e sem ele a ponderação seria indistinguível de escolha.
+    report.anchorCorrelationAll = spearman(anchorPairs);
 
     // Dispersão contra a régua, sobre exatamente os pares que a porta 3 usa.
     const ourSd = stdDev(anchorPairs.map((p) => p.a));
