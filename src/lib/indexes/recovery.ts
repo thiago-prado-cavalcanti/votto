@@ -466,6 +466,60 @@ function hashUnit(j: number): number {
   return ((h >>> 0) / 0xffffffff) * 2 - 1;
 }
 
+/**
+ * Tirar de uma leitura a parte que um covariável explica, preservando a média.
+ *
+ * `residual_i = valor_i − b · (cov_i − média(cov))`, com `b` por mínimos
+ * quadrados sobre quem tem os dois. Preservar a média não é cosmético: o eixo
+ * está numa escala nomeada (−100 = Estado, +100 = Mercado), então deslocá-lo
+ * mudaria o que "zero" significa sem que nada tivesse sido medido.
+ *
+ * ── Por que isto é diferente de residualizar a matriz ────────────────────────
+ *
+ * `recoverAxis` já desconta o governismo **coluna por coluna**, antes de
+ * decompor, e é de lá que saem peso e direção. Mas a pontuação usa os **votos
+ * crus**, para o eixo continuar sendo uma média de ±1 e a escala não precisar de
+ * constante inventada. O preço aparece na medição: na Câmara de 24/08/2026 o
+ * eixo recuperado ainda correlaciona **−0,45** com o governismo, colado no
+ * limite de 0,50 da porta 2, e o histograma sai bimodal com o bloco do governo
+ * de um lado.
+ *
+ * Isto ataca esse resíduo, e **muda a ordenação** — não é transformação
+ * monótona —, então é hipótese medível e não arrumação. O que se ganha ou perde
+ * é empírico: remover o governismo pode comprimir a separação esquerda↔direita
+ * (sob Lula os dois andam juntos) ou pode afinar a ordenação *dentro* do bloco de
+ * direita, que é onde o ρ está sendo perdido hoje.
+ *
+ * Não é publicável enquanto não for medido e adotado: `recomputePositioningIndex`
+ * recusa a gravar com ele ligado.
+ */
+export function residualiseScores(
+  rows: Array<{ value: number; covariate: number | null }>,
+): number[] {
+  const paired = rows.filter(
+    (r): r is { value: number; covariate: number } => r.covariate !== null,
+  );
+  if (paired.length < 3) return rows.map((r) => r.value);
+
+  const covMean = mean(paired.map((r) => r.covariate));
+  const valMean = mean(paired.map((r) => r.value));
+  let num = 0;
+  let den = 0;
+  for (const r of paired) {
+    const dc = r.covariate - covMean;
+    num += dc * (r.value - valMean);
+    den += dc * dc;
+  }
+  if (den <= 0) return rows.map((r) => r.value);
+  const b = num / den;
+
+  // Quem não tem covariável fica como está: descontar zero seria afirmar que o
+  // governismo daquele agente é a média, e "não medido" não é "na média".
+  return rows.map((r) =>
+    r.covariate === null ? r.value : r.value - b * (r.covariate - covMean),
+  );
+}
+
 /** Normalizar em L2 no lugar. Devolve a norma anterior, 0 se degenerado. */
 function normalise(v: Float64Array): number {
   let ss = 0;

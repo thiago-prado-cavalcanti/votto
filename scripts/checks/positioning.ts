@@ -28,6 +28,7 @@ import {
 } from "@/lib/indexes/positioning";
 import {
   recoverAxis,
+  residualiseScores,
   type RecoveryItem,
   type RecoveryVote,
 } from "@/lib/indexes/recovery";
@@ -210,6 +211,42 @@ ok(
     "o piso bate com (1 + √(M/N))² / M",
     Math.abs(narrow.diagnostics.noiseFloor - expected) < 1e-12,
   );
+}
+
+// `residualiseScores` desconta um covariável dos escores preservando a média —
+// e MUDA a ordenação, que é o que faz dele hipótese medível e não cosmética.
+{
+  const rows = [
+    { value: 10, covariate: 0 },
+    { value: 20, covariate: 10 },
+    { value: 30, covariate: 20 },
+    { value: 40, covariate: 30 },
+  ];
+  const res = residualiseScores(rows);
+  ok(
+    "covariável perfeitamente colinear → resíduo constante na média",
+    res.every((v) => Math.abs(v - 25) < 1e-9),
+  );
+  ok(
+    "média preservada: zero continua significando o que significava",
+    Math.abs(res.reduce((a, b) => a + b, 0) / res.length - 25) < 1e-9,
+  );
+  const noCov = residualiseScores([
+    { value: 10, covariate: null },
+    { value: 20, covariate: null },
+    { value: 30, covariate: null },
+  ]);
+  ok(
+    "sem covariável em ninguém, nada muda",
+    noCov[0] === 10 && noCov[1] === 20 && noCov[2] === 30,
+  );
+  const mixed = residualiseScores([
+    { value: 10, covariate: 0 },
+    { value: 20, covariate: 10 },
+    { value: 30, covariate: 20 },
+    { value: 99, covariate: null },
+  ]);
+  ok("quem não tem covariável fica como está", mixed[3] === 99);
 }
 
 // Residualizar contra o governismo tem de remover a clivagem que É o

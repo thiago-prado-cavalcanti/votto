@@ -60,6 +60,7 @@ import {
 } from "@/lib/indexes/positioning";
 import {
   recoverAxis,
+  residualiseScores,
   type RecoveryDiagnostics,
   type RecoveryItem,
   type RecoveryVote,
@@ -317,6 +318,12 @@ export async function recomputePositioningIndex(
     estimator?: Estimator;
     /** Só para `pca`: residualizar as colunas contra o governismo antes de decompor. */
     residualise?: boolean;
+    /**
+     * Só para `pca`: descontar o governismo também dos **escores**, não só das
+     * cargas. Muda a ordenação, então é hipótese a medir — ver
+     * `residualiseScores`.
+     */
+    scoreResidual?: boolean;
   } = {},
 ): Promise<{
   agents: AgentScore[];
@@ -330,12 +337,15 @@ export async function recomputePositioningIndex(
   minEffectiveItems: number;
   /** O estimador que rodou. */
   estimator: Estimator;
+  /** Se o governismo foi descontado também dos escores. */
+  scoreResidual: boolean;
 }> {
   const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
   const maxContamination = opts.maxContamination ?? CLEAN_MAX_CONTAMINATION;
   const minEffectiveItems = opts.minEffectiveItems ?? MIN_EFFECTIVE_ITEMS;
   const estimator = opts.estimator ?? "tags";
   const residualise = opts.residualise ?? true;
+  const scoreResidual = opts.scoreResidual ?? false;
 
   // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
   // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
@@ -350,7 +360,8 @@ export async function recomputePositioningIndex(
   const experimental =
     weights !== DEFAULT_WEIGHT_MODE ||
     minEffectiveItems !== MIN_EFFECTIVE_ITEMS ||
-    estimator !== "tags";
+    estimator !== "tags" ||
+    scoreResidual;
   if (!opts.dryRun && experimental) {
     const why =
       estimator !== "tags"
@@ -580,6 +591,35 @@ export async function recomputePositioningIndex(
       governismo: governismo.get(agent.id)?.score ?? null,
       governismoBase: governismo.get(agent.id)?.base ?? null,
     });
+  }
+
+  // ── Descontar o governismo dos escores, se for a medição pedida ───────────
+  //
+  // Antes de orientar, porque a orientação lê médias partidárias e elas mudam.
+  if (estimator === "pca" && scoreResidual) {
+    for (const house of [House.CAMARA, House.SENADO]) {
+      const inHouse = scored.filter((s) => s.house === house);
+      if (inHouse.length === 0) continue;
+      for (const axis of AXIS_KEYS) {
+        const rows = inHouse.map((s) => ({
+          value: s.position[axis].value,
+          covariate: s.governismo,
+        }));
+        const scorable = rows.filter(
+          (r): r is { value: number; covariate: number | null } => r.value !== null,
+        );
+        if (scorable.length === 0) continue;
+        const residuals = residualiseScores(scorable);
+        let k = 0;
+        for (const s of inHouse) {
+          const reading = s.position[axis];
+          if (reading.value === null) continue;
+          // Preso à escala nomeada: um resíduo que passasse de 100 não é "mais
+          // que Mercado", é extrapolação de uma reta fora do intervalo medido.
+          reading.value = Math.max(-100, Math.min(100, Math.round(residuals[k++])));
+        }
+      }
+    }
   }
 
   // ── Nomear as pontas de cada eixo recuperado ──────────────────────────────
@@ -910,6 +950,7 @@ export async function recomputePositioningIndex(
     weights,
     minEffectiveItems,
     estimator,
+    scoreResidual,
   };
 }
 

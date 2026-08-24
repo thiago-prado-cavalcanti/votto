@@ -15,6 +15,9 @@
  *   npm run reposition -- --dry --estimator=pca --residual=off
  *                                           # ...sem residualizar o governismo, para a porta 2
  *                                           #    voltar a significar algo
+ *   npm run reposition -- --dry --estimator=pca --score=residual
+ *                                           # ...descontando o governismo tambem dos escores,
+ *                                           #    e nao so das cargas
  *
  * Em produção nada disso roda direto — não há toolchain Node na instância:
  *
@@ -127,6 +130,24 @@ function parseEstimator(argv: string[]): Estimator {
   process.exit(1);
 }
 
+/**
+ * Ler `--score=raw|residual`.
+ *
+ * `residual` desconta o governismo dos escores, além das cargas. É medição: a
+ * pontuação usa votos crus de propósito, para o eixo continuar sendo média de
+ * ±1 e a escala não precisar de constante — e o preço medido é que o governismo
+ * volta por ali (r = −0,45 na Câmara).
+ */
+function parseScore(argv: string[]): boolean {
+  const arg = argv.find((a) => a.startsWith("--score"));
+  if (!arg) return false;
+  const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
+  if (value === "raw") return false;
+  if (value === "residual") return true;
+  console.error(`Valor inválido para --score: "${value}". Use "raw" ou "residual".`);
+  process.exit(1);
+}
+
 /** Ler `--residual=on|off`. Só tem efeito sob `--estimator=pca`. */
 function parseResidual(argv: string[]): boolean {
   const arg = argv.find((a) => a.startsWith("--residual"));
@@ -159,14 +180,16 @@ async function main(): Promise<void> {
   const minEffectiveItems = parseMinEffectiveItems(process.argv);
   const estimator = parseEstimator(process.argv);
   const residualise = parseResidual(process.argv);
+  const scoreResidual = parseScore(process.argv);
   const loweredFloor = minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
 
-  if (weights !== DEFAULT_WEIGHT_MODE || loweredFloor || estimator !== "tags") {
+  if (weights !== DEFAULT_WEIGHT_MODE || loweredFloor || estimator !== "tags" || scoreResidual) {
     const lines: string[] = [];
     if (estimator === "pca")
       lines.push(
         "direção e peso vêm do componente principal da matriz de votos, com as tags só orientando" +
-          (residualise ? "; colunas residualizadas contra o governismo" : "; SEM residualizar"),
+          (residualise ? "; colunas residualizadas contra o governismo" : "; SEM residualizar") +
+          (scoreResidual ? "; governismo descontado TAMBÉM dos escores" : ""),
       );
     if (weights === "raw") lines.push("o fator (1 − contaminação) está desligado");
     if (weights === "clean")
@@ -190,6 +213,7 @@ async function main(): Promise<void> {
     minEffectiveItems,
     estimator,
     residualise,
+    scoreResidual,
   });
 
   if (agents.length === 0) {
@@ -442,7 +466,11 @@ async function main(): Promise<void> {
   }
 
   const parts: string[] = [];
-  if (estimator !== "tags") parts.push(`estimador "${estimator}"${residualise ? "" : " sem resíduo"}`);
+  if (estimator !== "tags")
+    parts.push(
+      `estimador "${estimator}"${residualise ? "" : " sem resíduo"}` +
+        (scoreResidual ? " · escores residualizados" : ""),
+    );
   if (weights !== DEFAULT_WEIGHT_MODE)
     parts.push(`pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""}`);
   if (loweredFloor) parts.push(`piso ${minEffectiveItems}`);
