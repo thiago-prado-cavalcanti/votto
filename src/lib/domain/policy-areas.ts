@@ -210,3 +210,37 @@ export function senadoArea(
   for (const [rx, area] of SENADO_RULES) if (rx.test(path)) return area;
   return undefined;
 }
+
+/**
+ * As áreas que um tema toca, a partir das classificações que a casa publicou.
+ *
+ * **Devolve um conjunto, não uma área.** As duas taxonomias são multi-etiqueta —
+ * 2,16 rótulos por projeto na Câmara, 1,54 no Senado —, então um projeto sobre
+ * saneamento é ao mesmo tempo saúde e infraestrutura, e contá-lo numa só seria
+ * escolher por ele. A consequência a não esquecer: **as fatias não somam 100%**.
+ * Uma leitura de concordância por área não se importa (cada eixo é independente,
+ * de 0 a 100%); uma leitura de *distribuição* de autoria se importaria, e por
+ * isso ela terá de usar `relevance === 1` — o assunto principal — em vez desta
+ * função.
+ *
+ * `hierarchy` decide no Senado e `code` na Câmara. Nunca o rótulo: ver a
+ * armadilha registrada no cabeçalho deste arquivo.
+ */
+export function themeAreas(
+  classifications: unknown,
+  house: "CAMARA" | "SENADO" | string | null | undefined,
+): Set<PolicyArea> {
+  const out = new Set<PolicyArea>();
+  if (!Array.isArray(classifications)) return out;
+  for (const raw of classifications as Array<Record<string, unknown>>) {
+    const area =
+      house === "SENADO"
+        ? senadoArea(
+            typeof raw.hierarchy === "string" ? raw.hierarchy : null,
+            typeof raw.label === "string" ? raw.label : null,
+          )
+        : camaraArea(Number(raw.code));
+    if (area) out.add(area);
+  }
+  return out;
+}

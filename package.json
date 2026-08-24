@@ -25,6 +25,7 @@
     "check:vote": "tsx --tsconfig scripts/checks/tsconfig.json scripts/checks/vote-challenge.ts",
     "check:positioning": "tsx --tsconfig scripts/checks/tsconfig.json scripts/checks/positioning.ts",
     "check:alignment": "tsx --tsconfig scripts/checks/tsconfig.json scripts/checks/alignment.ts",
+    "check:areas": "tsx --tsconfig scripts/checks/tsconfig.json scripts/checks/areas.ts",
     "backfill": "tsx scripts/backfill.ts",
     "reprioritize": "tsx scripts/reprioritize.ts",
     "requality": "tsx scripts/requality.ts",
