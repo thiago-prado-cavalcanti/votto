@@ -3,12 +3,14 @@
  *
  *   npm run reposition                      # aplica e grava
  *   npm run reposition -- --dry             # só mede, não grava
- *   npm run reposition -- --dry --weights=raw   # mede sem o desconto de contaminação
+ *   npm run reposition -- --dry --weights=raw     # mede sem o desconto de contaminação
+ *   npm run reposition -- --dry --weights=clean --max-contamination=0.3
+ *                                           # mede só sobre os itens que a coalizão não conduziu
  *
  * Em produção nada disso roda direto — não há toolchain Node na instância:
  *
  *   docker compose --env-file .env.production -f docker-compose.prod.yml \
- *     run --rm migrate npm run reposition -- --dry --weights=raw
+ *     run --rm migrate npm run reposition -- --dry --weights=clean
  *
  * Gêmeo de `requality` e `reprioritize`: tudo o que o índice lê já é coluna, então
  * retunar peso ou limiar é um recálculo sem rede.
@@ -33,6 +35,7 @@ import {
 } from "@/lib/integration/positioning";
 import {
   bandGate,
+  CLEAN_MAX_CONTAMINATION,
   DEFAULT_WEIGHT_MODE,
   POSITIONING_AXES,
   type AxisKey,
@@ -80,21 +83,37 @@ function parseWeights(argv: string[]): WeightMode {
   const arg = argv.find((a) => a.startsWith("--weights"));
   if (!arg) return DEFAULT_WEIGHT_MODE;
   const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
-  if (value === "discount" || value === "raw") return value;
+  if (value === "discount" || value === "raw" || value === "clean") return value;
   console.error(
-    `Valor inválido para --weights: "${value}". Use "discount" (metodologia em vigor) ou "raw" (sem o desconto de contaminação).`,
+    `Valor inválido para --weights: "${value}". Use "discount" (metodologia em vigor), ` +
+      `"raw" (sem o desconto de contaminação) ou "clean" (só itens abaixo do teto).`,
   );
+  process.exit(1);
+}
+
+/** Ler `--max-contamination=<0..1>`. Recusa fora da faixa, pela mesma razão. */
+function parseMaxContamination(argv: string[]): number {
+  const arg = argv.find((a) => a.startsWith("--max-contamination"));
+  if (!arg) return CLEAN_MAX_CONTAMINATION;
+  const n = Number(arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : NaN);
+  if (Number.isFinite(n) && n >= 0 && n <= 1) return n;
+  console.error("Valor inválido para --max-contamination: use um número entre 0 e 1.");
   process.exit(1);
 }
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry");
   const weights = parseWeights(process.argv);
+  const maxContamination = parseMaxContamination(process.argv);
 
   if (weights !== DEFAULT_WEIGHT_MODE) {
+    const what =
+      weights === "raw"
+        ? "o fator (1 − contaminação) está desligado"
+        : `só entram itens com contaminação ≤ ${maxContamination}, com peso cheio`;
     console.log(
-      `\n  ⚗ MEDIÇÃO — pesos "${weights}": o fator (1 − contaminação) está desligado.` +
-        "\n    Não é uma metodologia alternativa, é a ausência de um controle." +
+      `\n  ⚗ MEDIÇÃO — pesos "${weights}": ${what}.` +
+        "\n    Não é uma metodologia alternativa, é a ausência (ou a caricatura) de um controle." +
         "\n    Nada aqui é publicável, e a gravação é recusada mesmo sem --dry.\n",
     );
   }
@@ -102,6 +121,7 @@ async function main(): Promise<void> {
   const { agents, parties, houses, legacyShare } = await recomputePositioningIndex({
     dryRun,
     weights,
+    maxContamination,
   });
 
   if (agents.length === 0) {
@@ -148,6 +168,17 @@ async function main(): Promise<void> {
       console.log(
         `        dispersão ${(h.spreadRatio * 100).toFixed(0)}% da âncora ` +
           `(mín ${MIN_SPREAD_RATIO * 100}%) — o eixo espalha tanto quanto a régua?${flag}`,
+      );
+    }
+    // A distribuição decide o teto do modo `clean`: só há subconjunto limpo
+    // enquanto couber MIN_HOUSE_ITEMS embaixo dele.
+    if (h.contaminationBands.length > 0) {
+      const cells = h.contaminationBands
+        .map((b) => `≤${b.maxContamination.toFixed(1)}: ${b.items}`)
+        .join("  ");
+      console.log(
+        `        contaminação — ${cells}` +
+          (h.itemsUncontrolled > 0 ? `  · sem medida: ${h.itemsUncontrolled}` : ""),
       );
     }
     if (h.unanchored.length > 0) {
@@ -294,7 +325,10 @@ async function main(): Promise<void> {
     );
   }
 
-  const stamp = weights === DEFAULT_WEIGHT_MODE ? "" : ` · pesos "${weights}" (medição)`;
+  const stamp =
+    weights === DEFAULT_WEIGHT_MODE
+      ? ""
+      : ` · pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""} (medição)`;
   if (dryRun) console.log(`\n  (--dry: nada foi gravado${stamp})`);
   else console.log("\n✓ Posicionamento atualizado.");
 

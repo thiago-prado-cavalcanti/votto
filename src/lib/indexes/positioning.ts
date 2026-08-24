@@ -311,8 +311,9 @@ export const MIN_DISCRIMINATION = 0.2;
  * Como a contaminação governista entra no peso de um item.
  *
  * `discount` é a metodologia **publicada** (`POSITIONING_METHODOLOGY`): o item
- * é multiplicado por `(1 − contaminação)`. `raw` é um modo de **medição**, que
- * remove esse fator e nada mais.
+ * é multiplicado por `(1 − contaminação)`. `raw` e `clean` são modos de
+ * **medição**: `raw` remove esse fator e nada mais; `clean` troca a escala
+ * contínua por um corte — o item entra com peso cheio ou não entra.
  *
  * `raw` existe por causa de um defeito medido, não por gosto de configuração.
  * Os dois fatores são anticorrelacionados no Brasil: uma votação que **divide**
@@ -329,16 +330,46 @@ export const MIN_DISCRIMINATION = 0.2;
  * separa "o desconto destruiu a variância" de "as tags apontam errado", que
  * levam a trabalhos completamente diferentes (§11).
  *
- * **`raw` nunca é publicável.** Não é uma metodologia alternativa — é a
- * ausência de um controle cujo teste de falseamento (`MAX_GOVERNMENT_CORRELATION`)
- * existe precisamente porque a coalizão contamina o eixo. `recomputePositioningIndex`
- * recusa a gravar sob qualquer modo que não seja `discount`, e adotar outro
- * exigiria `version`, `changedAt` e fingerprint novos.
+ * `clean` responde a outra pergunta, e ela é a que sobrou depois que `raw`
+ * mediu. Rodado na Câmara em 24/08/2026, `raw` **não moveu a dispersão** (9% nos
+ * dois modos) enquanto o governismo ia de −0,19 para −0,42: os pesos mudaram de
+ * verdade e a escala não. Isso exclui a ponderação como causa e deixa duas
+ * hipóteses vivas, que `clean` separa — porque `docs/posicionamento.md` mediu
+ * **ρ = +0,917 contra o BLS** sobre as 15 votações *sem orientação do governo*,
+ * contra 0,69 que o conjunto inteiro entrega hoje:
+ *
+ *  - se o subconjunto limpo reproduz ~0,9, as tags prestam e o que envenena é a
+ *    mistura com os itens de coalizão — o trabalho vira seleção de item;
+ *  - se ele também fica em ~0,7, os 0,917 foram amostra de quinze, e o gargalo
+ *    é a direção das tags (`CODING_RUNS`, §11).
+ *
+ * Contaminação **desconhecida sai** em `clean`, ao contrário de `discount`, onde
+ * ela entra sem desconto. Os dois estão certos para o que cada um faz: lá a
+ * pergunta é quanto descontar de um item que já vale, aqui é se dá para
+ * *afirmar* que a coalizão não conduziu a votação — e de um `null` não dá.
+ *
+ * **Nem `raw` nem `clean` são publicáveis.** Não são metodologias alternativas —
+ * são a ausência (ou a caricatura) de um controle cujo teste de falseamento
+ * (`MAX_GOVERNMENT_CORRELATION`) existe precisamente porque a coalizão contamina
+ * o eixo. `recomputePositioningIndex` recusa a gravar sob qualquer modo que não
+ * seja `discount`, e adotar outro exigiria `version`, `changedAt` e fingerprint
+ * novos.
  */
-export type WeightMode = "discount" | "raw";
+export type WeightMode = "discount" | "raw" | "clean";
 
 /** O modo da metodologia em vigor. Todo caller que não pede nada recebe este. */
 export const DEFAULT_WEIGHT_MODE: WeightMode = "discount";
+
+/**
+ * Teto de contaminação do modo `clean`: acima disto o item sai inteiro.
+ *
+ * 0,30 é ponto de partida, não constante calibrada — leia a distribuição que
+ * `reposition --dry` imprime por casa e escolha contra ela. O que decide o
+ * limiar é haver, abaixo dele, itens suficientes para o piso da casa
+ * (`MIN_HOUSE_ITEMS`) e para o de cada agente (`MIN_EFFECTIVE_ITEMS`); mais
+ * limpo e mais fino são o mesmo movimento.
+ */
+export const CLEAN_MAX_CONTAMINATION = 0.3;
 
 /**
  * Peso de um item para um eixo: discriminação × (1 − contaminação) × confiança ×
@@ -349,17 +380,27 @@ export const DEFAULT_WEIGHT_MODE: WeightMode = "discount";
  * em que o classificador não confia, e um tema que não toca o eixo.
  *
  * `mode` só governa o segundo fator, e só existe para medição — veja
- * `WeightMode`. Os outros três valem nos dois modos: em `raw` uma votação
- * unânime continua valendo zero, porque o que ela não faz é separar pessoas, e
- * isso não tem nada a ver com a coalizão.
+ * `WeightMode`. Os outros três valem em todos os modos: mesmo em `raw` uma
+ * votação unânime continua valendo zero, porque o que ela não faz é separar
+ * pessoas, e isso não tem nada a ver com a coalizão.
  */
 export function itemWeight(
   tag: AxisTag,
   stats: ItemStats,
   mode: WeightMode = DEFAULT_WEIGHT_MODE,
+  maxContamination: number = CLEAN_MAX_CONTAMINATION,
 ): number {
   const d = discrimination(stats);
   if (d < MIN_DISCRIMINATION) return 0;
+
+  if (mode === "clean") {
+    // Sem medida de contaminação não dá para afirmar que a coalizão não
+    // conduziu a votação, e o modo inteiro é sobre essa afirmação.
+    if (stats.contamination === null) return 0;
+    if (stats.contamination > maxContamination) return 0;
+    return d * tag.confidence * tag.magnitude;
+  }
+
   // Contaminação desconhecida não é contaminação zero — mas descartar o item
   // aqui esvaziaria o índice inteiro antes de a orientação ser importada. O
   // item entra, e quem recusa a publicação é o teste de falseamento do lote,
@@ -537,6 +578,7 @@ function readAxis(
 export function computePosition(
   votes: ScorableVote[],
   mode: WeightMode = DEFAULT_WEIGHT_MODE,
+  maxContamination: number = CLEAN_MAX_CONTAMINATION,
 ): Position {
   const byAxis: Record<AxisKey, Array<{ w: number; s: number; themeKey: string }>> = {
     economic: [],
@@ -557,7 +599,7 @@ export function computePosition(
     for (const axis of AXIS_KEYS) {
       const tag = vote.dimensions[axis];
       if (!tag) continue;
-      const w = itemWeight(tag, vote.stats, mode);
+      const w = itemWeight(tag, vote.stats, mode, maxContamination);
       if (w <= 0) continue;
       byAxis[axis].push({ w, s: sign * tag.direction, themeKey: vote.themeKey });
       contributed = true;

@@ -38,6 +38,7 @@ import { counters, type SyncOptions, type SyncResult } from "@/lib/integration/i
 import {
   AXIS_KEYS,
   bandGate,
+  CLEAN_MAX_CONTAMINATION,
   computePosition,
   DEFAULT_WEIGHT_MODE,
   discrimination,
@@ -120,6 +121,18 @@ export interface HouseReport {
   axisCorrelation: number | null;
   /** Verdadeiro quando o eixo social não sobrevive como leitura independente. */
   socialCollinear: boolean;
+  /**
+   * Quantos itens utilizáveis sobrariam a cada teto de contaminação.
+   *
+   * Existe para escolher o corte do modo `clean` contra a distribuição real em
+   * vez de contra a intuição: o subconjunto limpo só é uma opção enquanto
+   * couber `MIN_HOUSE_ITEMS` embaixo do teto. `items` é o total sob o modo que
+   * rodou, então em `clean` ele já vem cortado — e a comparação entre os dois
+   * números é o que diz quanto custou a limpeza.
+   */
+  contaminationBands: Array<{ maxContamination: number; items: number }>;
+  /** Itens utilizáveis sem contaminação medida — inelegíveis para `clean`. */
+  itemsUncontrolled: number;
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -181,6 +194,8 @@ export async function recomputePositioningIndex(
      * números diferentes na mesma coluna foram produzidos pela mesma conta.
      */
     weights?: WeightMode;
+    /** Teto do modo `clean`. Ignorado nos outros. */
+    maxContamination?: number;
   } = {},
 ): Promise<{
   agents: AgentScore[];
@@ -192,6 +207,7 @@ export async function recomputePositioningIndex(
   weights: WeightMode;
 }> {
   const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
+  const maxContamination = opts.maxContamination ?? CLEAN_MAX_CONTAMINATION;
 
   // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
   // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
@@ -323,7 +339,7 @@ export async function recomputePositioningIndex(
       });
     }
 
-    const position = computePosition(scorable, weights);
+    const position = computePosition(scorable, weights, maxContamination);
     const contributing = position.economic.items + position.social.items;
     if (contributing > 0) {
       usedTotal += contributing;
@@ -366,15 +382,32 @@ export async function recomputePositioningIndex(
     for (const agent of inHouse) {
       for (const v of votesByAgent.get(agent.id) ?? []) houseThemeIds.add(v.themeId);
     }
+    const BANDS = [0.1, 0.2, 0.3, 0.4, 0.5];
+    const bandCounts = new Array<number>(BANDS.length).fill(0);
     let items = 0;
     let itemsControlled = 0;
+    let itemsUncontrolled = 0;
     for (const themeId of houseThemeIds) {
       const stats = statsByTheme.get(themeId);
       const theme = dimensionsByTheme.get(themeId);
       if (!stats || !theme?.dims.scoreable) continue;
       if (discrimination(stats) < MIN_DISCRIMINATION) continue;
+
+      if (stats.contamination === null) itemsUncontrolled++;
+      else {
+        itemsControlled++;
+        for (let i = 0; i < BANDS.length; i++) {
+          if (stats.contamination <= BANDS[i]) bandCounts[i]++;
+        }
+      }
+
+      // Em `clean` o item acima do teto pesa zero, então contá-lo aqui faria a
+      // porta 1 passar sobre itens que não carregam nada — o modo tem de ser
+      // julgado pelo subconjunto que ele de fato usa.
+      if (weights === "clean") {
+        if (stats.contamination === null || stats.contamination > maxContamination) continue;
+      }
       items++;
-      if (stats.contamination !== null) itemsControlled++;
     }
 
     const withReading = inHouse.filter((s) => s.position.economic.value !== null);
@@ -390,6 +423,11 @@ export async function recomputePositioningIndex(
       spreadRatio: null,
       axisCorrelation: null,
       socialCollinear: false,
+      contaminationBands: BANDS.map((maxContamination, i) => ({
+        maxContamination,
+        items: bandCounts[i],
+      })),
+      itemsUncontrolled,
       unanchored: [],
       blocked: null,
     };

@@ -1150,32 +1150,64 @@ be), but the reference is a printed record, not a fintech app.
   *ordering* already carries signal (PSOL/REDE/PSB/PT negative, PL/PSD/PP/MDB positive), so what is
   broken is the scale, not the sign structure.
 
-  **Measure before committing to it — `--weights=raw` is the experiment.**
-  `npm run reposition -- --dry --weights=raw` recomputes with the `(1 − contamination)` factor
-  switched off and *nothing else* changed (`WeightMode` in `src/lib/indexes/positioning.ts`).
-  It is measurement, never a methodology: `recomputePositioningIndex` throws before touching the
-  database under any mode that is not `discount`, and `check:positioning` pins the contract
-  (unanimous items still weigh zero in `raw` — discrimination has nothing to do with the coalition).
+  **This was measured on 2026-08-24, and reweighting is NOT the defect.**
+  `--weights=raw` recomputes with the `(1 − contamination)` factor switched off and *nothing else*
+  changed (`WeightMode` in `src/lib/indexes/positioning.ts`). Câmara, discount → raw:
 
-  It exists because the live run of **2026-08-24** shows the Câmara failing gates 3 and 4 for
-  *different* reasons, and residualisation only addresses one: 217 items, 458/513 agents with a
-  reading, governismo **r = −0.19**, spread **9%** (min 40%) — but the anchor at **ρ = 0.63**, and
-  **Spearman is scale-free, so restoring amplitude cannot move it by itself**. The party table shows
-  an *identity* failure rather than a compression: our "Mercado" pole is the centrão (MDB, PP, PSD,
-  AVANTE all at +6) while **NOVO reads +1** (BLS +71) and **PCdoB reads −0.0** (BLS −82) — the two
-  most ideologically defined parties at each pole, both at the centre. Three outcomes to read:
-  spread up *and* ρ → 0.85 means the discount was the whole defect and residualisation is the
-  principled replacement; spread up with ρ ≈ 0.6 means the tags point wrong and the work is
-  `CODING_RUNS` (§11), not the weights; nothing moving puts the defect upstream of both.
-- **Two documented claims the 2026-08-24 run contradicts, to re-verify before quoting §3.2.**
+  | | discount | raw |
+  |---|---|---|
+  | agents with a reading | 458/513 | 490/513 |
+  | governismo r | −0.19 | **−0.42** |
+  | anchor ρ | 0.63 | 0.69 |
+  | **spread** | **9%** | **9%** |
+  | axes against each other | −0.48 | −0.48 |
+
+  The governismo correlation more than doubled, so the coalition items really did come back and the
+  weights really did change — **and the spread did not move one point.** That excludes weighting as
+  the cause, and residualisation is a *more sophisticated* handling of the same factor: applied to
+  the scores it would `Var × (1 − r²)`, i.e. take the spread from 9% **down** to ~8%.
+
+  The arithmetic says why no reweighting could have worked. The axis is a weighted mean of
+  `vote × direction` over [−1, +1]; a party mean of −0.05 means that for *every* deputy the items
+  agreeing with the tagged direction almost exactly cancel the ones disagreeing. Reweighting a set
+  of fair coins does not produce heads. And the signal is demonstrably in the votes — governismo
+  r = −0.42 is strong structure — so it is **`tag.direction` that fails to align with it**. Three
+  confirmations: the axis-to-axis r is **identical** (−0.48) in both modes, hence a property of the
+  tags and not the weights; the ordering got *worse* where it should improve (CIDADANIA −12,
+  SOLIDARIEDADE −11 and PSDB −6 became the most left-wing benches in the house, left of PSOL and
+  PCdoB); and the Senado woke up (46/81 agents) reading **inverted**, ρ = −0.23.
+
+  **So the §11 item above is mis-stated: the repair is not "residualise instead of discount", it is
+  to change the ESTIMATOR.** Zucco & Lauderdale do not residualise a weighted mean over tagged
+  items — they recover the dimensions from the vote matrix itself and use labels only to *orient*
+  which recovered dimension is which. Tag quality then matters far less: enough tags to point an
+  axis, not to weight every item. The evidence is already in
+  [`docs/posicionamento.md`](docs/posicionamento.md): the first principal component over the 15
+  roll calls **without government orientation** correlates **+0.917 with the BLS** — unsupervised,
+  no tags, above our 0.85 bar — while the current estimator with 217 tagged items returns 0.69.
+
+  `--weights=clean --max-contamination=<x>` is the run that separates the last two hypotheses: it
+  takes items at full weight below the ceiling and drops the rest (an unmeasured contamination
+  drops too — the mode asserts the coalition did *not* drive the vote, and a `null` cannot assert
+  it), reproducing that 0.917 cut over today's 217 items. ρ back to ~0.9 on the clean subset means
+  the tags are sound and the mixture is what poisons them, so the work is item selection; ρ still
+  ~0.7 means 15 items was a small-sample fluke and the bottleneck is tag direction (`CODING_RUNS`).
+  The report prints the contamination distribution per house so the ceiling is chosen against the
+  histogram rather than guessed — there is only a clean subset while `MIN_HOUSE_ITEMS` fits under it.
+
+  None of these modes is publishable: `recomputePositioningIndex` throws before touching the
+  database under any mode that is not `discount`, and `check:positioning` pins the contract
+  (a unanimous item still weighs zero in every mode — discrimination has nothing to do with the
+  coalition).
+- **Two documented claims the 2026-08-24 run contradicts, to fix before quoting §3.2.**
   (a) The Senado's block is **not** `MIN_HOUSE_ITEMS`: it has **38** usable items, over the floor of
-  20, and fails on **0/81 agents with a reading** — every senator is under `MIN_EFFECTIVE_ITEMS`,
-  which the `(1 − contamination)` factor alone can explain (38 items summing to under 8 units of
-  weight means a mean weight below 0.21, with `d ≥ 0.20` guaranteed). So the Senate may come back
-  under `raw`, and "the Senate cannot be scaled" is currently over-stated. (b) The two axes measure
-  **r = −0.48**, where CHES-LA measures **+0.94** for Brazilian parties. Wrong magnitude *and wrong
-  sign* — economically liberal reading as morally authoritarian inverts the known structure. §11
-  already names this case: below the literature points at noisy tags, not an unusual country.
+  20, and failed on **0/81 agents with a reading** — every senator was under `MIN_EFFECTIVE_ITEMS`,
+  which the `(1 − contamination)` factor alone explains, and `--weights=raw` confirmed it by
+  returning **46/81**. "The Senate cannot be scaled" is over-stated: the house has the items, and
+  what it does not have is a *correct* reading (anchor ρ = **−0.23**, inverted). (b) The two axes
+  measure **r = −0.48**, where CHES-LA measures **+0.94** for Brazilian parties — wrong magnitude
+  *and wrong sign*, and invariant to the weighting. §11 already names this case: below the
+  literature points at noisy tags, not an unusual country.
 - **`MIN_SPREAD_RATIO` is provisional at 0.40**, like the other cut points. The mechanism is what is
   settled — an axis that compresses the known spectrum lies even when its ordering is right, and
   Spearman is structurally blind to it. The exact point recalibrates against a real histogram once

@@ -63,6 +63,30 @@ ok(
     itemWeight(tag, { yes: 50, no: 50, contamination: 0.5 }, "discount"),
 );
 
+// `clean` corta em vez de escalar: abaixo do teto o item vale cheio, acima
+// vale zero, e sem medida de contaminação vale zero — porque o modo inteiro é
+// a afirmação "a coalizão não conduziu esta votação", e de um `null` não dá.
+ok(
+  "clean: abaixo do teto entra com peso cheio",
+  itemWeight(tag, { yes: 50, no: 50, contamination: 0.2 }, "clean", 0.3) === 1,
+);
+ok(
+  "clean: acima do teto sai",
+  itemWeight(tag, { yes: 50, no: 50, contamination: 0.4 }, "clean", 0.3) === 0,
+);
+ok(
+  "clean: no teto ainda entra",
+  itemWeight(tag, { yes: 50, no: 50, contamination: 0.3 }, "clean", 0.3) === 1,
+);
+ok(
+  "clean: sem medida de contaminação sai",
+  itemWeight(tag, { yes: 50, no: 50, contamination: null }, "clean", 0.3) === 0,
+);
+ok(
+  "clean: unânime continua valendo zero",
+  itemWeight(tag, { yes: 95, no: 5, contamination: 0 }, "clean", 0.3) === 0,
+);
+
 console.log("\nFormato das tags");
 const v1 = parseDimensions({ economic: -0.8, social: 0 });
 ok("formato 1 vira legacy", v1.legacy && v1.scoreable && v1.economic?.direction === -1 && v1.social === null);
