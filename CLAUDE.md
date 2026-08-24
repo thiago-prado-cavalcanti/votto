@@ -1186,25 +1186,60 @@ be), but the reference is a printed record, not a fintech app.
   roll calls **without government orientation** correlates **+0.917 with the BLS** — unsupervised,
   no tags, above our 0.85 bar — while the current estimator with 217 tagged items returns 0.69.
 
-  `--weights=clean --max-contamination=<x>` is the run that separates the last two hypotheses: it
-  takes items at full weight below the ceiling and drops the rest (an unmeasured contamination
-  drops too — the mode asserts the coalition did *not* drive the vote, and a `null` cannot assert
-  it), reproducing that 0.917 cut over today's 217 items. ρ back to ~0.9 on the clean subset means
-  the tags are sound and the mixture is what poisons them, so the work is item selection; ρ still
-  ~0.7 means 15 items was a small-sample fluke and the bottleneck is tag direction (`CODING_RUNS`).
-  The report prints the contamination distribution per house so the ceiling is chosen against the
-  histogram rather than guessed — there is only a clean subset while `MIN_HOUSE_ITEMS` fits under it.
+  **`--weights=clean` then ran, and item selection is not the fix either.** It takes items at full
+  weight below a contamination ceiling and drops the rest (an unmeasured contamination drops too —
+  the mode asserts the coalition did *not* drive the vote, and a `null` cannot assert it). The
+  Câmara's histogram is why the ceiling has to be low: **140 of 217 items sit above 0.5**, so a high
+  ceiling stops filtering and converges on `raw`. At ≤0.3 the subset is 35 items — over
+  `MIN_HOUSE_ITEMS`, under `MIN_EFFECTIVE_ITEMS` for every one of the 513 deputies, which is what
+  `--min-effective-items` exists to get past (party ordering is the mean of 12–91 members; the floor
+  protects an individual's published position, and nothing is published here).
+
+  | Câmara | discount | raw | clean ≤0.3 · floor 2 | clean ≤0.3 · floor 4 |
+  |---|---|---|---|---|
+  | items | 217 | 217 | 35 | 35 |
+  | agents scored | 458 | 490 | 470 | 218 |
+  | governismo r | −0.19 | −0.42 | **+0.06** | +0.17 |
+  | anchor ρ | 0.63 | 0.69 | **0.27** | **0.25** |
+  | spread | 9% | 9% | 26% | 35% |
+
+  Two findings, and the second is the one that redirects the work.
+
+  **The compression really was the contaminated items cancelling.** Spread goes 9% → 26% → 35% as
+  the clean subset narrows. That half of §3.2's documented mechanism is confirmed.
+
+  **But removing the coalition removes the anchor correlation with it.** Governismo r falls to
+  +0.06 — the subset is genuinely clean — and ρ collapses to 0.27, *below* the contaminated set's
+  0.63. So most of the 0.63–0.69 was riding on the governismo dimension rather than on ideology,
+  which is the exact failure §3.2 says gates 2 and 4 cannot catch for each other.
+
+  **The tags are what fail, and the sample size does not explain it.** On the clean subset
+  **PT sits to the RIGHT of PL** — +13 vs +12 at floor 2 (n = 61, 91), +15 vs +11 at floor 4
+  (n = 34, 49) — where the BLS has them at −69 and +49. ρ is stable at 0.27/0.25 across both floors.
+  Two benches of dozens of members, at opposite poles of Brazilian politics, voting
+  indistinguishably *relative to the directions we tagged*: `tag.direction` does not align with how
+  the house actually votes.
+
+  **Conclusion: change the estimator, and tag quality is no longer the critical path.** The decisive
+  comparison is two numbers over near-identical items in the same house — **PCA on the vote matrix,
+  unsupervised, ρ = 0.917; our tag-weighted mean on the clean subset, ρ = 0.27.** A dimension-recovery
+  estimator (PCA/IRT), with tags used only to *orient* which recovered dimension is which, is robust
+  to tag noise by construction — it is the path that does not depend on solving AI classification,
+  which is exactly where the failure was just measured. `CODING_RUNS = 2` stays real debt, but it
+  would repair the estimator being abandoned.
 
   None of these modes is publishable: `recomputePositioningIndex` throws before touching the
-  database under any mode that is not `discount`, and `check:positioning` pins the contract
-  (a unanimous item still weighs zero in every mode — discrimination has nothing to do with the
-  coalition).
+  database under any mode that is not `discount` **or any floor other than `MIN_EFFECTIVE_ITEMS`**,
+  and `check:positioning` pins the contract (a unanimous item still weighs zero in every mode —
+  discrimination has nothing to do with the coalition; the measurement floor changes admission and
+  never the value).
 - **Two documented claims the 2026-08-24 run contradicts, to fix before quoting §3.2.**
   (a) The Senado's block is **not** `MIN_HOUSE_ITEMS`: it has **38** usable items, over the floor of
   20, and failed on **0/81 agents with a reading** — every senator was under `MIN_EFFECTIVE_ITEMS`,
   which the `(1 − contamination)` factor alone explains, and `--weights=raw` confirmed it by
   returning **46/81**. "The Senate cannot be scaled" is over-stated: the house has the items, and
-  what it does not have is a *correct* reading (anchor ρ = **−0.23**, inverted). (b) The two axes
+  what it does not have is a *correct* reading (anchor ρ = **−0.23**, inverted). Its clean subset is
+  4 items at ≤0.3 and 7 at ≤0.5, so nothing above can be measured there at all. (b) The two axes
   measure **r = −0.48**, where CHES-LA measures **+0.94** for Brazilian parties — wrong magnitude
   *and wrong sign*, and invariant to the weighting. §11 already names this case: below the
   literature points at noisy tags, not an unusual country.
