@@ -43,10 +43,13 @@ export function ThemeRow({
     <Reveal
       as="article"
       delay={delay}
-      className="grid gap-6 py-7 lg:grid-cols-[1fr_17rem] lg:gap-10"
+      className="grid gap-4 py-7 lg:grid-cols-[1fr_17rem] lg:gap-x-10 lg:gap-y-6"
     >
-      {/* ── The entry ──────────────────────────────────────────────── */}
-      <div className="min-w-0">
+      {/* ── The heading ────────────────────────────────────────────────
+          Split from the rest of the entry so the ballot can sit between them
+          on a phone. On a wide screen the two halves rejoin as one column and
+          the panel stands beside them, which is the desktop layout unchanged. */}
+      <div className="order-1 min-w-0 lg:col-start-1 lg:row-start-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
             {theme.house ? houseShortLabel[theme.house] : scopeLabel[theme.scope]}
@@ -71,13 +74,17 @@ export function ThemeRow({
         </Link>
 
         {theme.plainSummary ?? theme.summary ? (
-          <p className="mt-2 line-clamp-3 max-w-2xl text-sm leading-relaxed text-navy-700">
+          <p className="mt-2 line-clamp-2 max-w-2xl text-sm leading-relaxed text-navy-700 lg:line-clamp-3">
             {theme.plainSummary ?? theme.summary}
           </p>
         ) : null}
 
+      </div>
+
+      {/* ── The tail: what the bill is filed under, and who signs it ──── */}
+      <div className="order-3 min-w-0 lg:col-start-1 lg:row-start-2">
         {theme.classifications.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
             {theme.classifications.slice(0, 3).map((c) => (
               <span
                 key={c.label}
@@ -90,7 +97,7 @@ export function ThemeRow({
           </div>
         ) : null}
 
-        <div className="mt-4 max-w-xl">
+        <div className="mt-3 max-w-xl lg:mt-4">
           <ThemeAuthorLine author={theme.author} />
         </div>
       </div>
@@ -101,13 +108,20 @@ export function ThemeRow({
           ballot carry their own weight — the share set large in pigment, the
           ballot in its vote colours under a terracota prompt — so a box around
           them only added furniture. */}
-      <div className="lg:border-l lg:border-line lg:pl-8">
-        <TemperatureBar
-          yesCount={theme.yesCount}
-          noCount={theme.noCount}
-          absCount={theme.absCount}
-        />
-        <div className="mt-4 border-t border-line pt-3.5">
+      <div className="order-2 flex flex-col lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:border-l lg:border-line lg:pl-8">
+        {/* On a phone the ballot comes first and the tally after it. In a column
+            the tally is 120px of figures standing between the headline and the
+            action the page exists for — and it reads better once the citizen has
+            voted anyway. Side by side on a wide screen the original order holds,
+            because there the tally costs no vertical distance at all. */}
+        <div className="order-2 lg:order-none">
+          <TemperatureBar
+            yesCount={theme.yesCount}
+            noCount={theme.noCount}
+            absCount={theme.absCount}
+          />
+        </div>
+        <div className="order-1 border-t border-line pt-3.5 lg:order-none lg:mt-4">
           <span
             className={cn(
               "text-[0.7rem] font-semibold uppercase tracking-[0.12em]",
@@ -119,7 +133,7 @@ export function ThemeRow({
             {currentVote ? "Seu voto" : "Vote neste tema"}
           </span>
           <VoteButtons
-            className="mt-2"
+            className="mt-2 mb-4 lg:mb-0"
             themeKid={theme.kid}
             isAuthenticated={isAuthenticated}
             currentValue={currentVote}

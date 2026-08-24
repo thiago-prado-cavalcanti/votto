@@ -89,6 +89,13 @@ export const viewport: Viewport = {
  * never happens — chunks blocked, a hydration error, a network that gave up —
  * the stamp lands and every block is simply visible. A reader who loses the
  * animation has lost nothing; a reader who loses the text has lost the page.
+ *
+ * It sits at the END OF THE BODY, and that is not tidiness. An inline script in
+ * the head waits for every pending stylesheet before it runs, and while it
+ * waits it blocks the HTML parser — so the body itself was parsed late, the
+ * masthead animation started late with it, and /temas measured 3,9s of LCP
+ * against 2,2s. Down here it blocks nothing, and a failsafe that arms a beat
+ * later is still a failsafe.
  */
 const MOTION_FAILSAFE = `try{var d=document.documentElement;
 window.__vtDisarm=setTimeout(function(){d.setAttribute("data-motion","off")},2500)}catch(e){}`;
@@ -99,15 +106,16 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={`${instrument.variable} ${newsreader.variable}`}>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: MOTION_FAILSAFE }} />
-        {/* DNS only, and deliberately not `preconnect`. Warming the *connection*
-            here costs a TLS handshake on every page, including the ones that
-            load no Câmara image at all: measured on a throttled phone it pushed
-            /temas from 2,4s to 3,8s, because the handshake competes for the link
-            the fonts and the stylesheet are still using. */}
+        {/* DNS only, and deliberately not `preconnect`: warming the connection
+            on every page costs a TLS handshake even where no Câmara image is
+            ever requested. The record pages, whose LCP element really is a
+            portrait from that host, are the only ones that would gain. */}
         <link rel="dns-prefetch" href="https://www.camara.leg.br" />
       </head>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">
+        {children}
+        <script dangerouslySetInnerHTML={{ __html: MOTION_FAILSAFE }} />
+      </body>
     </html>
   );
 }

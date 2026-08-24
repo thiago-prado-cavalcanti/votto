@@ -203,7 +203,11 @@ export function VoteButtons({
               className={cn(
                 "font-display inline-flex items-center justify-center rounded-card border",
                 "transition-colors active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60",
-                size === "sm" ? "h-10 text-base" : "h-12 text-lg",
+                // Even the compact ballot clears 44px on a phone: it is the
+                // platform's one action, and 40px is under the floor every
+                // touch guideline sets. The 40 come back from `sm` up, where
+                // the row is a mouse target beside a `size="sm"` button.
+                size === "sm" ? "h-11 text-base sm:h-10" : "h-12 text-lg",
                 active
                   ? "border-[var(--vt-ink)] bg-[var(--vt-ink)] text-[var(--vt-on)]"
                   : "border-[var(--vt-soft)] bg-[var(--vt-tint)] text-[var(--vt-ink)] hover:border-[var(--vt-ink)] hover:bg-[var(--vt-tint-hover)]",

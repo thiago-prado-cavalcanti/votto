@@ -122,7 +122,13 @@ export default async function PartyDetailPage({
         {/* Identity + agents. Each column arrives as a stack: the cards inside it
             settle one after the other, and the meters and charts they hold are
             armed by the same reveal (see the motion block in globals.css). */}
-        <Reveal variant="fade" stagger step={130} delay={80} className="lg:col-span-2">
+        <Reveal
+          variant="fade"
+          stagger
+          step={130}
+          delay={80}
+          className="order-2 lg:order-none lg:col-span-2 lg:col-start-1 lg:row-start-1"
+        >
           <Card>
             <CardBody className="flex flex-col gap-5 sm:flex-row sm:items-start">
               {/* Same free-standing treatment as the list card, one size up:
@@ -180,7 +186,16 @@ export default async function PartyDetailPage({
         </Reveal>
 
         {/* Sidebar: alignment + positioning */}
-        <Reveal variant="fade" stagger step={130} delay={200} className="flex flex-col gap-6">
+        {/* The readings come first on a phone: stacked in source order they sat
+            below the whole bench, and the party page opened with no figure on
+            it at all. The desktop keeps its third column. */}
+        <Reveal
+          variant="fade"
+          stagger
+          step={130}
+          delay={200}
+          className="order-1 flex flex-col gap-6 lg:order-none lg:col-start-3 lg:row-start-1"
+        >
           <Card>
             <CardBody>
               <h2 className="text-xl text-navy-900">Alinhamento</h2>

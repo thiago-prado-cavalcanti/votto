@@ -199,9 +199,9 @@ export default async function AgentDetailPage({
             alt={fullName}
             // Measured as this page's LCP element, served by the Câmara.
             priority
-            className="h-32 w-32 rounded-full border border-line bg-navy-50 object-cover sm:h-36 sm:w-36"
+            className="h-24 w-24 rounded-full border border-line bg-navy-50 object-cover sm:h-32 sm:w-32 lg:h-36 lg:w-36"
             fallback={
-              <div className="flex h-32 w-32 items-center justify-center rounded-full border border-line bg-navy-100 font-display text-3xl text-navy-700 sm:h-36 sm:w-36">
+              <div className="flex h-24 w-24 items-center justify-center rounded-full border border-line bg-navy-100 font-display text-2xl text-navy-700 sm:h-32 sm:w-32 sm:text-3xl lg:h-36 lg:w-36">
                 {initials}
               </div>
             }
@@ -264,9 +264,16 @@ export default async function AgentDetailPage({
       </RecordIntro>
 
       <Container className="py-12">
+        {/* On a phone the two columns stack, and the order is reversed on
+            purpose: the readings come first. Stacked in source order they
+            landed at y=1.988 — nearly three screens down, behind every bill the
+            agent has ever signed — so the page a citizen opened to see one
+            number opened without it. Explicit placement from `lg` up, because
+            auto-placement would otherwise follow `order` and put the margin
+            column on the left. */}
         <div className="grid gap-14 lg:grid-cols-[1fr_19rem] lg:gap-16">
           {/* ── The record: what the agent proposed, then how they voted ── */}
-          <div className="min-w-0">
+          <div className="order-2 min-w-0 lg:order-none lg:col-start-1 lg:row-start-1">
             <section>
               <SectionHead
                 title="Temas de autoria e relatoria"
@@ -358,7 +365,12 @@ export default async function AgentDetailPage({
               a bar and a note — which is why it belongs in a column of its own
               rather than in the masthead, where it decided the height of the
               whole band. */}
-          <Reveal as="aside" variant="fade" delay={80}>
+          <Reveal
+            as="aside"
+            variant="fade"
+            delay={80}
+            className="order-1 lg:order-none lg:col-start-2 lg:row-start-1"
+          >
             <h2 className="text-xl text-navy-900">Alinhamento</h2>
             <div className="mt-4">
               <ReadingPlate

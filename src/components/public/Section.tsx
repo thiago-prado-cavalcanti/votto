@@ -54,10 +54,10 @@ export function PageIntro({
 }) {
   return (
     <section className={cn("border-b border-line bg-navy-100/45", className)}>
-      <Container className="py-12 sm:py-16">
+      <Container className="py-8 sm:py-14 lg:py-16">
         <div
           className={cn(
-            "grid gap-10",
+            "grid gap-7 sm:gap-10",
             figure ? "lg:grid-cols-[1fr_minmax(0,21rem)] lg:items-end lg:gap-16" : null,
           )}
         >
@@ -77,7 +77,7 @@ export function PageIntro({
             ) : null}
             <h1
               className={cn(
-                "vt-lift text-[2.5rem] leading-[1.02] sm:text-[3.05rem] lg:text-[3.45rem]",
+                "vt-lift text-[2.05rem] leading-[1.04] sm:text-[3.05rem] sm:leading-[1.02] lg:text-[3.45rem]",
                 eyebrow ? "mt-3" : "mt-5",
               )}
               style={beat(220)}
@@ -86,14 +86,14 @@ export function PageIntro({
             </h1>
             {lead ? (
               <p
-                className="vt-lift mt-5 max-w-xl text-base leading-relaxed text-navy-700 sm:text-lg"
+                className="vt-lift mt-3.5 max-w-xl text-[0.95rem] leading-relaxed text-navy-700 sm:mt-5 sm:text-lg"
                 style={beat(340)}
               >
                 {lead}
               </p>
             ) : null}
             {children ? (
-              <div className="vt-lift mt-7" style={beat(440)}>
+              <div className="vt-lift mt-5 sm:mt-7" style={beat(440)}>
                 {children}
               </div>
             ) : null}
@@ -134,12 +134,12 @@ export function RecordIntro({
 }) {
   return (
     <section className={cn("border-b border-line bg-navy-100/45", className)}>
-      <Container className="py-10 sm:py-14">
+      <Container className="py-7 sm:py-12 lg:py-14">
         {back ? (
           <Reveal
             variant="fade"
             autoplay
-            className="mb-9 flex items-center justify-between gap-3"
+            className="mb-6 flex items-center justify-between gap-3 sm:mb-9"
           >
             {back}
           </Reveal>
@@ -147,12 +147,12 @@ export function RecordIntro({
 
         <div
           className={cn(
-            "grid gap-10",
+            "grid gap-7 sm:gap-10",
             figure ? "lg:grid-cols-[1fr_minmax(0,20rem)] lg:items-end lg:gap-16" : null,
           )}
         >
           <Reveal as="header" variant="fade" autoplay>
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:gap-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-8">
               {portrait ? (
                 <div className="vt-lift shrink-0" style={beat(80)}>
                   {portrait}
@@ -171,7 +171,7 @@ export function RecordIntro({
                 ) : null}
                 <h1
                   className={cn(
-                    "vt-lift text-[2.3rem] leading-[1.03] sm:text-[2.8rem] lg:text-[3.1rem]",
+                    "vt-lift text-[1.95rem] leading-[1.05] sm:text-[2.8rem] sm:leading-[1.03] lg:text-[3.1rem]",
                     eyebrow ? "mt-2.5" : "mt-5",
                   )}
                   style={beat(220)}
