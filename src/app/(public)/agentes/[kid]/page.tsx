@@ -24,6 +24,7 @@ import { PositioningPlate } from "@/components/public/PositioningPlate";
 import { GovernismoReading } from "@/components/public/GovernismoReading";
 import { QualityPlate } from "@/components/public/QualityPlate";
 import { PerformanceInfo } from "@/components/public/PerformanceInfo";
+import { AreaInfo } from "@/components/public/AreaInfo";
 import { parseQualityPillars } from "@/lib/domain/quality";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
@@ -445,7 +446,10 @@ export default async function AgentDetailPage({
 
           {areaAgreement ? (
             <Reveal as="aside" variant="fade" delay={110}>
-              <h2 className="text-xl text-navy-900">Alinhamento por área</h2>
+              <h2 className="flex items-center text-xl text-navy-900">
+                Alinhamento por área
+                <AreaInfo kind="agreement" />
+              </h2>
               <div className="mt-4">
                 <AreaAgreementPlate areas={areaAgreement} agentName={fullName} />
               </div>
@@ -458,7 +462,10 @@ export default async function AgentDetailPage({
               cada uma com seu título, é o que separa as duas. */}
           {authorship?.publishable ? (
             <Reveal as="aside" variant="fade" delay={115}>
-              <h2 className="text-xl text-navy-900">Sobre o que legisla</h2>
+              <h2 className="flex items-center text-xl text-navy-900">
+                Sobre o que legisla
+                <AreaInfo kind="authorship" />
+              </h2>
               <div className="mt-4">
                 <AreaAuthorshipPlate reading={authorship} agentName={fullName} />
               </div>

@@ -28,13 +28,27 @@
 import { blobThrough, vertexAngle, vertexPoint, GROUND_VALUES, type Field } from "@/lib/viz/figure";
 
 const C = 250;
-/** Campo da leitura: 100% fica a um passo da borda interna da massa. */
-const R = 168;
+/**
+ * Campo da leitura, e o raio é uma consequência do rótulo e não do gosto.
+ *
+ * A placa mora numa coluna de 19rem, então o SVG de 500 é desenhado a **0,61×**.
+ * Nessa escala a fonte tem de ser dimensionada para trás: 17 unidades viram
+ * ~10px na tela, que é o piso do sistema. Rótulo maior pede mais margem, e a
+ * margem sai do desenho — daí 148 onde antes eram 168. Medido no navegador, não
+ * estimado: a 11 unidades o rótulo saía com **6,7px**, metade do menor texto que
+ * o resto do site usa.
+ */
+const R = 148;
 const FIELD: Field = { cx: C, cy: C, radius: R };
-/** A massa é a do radar da home, no raio original: ela é a marca, não a escala. */
-const GROUND_FIELD: Field = { cx: C, cy: C, radius: 147 };
+/** A massa é a do radar da home, na mesma proporção: ela é a marca, não a escala. */
+const GROUND_FIELD: Field = { cx: C, cy: C, radius: 130 };
 /** O anel de referência, a 80% da escala — e a ~75% da massa. */
 const RING = 0.8;
+/** Tamanhos em unidades do viewBox; ver o raio acima para o porquê. */
+const LABEL_SIZE = 17;
+const TICK_SIZE = 15;
+/** Acima disto o rótulo quebra na última palavra, para não invadir o vizinho. */
+const LABEL_WRAP_AT = 12;
 
 /** Colorway "terracota", verbatim de `AlignmentRadar`. */
 const GROUND = "#a8452f";
@@ -44,6 +58,20 @@ const GROUND_D = blobThrough(
   GROUND_VALUES.map((v, i) => vertexPoint(GROUND_FIELD, i, v, GROUND_VALUES.length)),
   4,
 );
+
+/**
+ * Quebra o rótulo na última palavra quando ele é longo.
+ *
+ * "Educação e Ciência" e "Segurança e Justiça" numa linha só, no tamanho de que
+ * precisam para serem lidos, encostam no rótulo vizinho. Quebra na ÚLTIMA
+ * palavra e não no meio: "Educação e / Ciência" lê melhor que "Educação / e
+ * Ciência". Palavra única não quebra — "Infraestrutura" fica como está.
+ */
+function wrapLabel(label: string): string[] {
+  if (label.length <= LABEL_WRAP_AT) return [label];
+  const i = label.lastIndexOf(" ");
+  return i <= 0 ? [label] : [label.slice(0, i), label.slice(i + 1)];
+}
 
 export interface RadarAxis {
   key: string;
@@ -139,15 +167,15 @@ export function AreaRadar({ axes, title }: { axes: RadarAxis[]; title: string })
           );
         })}
 
-      <text x={C + 7} y={C + 3} fill={INK} opacity={0.55} fontSize={11} className="vt-num">
+      <text x={C + 8} y={C + 5} fill={INK} opacity={0.55} fontSize={TICK_SIZE} className="vt-num">
         0%
       </text>
       <text
-        x={C + 7}
-        y={(C - R * RING + 4).toFixed(0)}
+        x={C + 8}
+        y={(C - R * RING + 5).toFixed(0)}
         fill={INK}
         opacity={0.55}
-        fontSize={11}
+        fontSize={TICK_SIZE}
         className="vt-num"
       >
         80%
@@ -155,18 +183,26 @@ export function AreaRadar({ axes, title }: { axes: RadarAxis[]; title: string })
 
       {axes.map((a, i) => {
         const mid = Math.abs(Math.cos(vertexAngle(i, n))) < 0.2;
-        const [x, y] = vertexPoint(FIELD, i, mid ? 1.32 : 1.38, n);
+        const [x, y] = vertexPoint(FIELD, i, mid ? 1.28 : 1.34, n);
+        const lines = wrapLabel(a.label);
+        // Duas linhas sobem meia entrelinha, para o par ficar centrado no eixo
+        // em vez de pender para baixo dele.
+        const dy = (mid ? (y < C ? -8 : 16) : 6) - (lines.length - 1) * 9;
         return (
           <text
             key={a.key}
             x={x.toFixed(0)}
-            y={(y + (mid ? (y < C ? -6 : 14) : 4)).toFixed(0)}
+            y={(y + dy).toFixed(0)}
             textAnchor="middle"
-            fontSize={11}
+            fontSize={LABEL_SIZE}
             fill="var(--color-muted)"
             style={{ fontFamily: "var(--font-sans)" }}
           >
-            {a.label}
+            {lines.map((line, k) => (
+              <tspan key={line} x={x.toFixed(0)} dy={k === 0 ? 0 : 18}>
+                {line}
+              </tspan>
+            ))}
           </text>
         );
       })}

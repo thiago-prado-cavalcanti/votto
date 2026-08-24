@@ -5,13 +5,13 @@
  * justamente porque desenhar duas vezes o mesmo polígono é o jeito mais
  * confiável de as duas leituras divergirem sem ninguém notar.
  *
- * ── O título não é decoração ────────────────────────────────────────────────
+ * ── Coluna única, e a explicação no "?" ─────────────────────────────────────
  *
- * Sem ele o leitor supõe que o eixo mede *dedicação ao assunto*, e não
- * concordância — foi o que aconteceu com a primeira pessoa que viu o protótipo.
- * O subtítulo nomeia a interpretação errada de propósito: nomear é o que a
- * desarma, e desde que `AreaAuthorshipPlate` existe a leitura suposta virou uma
- * página de verdade, a um clique de distância.
+ * A ficha é `lg:grid-cols-[1fr_19rem]` e esta placa mora na margem: impor um
+ * grid próprio partia 304px em duas metades de ~150. A explicação — inclusive a
+ * interpretação errada que ela precisa desarmar, a de que o eixo mede dedicação
+ * ao assunto — foi para `AreaInfo`, ao lado do título. Numa coluna dessa largura
+ * ela ficava mais alta que a figura que explicava.
  *
  * ── Uma pétala, não duas ────────────────────────────────────────────────────
  *
@@ -44,33 +44,22 @@ export function AreaAgreementPlate({
   const totalThemes = areas.reduce((max, a) => Math.max(max, a.sharedThemes), 0);
 
   return (
-    <div className="grid gap-8 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:items-center">
+    <div>
       <figure className="m-0">
-        <p className="text-[1.05rem] leading-snug text-navy-900">
-          Onde você concorda com {agentName}
-        </p>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--color-muted)]">
-          Cada eixo é a fatia dos projetos daquela área em que vocês votaram igual — não o quanto
-          ele se dedica ao assunto.
-        </p>
-
-        <div className="mt-4">
+        <div>
           <AreaRadar
             title={`Concordância por área com ${agentName}`}
             axes={areas.map((a) => ({ key: a.area, label: a.label, value: a.agreement }))}
           />
         </div>
 
-        <figcaption className="mt-4 max-w-[46ch] text-xs leading-relaxed text-[var(--color-muted)]">
-          O centro é 0% e o anel marca 80%. Um eixo tracejado é uma área com poucos projetos em
-          comum — sem leitura, e não zero.
+        <figcaption className="mt-3 text-xs leading-relaxed text-[var(--color-muted)]">
+          Projetos em que você e {agentName} votaram igual. O centro é 0%, o anel marca 80%; eixo
+          tracejado é área com poucos projetos em comum.
         </figcaption>
       </figure>
 
-      <div>
-        <h3 className="mb-4 text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-muted)]">
-          Concordância, projeto a projeto
-        </h3>
+      <div className="mt-7">
         <AreaList
           rows={areas.map((a) => ({
             key: a.area,

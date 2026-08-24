@@ -1167,6 +1167,17 @@ be), but the reference is a printed record, not a fintech app.
   anything is recorded: what following is, what it feeds, that it is one per office, that it is
   revocable, and that only the total is ever published. Where an office is taken the control is
   *absent*, replaced by a quiet line naming who holds it.
+- **A margin plate does not impose columns, and the explanation lives behind a `?`.** The record
+  pages are `lg:grid-cols-[1fr_19rem]`, so a plate in the margin gets **304px** — a plate that
+  declares its own two-column grid there splits that into two ~150px halves, which is how the
+  authorship radar shipped with 6.7px labels. Two rules follow, both measured in the browser rather
+  than eyeballed: the plate stacks and lets the record decide its width; and an SVG drawn at 0.61×
+  has to size its type backwards from that scale (17 viewBox units to reach the 10px floor), which
+  costs radius, which is why the field is 148 and not 168. The prose that used to sit under the
+  figure — taller than the figure itself, in that column — moved into `InfoButton`, the shared
+  portal/Escape/scroll-lock shell behind the `?` beside a heading (`PerformanceInfo`, `AreaInfo`).
+  What stays on the page is only what reads as a defect when unsaid: that a bill counts in every
+  area it touches, so the slices sum past 100%.
 - **Forms are ours, including the parts browsers usually keep.** One surface for every control
   (`src/components/ui/control.ts`) in two treatments — boxed in the admin, a printed rule in the
   public filters. `Select` replaces the OS dropdown with a paper listbox while the native

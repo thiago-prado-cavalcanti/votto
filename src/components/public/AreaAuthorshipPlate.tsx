@@ -7,18 +7,19 @@
  * frase é descritiva ("dos 47 projetos que apresentou, 40% são de saúde") e
  * nunca inferencial.
  *
- * ── O rótulo carrega a leitura ──────────────────────────────────────────────
+ * ── Coluna única, porque a coluna é de 19rem ────────────────────────────────
  *
- * Foi a primeira coisa a dar errado no protótipo da placa irmã: sem título,
- * quem via supunha que o eixo media dedicação ao assunto. Aqui ele **mede**
- * dedicação — e o risco se inverte, porque a mesma figura passa a poder ser
- * lida como concordância. As duas nunca aparecem sem o título que as separa.
+ * A ficha é `lg:grid-cols-[1fr_19rem]` e esta placa mora na margem. Ela nasceu
+ * com um grid de duas colunas próprio, o que partiu 304px em duas metades de
+ * ~150 — figura minúscula, rótulos quebrando em três linhas e a lista espremida.
+ * **Uma placa de margem não impõe colunas**; quem decide a largura é a ficha.
  *
- * ── As fatias não somam 100% ────────────────────────────────────────────────
+ * ── A explicação mora no "?" ────────────────────────────────────────────────
  *
- * `codTema` faz união e um projeto de saneamento é saúde e infraestrutura ao
- * mesmo tempo. O rodapé diz isso, porque um leitor que somar vai chegar a mais
- * de cem e concluir que a conta está errada.
+ * O título, a legenda e o rodapé explicavam a leitura inteira ali mesmo, e numa
+ * coluna dessa largura o texto ficava mais alto que a figura que ele explicava.
+ * Sobra na página só a regra que parece defeito quando não é dita — as fatias
+ * somam mais de 100% —; o resto está em `AreaInfo`, ao lado do título.
  *
  * Server component: sem hooks, sem estado.
  */
@@ -47,20 +48,10 @@ export function AreaAuthorshipPlate({
     );
   }
 
-  const withCount = reading.slices.filter((s) => s.count > 0).length;
-
   return (
-    <div className="grid gap-8 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:items-center">
+    <div>
       <figure className="m-0">
-        <p className="text-[1.05rem] leading-snug text-navy-900">
-          Sobre o que {agentName} legisla
-        </p>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--color-muted)]">
-          Cada eixo é a fatia dos {reading.total} projetos que ele apresentou neste mandato — o que
-          ele escolheu propor, não como votou o que os outros propuseram.
-        </p>
-
-        <div className="mt-4">
+        <div>
           <AreaRadar
             title={`Autoria por área de ${agentName}`}
             axes={reading.slices.map((s) => ({
@@ -74,16 +65,13 @@ export function AreaAuthorshipPlate({
           />
         </div>
 
-        <figcaption className="mt-4 max-w-[46ch] text-xs leading-relaxed text-[var(--color-muted)]">
-          O centro é 0% e o anel marca 80%. Um projeto pode tocar mais de uma área — saneamento é
-          saúde e infraestrutura —, então as fatias somam mais de 100%.
+        <figcaption className="mt-3 text-xs leading-relaxed text-[var(--color-muted)]">
+          Fatia dos {reading.total} projetos que apresentou neste mandato. O centro é 0%, o anel
+          marca 80%.
         </figcaption>
       </figure>
 
-      <div>
-        <h3 className="mb-4 text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-muted)]">
-          Autoria, projeto a projeto
-        </h3>
+      <div className="mt-7">
         <AreaList
           rows={reading.slices.map((s) => ({
             key: s.area,
@@ -95,9 +83,10 @@ export function AreaAuthorshipPlate({
                 : `${fmt(s.count, "projeto", "projetos")} de ${reading.total}`,
           }))}
         />
+        {/* A única coisa que continua na página, porque sem ela a lista parece
+            uma soma errada: nove fatias de 102 somando 209. */}
         <p className="mt-4 text-xs leading-relaxed text-[var(--color-muted)]">
-          {fmt(reading.total, "projeto", "projetos")} apresentados neste mandato, em{" "}
-          {fmt(withCount, "área", "áreas")}. Contagem da Câmara, não estimativa.
+          Um projeto conta em cada área que toca, então as fatias somam mais de 100%.
         </p>
       </div>
     </div>
