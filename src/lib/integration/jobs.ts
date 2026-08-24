@@ -245,6 +245,20 @@ export const SYNC_JOBS: SyncJobDefinition[] = [
     run: camara.syncExpenses,
   },
   {
+    name: "camara:authorship",
+    source: ImportSource.CAMARA,
+    label: "Câmara — autoria por área",
+    description:
+      "Quantas proposições cada deputado apresentou em cada área de política, no mandato corrente.",
+    // Precisa do roster, e de nada mais: a contagem vem da API por deputado, não
+    // do acervo importado — que é uma amostra enviesada do que a pessoa
+    // protocolou (temos 14 dos ≥100 projetos de uma deputada medida). Ver
+    // `syncAuthorship`.
+    after: ["camara:agents"],
+    defaults: {},
+    run: camara.syncAuthorship,
+  },
+  {
     name: "senado:expenses",
     source: ImportSource.SENADO,
     label: "Senado — cota parlamentar",

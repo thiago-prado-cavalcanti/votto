@@ -219,6 +219,21 @@ model PublicAgent {
   qualityPillars    Json?
   qualityComputedAt DateTime?
 
+  // ── Autoria por área (CLAUDE.md §3.4) ──────────────────────────────────────
+  /// O que o parlamentar escolheu trabalhar, por área de política:
+  /// `{ total, byArea: { saude: 12, … } }`.
+  ///
+  /// **É leitura descritiva, nunca inferencial.** "Dos 47 projetos que
+  /// apresentou, 40% são de saúde" é um censo, sem erro padrão; "ele se
+  /// interessa por saúde" estima uma disposição latente, e com o deputado
+  /// mediano protocolando 4 a 6 projetos essa estimativa tem ±40pp. O `total`
+  /// viaja junto por isso.
+  ///
+  /// JSON porque o conjunto de áreas é um registro que pode crescer e nada aqui
+  /// é ordenado em SQL — mesma decisão de `qualityPillars`.
+  authorshipAreas      Json?
+  authorshipComputedAt DateTime?
+
   // ── Posicionamento (CLAUDE.md §3.2) ────────────────────────────────────────
   /// Leitura do eixo econômico (Estado − / Mercado +), −100..100.
   ///

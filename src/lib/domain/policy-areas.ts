@@ -139,6 +139,25 @@ export const CAMARA_AREA_BY_CODE: Readonly<Record<number, PolicyArea | null>> = 
 };
 
 /**
+ * O inverso: área → os `codTema` que caem nela.
+ *
+ * **Derivado, nunca digitado.** Duas listas escritas à mão divergem, e a
+ * divergência aqui seria silenciosa: a leitura de concordância usaria um mapa e
+ * a de autoria o outro, com as mesmas nove etiquetas. É a mesma razão pela qual
+ * `Theme.searchText` tem uma definição só.
+ */
+export const CAMARA_CODES_BY_AREA: Readonly<Record<PolicyArea, number[]>> = (() => {
+  const out = Object.fromEntries(POLICY_AREAS.map((a) => [a.key, [] as number[]])) as Record<
+    PolicyArea,
+    number[]
+  >;
+  for (const [code, area] of Object.entries(CAMARA_AREA_BY_CODE)) {
+    if (area) out[area].push(Number(code));
+  }
+  return out;
+})();
+
+/**
  * Senado: prefixo do **caminho da hierarquia** → área. Primeira regra que casa
  * vence, então **as fugas vêm antes dos padrões de macro-área**.
  *

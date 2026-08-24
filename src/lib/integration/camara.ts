@@ -21,6 +21,8 @@
  * The API also rejects `votacoes` date ranges wider than three months, so any
  * look-back is chunked into windows (see `dateWindows`).
  */
+import { CURRENT_TERM } from "@/lib/domain/terms";
+import { CAMARA_CODES_BY_AREA, POLICY_AREAS } from "@/lib/domain/policy-areas";
 import {
   billTitle,
   counters,
@@ -894,6 +896,120 @@ export async function repairDescriptions(
     itemsUpserted: c.upserted,
     watermark: to.toISOString().slice(0, 10),
   };
+}
+
+/**
+ * Quantas proposições um deputado apresentou em cada área de política (§3.4).
+ *
+ * ── Por que a leitura existe ────────────────────────────────────────────────
+ *
+ * Votar é reagir à pauta que a Mesa montou; **apresentar é escolha da pessoa**.
+ * Medido em 24/08/2026, a distribuição de VOTOS por área varia ±5 pontos entre
+ * os 623 deputados — praticamente a mesma para todos, porque é a pauta e não
+ * eles. A distribuição de AUTORIA é o traço que sobra, e é o que responde "sobre
+ * o que este parlamentar trabalha".
+ *
+ * ── Por que uma varredura própria, e não o que já está no banco ─────────────
+ *
+ * Porque o acervo importado é uma amostra **enviesada** do que a pessoa
+ * protocolou: o importador puxa o que se MOVEU na janela e o que entrou na pauta
+ * do Plenário. Medido: temos **14** projetos de Erika Kokay contra os **≥100**
+ * que a Câmara publica desde 2023. Publicar um perfil de foco sobre 14%
+ * selecionados por movimentação descreveria a pauta da Câmara filtrada por ela,
+ * não os interesses dela — que é exatamente o erro que o §3.2 gastou uma
+ * investigação inteira para não cometer.
+ *
+ * ── Por que é barato ────────────────────────────────────────────────────────
+ *
+ * Três propriedades da API compõem, e as três foram verificadas:
+ *
+ *  - `codTema` **aceita repetição e faz união** — 68 + 15 devolveu exatamente 83,
+ *    então uma área inteira cabe numa requisição;
+ *  - `codTema` **combina com** `idDeputadoAutor`;
+ *  - `itens=1` mais o link `last` devolve **a contagem exata sem baixar nenhum
+ *    projeto**.
+ *
+ * Dez requisições por deputado (nove áreas mais o total), ~5.100 no total, ~40
+ * min. A alternativa óbvia — pedir `/proposicoes/{id}/temas` de cada projeto —
+ * custaria dezenas de milhares.
+ *
+ * ── O que NÃO precisa de filtro aqui ────────────────────────────────────────
+ *
+ * As outorgas de radiodifusão, que dominariam `infraestrutura` na leitura de
+ * concordância, não aparecem nesta: são de autoria do Executivo ou de comissão,
+ * e `idDeputadoAutor` já as exclui. O filtro continua devendo, mas ao outro lado.
+ */
+export async function syncAuthorship(opts: SyncOptions = {}): Promise<SyncResult> {
+  const c = counters();
+  const deputies = await db.publicAgent.findMany({
+    where: { source: SOURCE, type: AgentType.FEDERAL_DEPUTY, inOffice: true },
+    select: { id: true, externalRef: true },
+  });
+  const targets = opts.limit ? deputies.slice(0, opts.limit) : deputies;
+
+  // Mandato corrente, e não a carreira. É o recorte que o resto da plataforma
+  // usa (governismo por mandato, coesão por mandato), e um parlamentar pode ter
+  // mudado de foco entre legislaturas. Medido em Erika Kokay: a proporção quase
+  // não muda (53% contra 50% em Direitos), mas o n cai de 596 para 111.
+  const since = `${CURRENT_TERM.from}`;
+  const types = POLICY_TYPES.map((t) => `siglaTipo=${t}`).join("&");
+
+  for (const [i, dep] of targets.entries()) {
+    if (!dep.externalRef) continue;
+    if (i % PROGRESS_INTERVAL === 0) {
+      opts.onProgress?.({ seen: c.seen, upserted: c.upserted, note: `${i}/${targets.length}` });
+    }
+    const base = `${BASE}/proposicoes?idDeputadoAutor=${dep.externalRef}&${types}&dataApresentacaoInicio=${since}`;
+    const total = await countProposicoes(base);
+    c.seen++;
+    if (total === null) continue;
+
+    const byArea: Record<string, number> = {};
+    for (const { key } of POLICY_AREAS) {
+      const codes = CAMARA_CODES_BY_AREA[key];
+      if (!codes.length) continue;
+      const n = await countProposicoes(`${base}&${codes.map((k: number) => `codTema=${k}`).join("&")}`);
+      if (n !== null && n > 0) byArea[key] = n;
+    }
+
+    await db.publicAgent.update({
+      where: { id: dep.id },
+      data: {
+        // `total` viaja com as fatias pela regra do §3.3: "40%" e "40% de 47
+        // projetos" são afirmações diferentes.
+        authorshipAreas: { total, byArea } as unknown as object,
+        authorshipComputedAt: new Date(),
+      },
+    });
+    c.upserted++;
+  }
+
+  return { itemsSeen: c.seen, itemsUpserted: c.upserted, watermark: new Date().toISOString().slice(0, 10) };
+}
+
+/**
+ * A contagem de uma consulta de proposições, sem baixar os itens.
+ *
+ * Com `itens=1`, a última página **é** o total. Sem link `last` a resposta cabe
+ * numa página só, e aí o tamanho de `dados` é a resposta — o que cobre o zero.
+ *
+ * `null` quando a consulta falhou: é diferente de zero, e gravar zero por uma
+ * requisição perdida publicaria "não apresentou nada sobre saúde" sobre um erro
+ * de rede.
+ */
+async function countProposicoes(url: string): Promise<number | null> {
+  try {
+    const page = await fetchJson<CamaraPage<unknown>>(`${url}&itens=1`);
+    await sleep(REQUEST_DELAY);
+    const last = page.links?.find((l) => l.rel === "last")?.href;
+    if (last) {
+      const n = Number(new URL(last).searchParams.get("pagina"));
+      if (Number.isFinite(n)) return n;
+    }
+    return Array.isArray(page.dados) ? page.dados.length : 0;
+  } catch {
+    return null;
+  }
 }
 
 /**

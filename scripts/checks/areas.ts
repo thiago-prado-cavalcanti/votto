@@ -20,6 +20,7 @@
  */
 import {
   CAMARA_AREA_BY_CODE,
+  CAMARA_CODES_BY_AREA,
   POLICY_AREAS,
   camaraArea,
   senadoArea,
@@ -70,6 +71,34 @@ ok("53 Processo Legislativo é excluído", camaraArea(53) === null);
 // contrárias, separadas por uma regra escrita — o que o rótulo oficial diz.
 ok('67 "DIREITO e Defesa do Consumidor" → segurança', camaraArea(67) === "seguranca");
 ok('74 "POLÍTICA, Partidos e Eleições" → gestão', camaraArea(74) === "gestao");
+
+console.log("\nO mapa invertido é derivado, não digitado");
+// Duas listas escritas à mão divergem, e aqui a divergência seria silenciosa: a
+// concordância usaria um mapa e a autoria o outro, com as mesmas nove etiquetas.
+{
+  const codigosNoInverso = Object.values(CAMARA_CODES_BY_AREA).flat().sort((a, b) => a - b);
+  const mapeados = Object.entries(CAMARA_AREA_BY_CODE)
+    .filter(([, area]) => area !== null)
+    .map(([c]) => Number(c))
+    .sort((a, b) => a - b);
+  ok(
+    "o inverso cobre exatamente os códigos não-excluídos",
+    JSON.stringify(codigosNoInverso) === JSON.stringify(mapeados),
+  );
+  ok(
+    "nenhum código aparece em duas áreas",
+    new Set(codigosNoInverso).size === codigosNoInverso.length,
+  );
+  ok(
+    "os excluídos não aparecem no inverso",
+    !codigosNoInverso.includes(72) && !codigosNoInverso.includes(53),
+  );
+  ok(
+    "toda área tem ao menos um código da Câmara",
+    POLICY_AREAS.every((a) => CAMARA_CODES_BY_AREA[a.key].length > 0),
+    `(vazias: ${POLICY_AREAS.filter((a) => !CAMARA_CODES_BY_AREA[a.key].length).map((a) => a.key).join(", ") || "nenhuma"})`,
+  );
+}
 
 console.log("\nSenado — casa pelo caminho, nunca pelo rótulo");
 // Estas três folhas são o caso que quebrou de verdade: não contêm a palavra
