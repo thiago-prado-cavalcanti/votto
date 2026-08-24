@@ -15,9 +15,9 @@
  *   npm run reposition -- --dry --estimator=pca --residual=off
  *                                           # ...sem residualizar o governismo, para a porta 2
  *                                           #    voltar a significar algo
- *   npm run reposition -- --dry --estimator=pca --items=policy
- *                                           # ...admitindo so proposicao de merito, sem
- *                                           #    requerimento de urgencia e afins
+ *   npm run reposition -- --dry --estimator=pca --items=substantive
+ *                                           # ...admitindo so votacao de MERITO, pela descricao
+ *                                           #    (requer `npm run redescribe` antes)
  *   npm run reposition -- --dry --estimator=pca --score=residual
  *                                           # ...descontando o governismo tambem dos escores,
  *                                           #    e nao so das cargas
@@ -140,13 +140,15 @@ function parseEstimator(argv: string[]): Estimator {
  * o estimador de tags nunca viu esses itens: a IA já os marcava `scoreable:
  * false`, e foi soltar o filtro de tag que os trouxe para dentro.
  */
-function parseItems(argv: string[]): boolean {
+function parseItems(argv: string[]): "all" | "policy" | "substantive" {
   const arg = argv.find((a) => a.startsWith("--items"));
-  if (!arg) return false;
+  if (!arg) return "all";
   const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
-  if (value === "all") return false;
-  if (value === "policy") return true;
-  console.error(`Valor inválido para --items: "${value}". Use "all" ou "policy".`);
+  if (value === "all" || value === "policy" || value === "substantive") return value;
+  console.error(
+    `Valor inválido para --items: "${value}". Use "all", "policy" (identificador) ` +
+      `ou "substantive" (descrição da votação).`,
+  );
   process.exit(1);
 }
 
@@ -201,7 +203,7 @@ async function main(): Promise<void> {
   const estimator = parseEstimator(process.argv);
   const residualise = parseResidual(process.argv);
   const scoreResidual = parseScore(process.argv);
-  const policyItemsOnly = parseItems(process.argv);
+  const itemFilter = parseItems(process.argv);
   const loweredFloor = minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
 
   if (
@@ -209,7 +211,7 @@ async function main(): Promise<void> {
     loweredFloor ||
     estimator !== "tags" ||
     scoreResidual ||
-    policyItemsOnly
+    itemFilter !== "all"
   ) {
     const lines: string[] = [];
     if (estimator === "pca")
@@ -217,7 +219,8 @@ async function main(): Promise<void> {
         "direção e peso vêm do componente principal da matriz de votos, com as tags só orientando" +
           (residualise ? "; colunas residualizadas contra o governismo" : "; SEM residualizar") +
           (scoreResidual ? "; governismo descontado TAMBÉM dos escores" : "") +
-          (policyItemsOnly ? "; só proposições de mérito na matriz" : ""),
+          (itemFilter === "policy" ? "; só identificador de mérito na matriz" : "") +
+          (itemFilter === "substantive" ? "; só votação de mérito na matriz, pela descrição" : ""),
       );
     if (weights === "raw") lines.push("o fator (1 − contaminação) está desligado");
     if (weights === "clean")
@@ -242,7 +245,7 @@ async function main(): Promise<void> {
     estimator,
     residualise,
     scoreResidual,
-    policyItemsOnly,
+    itemFilter,
   });
 
   if (agents.length === 0) {
@@ -307,8 +310,8 @@ async function main(): Promise<void> {
     // enquanto couber MIN_HOUSE_ITEMS embaixo dele.
     if (h.droppedNonPolicy > 0) {
       console.log(
-        `        ${h.droppedNonPolicy} itens fora por não serem proposição de mérito ` +
-          "(requerimento, questão de ordem)",
+        `        ${h.droppedNonPolicy} itens fora por serem rito e não mérito ` +
+          "(requerimento, preferência, redação final)",
       );
     }
     if (h.contaminationBands.length > 0) {
@@ -504,7 +507,7 @@ async function main(): Promise<void> {
   if (weights !== DEFAULT_WEIGHT_MODE)
     parts.push(`pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""}`);
   if (loweredFloor) parts.push(`piso ${minEffectiveItems}`);
-  if (policyItemsOnly) parts.push("só mérito");
+  if (itemFilter !== "all") parts.push(`itens "${itemFilter}"`);
   const stamp = parts.length > 0 ? ` · ${parts.join(" · ")} (medição)` : "";
   if (dryRun) console.log(`\n  (--dry: nada foi gravado${stamp})`);
   else console.log("\n✓ Posicionamento atualizado.");

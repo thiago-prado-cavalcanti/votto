@@ -794,6 +794,16 @@ export interface RollCallInput {
    */
   governmentPosition?: VoteValue | null;
   oppositionPosition?: VoteValue | null;
+  /**
+   * Descrição da votação, como a casa a publica.
+   *
+   * `undefined` (ausente) e `null` significam coisas diferentes aqui, pela mesma
+   * regra que `upsertTheme` aplica ao autor: ausente **não sobrescreve** o que já
+   * está gravado. É o que permite `npm run redescribe` preencher o histórico sem
+   * que o sync semanal, ou uma fonte que parou de publicar o campo, apague o que
+   * ele preencheu.
+   */
+  description?: string | null;
 }
 
 export async function recordRollCall(input: RollCallInput): Promise<number> {
@@ -807,6 +817,7 @@ export async function recordRollCall(input: RollCallInput): Promise<number> {
     presidingAgentId,
     governmentPosition,
     oppositionPosition,
+    description,
   } = input;
   if (participants.length === 0) return 0;
 
@@ -824,12 +835,15 @@ export async function recordRollCall(input: RollCallInput): Promise<number> {
       occurredAt,
       themeId: themeId ?? null,
       presidingAgentId: presidingAgentId ?? null,
+      description: description ?? null,
       ...orientation,
     },
     update: {
       occurredAt,
       themeId: themeId ?? null,
       presidingAgentId: presidingAgentId ?? null,
+      // Ausente não apaga: ver `RollCallInput.description`.
+      description: description === undefined ? undefined : description,
       ...orientation,
     },
     select: { id: true },

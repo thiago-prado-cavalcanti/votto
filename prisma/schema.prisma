@@ -126,16 +126,16 @@ model Party {
   /// da casa (`src/lib/indexes/pooling.ts`) e limitada a um erro padrão de
   /// deslocamento. NUNCA a média crua: uma bancada de um publicaria a
   /// excentricidade de uma pessoa como a posição de um partido.
-  positionEconomic Int?
-  positionSocial   Int?
+  positionEconomic   Int?
+  positionSocial     Int?
   /// Média observada antes de encolher, confiabilidade, dispersão interna, a
   /// tira de membros e a coesão em excesso sobre o acaso.
-  positionDetail   Json?
+  positionDetail     Json?
   positionComputedAt DateTime?
   /// Coesão em excesso sobre o acaso (0–100), pelo índice de concordância de
   /// Hix, Noury & Roland corrigido pelo tamanho da bancada. NULL para bancada
   /// de um, onde a coesão é 1 por construção e não informa nada.
-  cohesion         Int?
+  cohesion           Int?
 
   // Provenance for idempotent imports.
   source      ImportSource @default(MANUAL)
@@ -227,14 +227,14 @@ model PublicAgent {
   /// coordenada de um centrista perfeito, então publicar zero por falta de dado
   /// é publicar uma posição que ninguém mediu — foi exatamente isso que colocou
   /// partidos de posição incontroversa no centro.
-  positionEconomic Int?
+  positionEconomic   Int?
   /// Leitura do eixo social (Ordem − / Liberdades +), −100..100. Mesma regra.
-  positionSocial   Int?
+  positionSocial     Int?
   /// O que sustenta as duas leituras: erro padrão e cobertura por eixo, a
   /// proposição de maior influência, a fatia de tags no formato antigo e as
   /// portas de faixa. Guardado como JSON porque é diagnóstico — nada aqui é
   /// ordenado em SQL.
-  positionDetail   Json?
+  positionDetail     Json?
   positionComputedAt DateTime?
 
   /// Governismo (0–100): fatia das votações em que o agente votou com a
@@ -244,7 +244,7 @@ model PublicAgent {
   /// primeira dimensão das votações nominais brasileiras é governo↔oposição, e
   /// sem medi-la não há como afirmar que o eixo econômico não é ela com outro
   /// nome (Zucco & Lauderdale 2011). NULL quando a casa não publica orientação.
-  governismo       Int?
+  governismo Int?
 
   /// Denominador do governismo: votações com orientação do bloco `Governo` em
   /// que o agente esteve presente.
@@ -253,7 +253,7 @@ model PublicAgent {
   /// 312 votações" são afirmações diferentes, e a segunda é a única conferível —
   /// a mesma disciplina que a performance política já segue ao imprimir
   /// "92% · 312 de 340 votações" ao lado da barra.
-  governismoBase   Int?
+  governismoBase Int?
 
   /// Accent- and case-folded haystack for the public search box, maintained by
   /// Postgres as a `GENERATED ... STORED` column — see
@@ -505,6 +505,19 @@ model RollCall {
   /// leave is taken out.
   presidingAgentId String?
   presiding        PublicAgent? @relation("RollCallPresiding", fields: [presidingAgentId], references: [id], onDelete: SetNull)
+
+  /// Descrição da votação como a casa a publica — "Requerimento de urgência
+  /// para o PL 1234/2024", "Votação em globo dos destaques", e assim por diante.
+  ///
+  /// É o único campo que separa MÉRITO de RITO, e a distinção decide se a
+  /// votação entra no índice de posicionamento: uma votação de requerimento é
+  /// posição sobre o andamento, não sobre o conteúdo, e o andamento se decide
+  /// pela linha governo↔oposição quase por definição. `Theme.identifier` não
+  /// resolve porque `proposicoesAfetadas` aponta para o projeto de fundo — uma
+  /// urgência sobre o PL X vira posição sobre "PL X".
+  ///
+  /// Vem de graça: já está na resposta de lista que `syncVotes` baixa.
+  description String?
 
   /// Orientação do bloco `Governo` nesta votação, quando a casa a publica
   /// (Câmara `/votacoes/{id}/orientacoes`). NULL significa "não publicada", que

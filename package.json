@@ -30,6 +30,7 @@
     "requality": "tsx scripts/requality.ts",
     "reposition": "tsx scripts/reposition.ts",
     "reauthor": "tsx scripts/reauthor.ts",
+    "redescribe": "tsx scripts/redescribe.ts",
     "summarize": "tsx scripts/sync.ts ai:summaries",
     "estimate:ai": "tsx scripts/estimate-ai-cost.ts",
     "sync": "tsx scripts/sync.ts",

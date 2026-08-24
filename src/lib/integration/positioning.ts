@@ -89,7 +89,7 @@ import {
   UNANCHORED_PARTIES,
   anchorKey,
 } from "@/lib/domain/anchors";
-import { isPolicyBill } from "@/lib/domain/bill-types";
+import { isPolicyBill, isProceduralVote } from "@/lib/domain/bill-types";
 import { CURRENT_TERM, currentTermStart, termOf } from "@/lib/domain/terms";
 import { AgentType, EntityStatus, House, Prisma, VoteValue } from "@/generated/prisma";
 
@@ -349,10 +349,14 @@ export async function recomputePositioningIndex(
     /** Piso de cobertura por eixo. Alterá-lo também torna a rodada não publicável. */
     minEffectiveItems?: number;
     /**
-     * Só para `pca`: admitir apenas proposições de mérito, descartando
-     * requerimentos e afins (`src/lib/domain/bill-types.ts`).
+     * Só para `pca`: como separar mérito de rito.
+     *
+     * `"policy"` olha o identificador do tema — barato e quase inútil, porque
+     * `proposicoesAfetadas` resolve para o projeto de fundo (medido: 5 de 339).
+     * `"substantive"` olha a **descrição da votação**, que é o campo que de fato
+     * separa os dois, e cuja taxa bate com os 58,8% documentados.
      */
-    policyItemsOnly?: boolean;
+    itemFilter?: "all" | "policy" | "substantive";
     /** De onde vêm direção e peso. Ausente é a metodologia em vigor. */
     estimator?: Estimator;
     /** Só para `pca`: residualizar as colunas contra o governismo antes de decompor. */
@@ -378,8 +382,8 @@ export async function recomputePositioningIndex(
   estimator: Estimator;
   /** Se o governismo foi descontado também dos escores. */
   scoreResidual: boolean;
-  /** Se só proposições de mérito foram admitidas na matriz. */
-  policyItemsOnly: boolean;
+  /** Que filtro de item rodou. */
+  itemFilter: "all" | "policy" | "substantive";
 }> {
   const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
   const maxContamination = opts.maxContamination ?? CLEAN_MAX_CONTAMINATION;
@@ -387,7 +391,7 @@ export async function recomputePositioningIndex(
   const estimator = opts.estimator ?? "tags";
   const residualise = opts.residualise ?? true;
   const scoreResidual = opts.scoreResidual ?? false;
-  const policyItemsOnly = opts.policyItemsOnly ?? false;
+  const itemFilter = opts.itemFilter ?? "all";
 
   // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
   // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
@@ -404,7 +408,7 @@ export async function recomputePositioningIndex(
     minEffectiveItems !== MIN_EFFECTIVE_ITEMS ||
     estimator !== "tags" ||
     scoreResidual ||
-    policyItemsOnly;
+    itemFilter !== "all";
   if (!opts.dryRun && experimental) {
     const why =
       estimator !== "tags"
@@ -509,13 +513,46 @@ export async function recomputePositioningIndex(
     themeId: string;
     value: VoteValue;
     occurredAt: Date | null;
+    sessionRef: string | null;
   }> = [];
   for (let i = 0; i < scorableThemeIds.length; i += VOTE_FETCH_BATCH) {
     const batch = await db.vote.findMany({
       where: { voterType: "AGENT", themeId: { in: scorableThemeIds.slice(i, i + VOTE_FETCH_BATCH) } },
-      select: { agentId: true, themeId: true, value: true, occurredAt: true },
+      select: {
+        agentId: true,
+        themeId: true,
+        value: true,
+        occurredAt: true,
+        // A votação que fixou a posição vigente — o elo com `RollCall`, onde
+        // vive a descrição que separa mérito de rito.
+        sessionRef: true,
+      },
     });
     votes.push(...batch);
+  }
+
+  // ── Mérito ou rito, pela descrição da votação ─────────────────────────────
+  //
+  // `Vote.sessionRef` guarda a votação que fixou a posição vigente, e é a
+  // descrição DAQUELA que decide — não a de todas as votações do projeto. Um
+  // projeto pode ter tido urgência aprovada e mérito votado depois; o que a
+  // posição registra é a última, e é essa que precisa ser classificada.
+  const proceduralThemes = new Set<string>();
+  if (itemFilter === "substantive") {
+    const sessionRefs = [...new Set(votes.map((v) => v.sessionRef).filter(Boolean))] as string[];
+    const descriptions = new Map<string, string | null>();
+    for (let i = 0; i < sessionRefs.length; i += VOTE_FETCH_BATCH) {
+      const rows = await db.rollCall.findMany({
+        where: { externalRef: { in: sessionRefs.slice(i, i + VOTE_FETCH_BATCH) } },
+        select: { externalRef: true, description: true },
+      });
+      for (const r of rows) descriptions.set(r.externalRef, r.description);
+    }
+    for (const v of votes) {
+      if (!v.sessionRef) continue;
+      if (isProceduralVote(descriptions.get(v.sessionRef))) proceduralThemes.add(v.themeId);
+      else proceduralThemes.delete(v.themeId);
+    }
   }
 
   // A que mandato cada tema pertence — pela data da votação que fixou a posição
@@ -617,7 +654,11 @@ export async function recomputePositioningIndex(
         if (!stats || !theme?.dims.scoreable) continue;
         if (discrimination(stats) < MIN_DISCRIMINATION) continue;
         // Requerimento não é posição sobre mérito — ver `bill-types.ts`.
-        if (policyItemsOnly && !theme.policy) {
+        if (itemFilter === "policy" && !theme.policy) {
+          droppedNonPolicy++;
+          continue;
+        }
+        if (itemFilter === "substantive" && proceduralThemes.has(themeId)) {
           droppedNonPolicy++;
           continue;
         }
@@ -1068,7 +1109,7 @@ export async function recomputePositioningIndex(
     minEffectiveItems,
     estimator,
     scoreResidual,
-    policyItemsOnly,
+    itemFilter,
   };
 }
 

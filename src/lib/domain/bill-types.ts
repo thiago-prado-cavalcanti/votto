@@ -70,3 +70,74 @@ export function isPolicyBill(identifier: string | null | undefined): boolean {
   const type = billType(identifier);
   return type !== null && POLICY_BILL_TYPES.includes(type);
 }
+
+// ─── O que a votação decidiu, pela descrição ─────────────────────────────────
+
+/**
+ * Objetos de votação que são **rito**, não mérito.
+ *
+ * Vêm da forma real das descrições da Câmara, que são a *frase de resultado* e
+ * não um rótulo de tipo — `"Aprovado o Requerimento nº 4.491/2024, dos Senhores
+ * Líderes, que solicita a quebra de interstício de 5 sessões"`. O que decide é o
+ * **objeto**, e ele vem logo depois do verbo.
+ *
+ * `Redação Final` entra porque é formalidade de texto já aprovado, e na prática
+ * `MIN_DISCRIMINATION` já a descartaria por ser quase sempre unânime — mas
+ * classificá-la é mais honesto que deixá-la passar por acidente aritmético.
+ */
+const PROCEDURAL_OBJECTS = [
+  "requerimento",
+  "prefer[êe]ncia",
+  "reda[çc][ãa]o final",
+  "inters[tí]cio",
+  "quest[ãa]o de ordem",
+  "invers[ãa]o de pauta",
+  "adiamento",
+  "urg[êe]ncia",
+  "retirada de pauta",
+  "encerramento da discuss[ãa]o",
+  "prorroga[çc][ãa]o da sess[ãa]o",
+];
+
+/**
+ * Ancorado no COMEÇO da frase, e a âncora é o ponto todo.
+ *
+ * `isDeliberativeSession` é o precedente: um `includes` ingênuo deixou passar 59
+ * sessões solenes porque `"Sessão Não Deliberativa Solene"` contém
+ * `"Deliberativa"`. Aqui o risco simétrico é um projeto **sobre** requerimentos,
+ * ou um substitutivo cuja ementa cite urgência — casos em que a palavra aparece
+ * longe do verbo.
+ *
+ * Por isso: verbo de resultado, depois no máximo ~40 caracteres (que acomodam
+ * `", em segundo turno,"` e afins), e só então o objeto. Um `"Aprovado o
+ * Substitutivo ao Projeto de Lei nº 1.822, de 2024, adotado pelo relator…"` não
+ * casa, e um `"Aprovada a preferência"` casa.
+ */
+const PROCEDURAL_RE = new RegExp(
+  String.raw`^\s*(?:aprovad|rejeitad|retirad|prejudicad|mantid)[oa]s?\b[^.]{0,40}?\b(?:` +
+    PROCEDURAL_OBJECTS.join("|") +
+    String.raw`)\b`,
+  "i",
+);
+
+/**
+ * Se a votação decidiu **andamento** e não conteúdo.
+ *
+ * Uma votação de requerimento não é posição sobre o mérito de nada, e no Brasil
+ * o andamento se decide pela linha governo↔oposição quase por definição: quem
+ * quer que o projeto ande vota urgência e quem não quer vota contra,
+ * independentemente do que o projeto diz. `docs/posicionamento.md` mede **58,8%
+ * das votações do Plenário da Câmara em 2025** como procedimentais.
+ *
+ * **Descrição ausente devolve `false`** — "não sei" não é "é rito". Descartar por
+ * omissão apagaria todo o histórico ainda não preenchido por `npm run
+ * redescribe`, que é o oposto do que se quer.
+ *
+ * `"Mantido o texto"` é MÉRITO: é voto de destaque, sobre qual dispositivo
+ * sobrevive. Foi o caso que mais me fez errar ao adivinhar o vocabulário antes
+ * de olhar as descrições reais.
+ */
+export function isProceduralVote(description: string | null | undefined): boolean {
+  if (!description) return false;
+  return PROCEDURAL_RE.test(description);
+}

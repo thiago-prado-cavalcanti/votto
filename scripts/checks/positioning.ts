@@ -33,7 +33,7 @@ import {
   type RecoveryVote,
 } from "@/lib/indexes/recovery";
 import { pool, betweenVariance, agreementIndex, excessCohesion, expectedRandomAgreement } from "@/lib/indexes/pooling";
-import { billType, isPolicyBill } from "@/lib/domain/bill-types";
+import { billType, isPolicyBill, isProceduralVote } from "@/lib/domain/bill-types";
 import {
   spearman,
   weightedSpearman,
@@ -420,6 +420,39 @@ ok(
   !isPolicyBill("Proposição 12345") && !isPolicyBill(null) && !isPolicyBill(""),
 );
 ok("o tipo sai do começo do identificador", billType("PLP 108/2024") === "PLP");
+
+// A descrição da votação é o que de fato separa mérito de rito. As frases abaixo
+// são literais da API da Câmara, não inventadas — adivinhar o vocabulário foi o
+// que produziu o bug do `isDeliberativeSession`, e o formato real (frase de
+// RESULTADO, não rótulo de tipo) não é o que se suporia.
+ok(
+  "requerimento é rito",
+  isProceduralVote("Aprovado o Requerimento nº 4.491/2024, dos Senhores Líderes, que solicita a quebra de interstício de 5 sessões"),
+);
+ok("requerimento curto é rito", isProceduralVote("Rejeitado o Requerimento. Sim: 102; Não: 322;"));
+ok("preferência é rito", isProceduralVote("Aprovada a preferência. Sim: 467; Não: 4;"));
+ok("redação final é rito", isProceduralVote("Aprovada a Redação Final assinada pelo relator, Dep. Leo Prates (REPUBLIC/BA)."));
+ok(
+  "PEC é mérito",
+  !isProceduralVote("Aprovada, em segundo turno, a Proposta de Emenda à Constituição n° 5, de 2023. Sim: 368; Não: 96"),
+);
+ok(
+  "substitutivo é mérito",
+  !isProceduralVote("Aprovado o Substitutivo ao Projeto de Lei nº 1.822, de 2024, adotado pelo relator da Comissão de Previdência"),
+);
+// O caso que eu teria errado ao adivinhar: destaque é sobre qual dispositivo
+// sobrevive, logo é mérito.
+ok("\"Mantido o texto\" é MÉRITO — é destaque", !isProceduralVote("Mantido o texto. Sim: 335; Não: 117; Abstenção: 5;"));
+ok("emenda é mérito", !isProceduralVote("Rejeitada a Emenda ao Substitutivo."));
+// Ausente não é rito: descartar por omissão apagaria o histórico ainda não
+// preenchido por `npm run redescribe`.
+ok("descrição ausente não é rito", !isProceduralVote(null) && !isProceduralVote(""));
+// A âncora no começo da frase é o que impede o erro simétrico ao do
+// `isDeliberativeSession`: a palavra longe do verbo não classifica.
+ok(
+  "projeto que MENCIONA requerimento longe do verbo continua mérito",
+  !isProceduralVote("Aprovado o Projeto de Lei nº 5.868, de 2025, que disciplina o requerimento de vista nos processos administrativos."),
+);
 
 console.log("\nÂncoras");
 ok("PL à direita", (anchorFor("PL") ?? 0) > 0.7, `(${anchorFor("PL")})`);

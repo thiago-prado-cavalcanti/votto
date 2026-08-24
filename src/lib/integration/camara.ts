@@ -830,8 +830,62 @@ export async function syncVotes(opts: SyncOptions = {}): Promise<SyncResult> {
 
         const occurredAt = parseDate(v.dataHoraRegistro ?? v.data);
         const orientation = await fetchOrientacoes(v.id);
-        await recordVotos(v.id, themeId, votos, occurredAt, agentIdByRef, c, orientation);
+        // `v.descricao` vem na resposta de LISTA — nenhuma requisição a mais.
+        await recordVotos(v.id, themeId, votos, occurredAt, agentIdByRef, c, orientation, v.descricao);
       }
+    }
+  }
+
+  return {
+    itemsSeen: c.seen,
+    itemsUpserted: c.upserted,
+    watermark: to.toISOString().slice(0, 10),
+  };
+}
+
+/**
+ * Preencher `RollCall.description` no histórico já importado.
+ *
+ * Gêmeo em espírito de `repairAuthorship`: a coluna é nova e as votações já
+ * estão gravadas, então o dado tem de ser pedido de novo à casa. A diferença é o
+ * custo — a descrição vem na resposta de **lista**, então isto refaz só as
+ * chamadas de lista e **nenhuma** das de detalhe, votos ou orientação. Um
+ * backfill de sete anos custa aqui algumas dezenas de requisições, contra as
+ * milhares que `syncVotes` custaria.
+ *
+ * Idempotente e interrompível: só toca linha cuja descrição ainda é NULL, então
+ * uma segunda passada não escreve nada e uma interrupção não perde o que já foi
+ * feito.
+ */
+export async function repairDescriptions(
+  opts: SyncOptions & { dryRun?: boolean } = {},
+): Promise<SyncResult> {
+  const c = counters();
+  const days = opts.days ?? 30;
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(from.getDate() - days);
+
+  for (const window of dateWindows(from, to, MAX_VOTE_WINDOW_DAYS)) {
+    const url =
+      `${BASE}/votacoes?idOrgao=${PLENARY_ORG_ID}` +
+      `&dataInicio=${window.start}&dataFim=${window.end}` +
+      `&ordem=DESC&ordenarPor=dataHoraRegistro&itens=100`;
+
+    for await (const dados of paginate<CamaraVotacao>(url)) {
+      for (const v of dados) {
+        if (!v.id || !v.descricao) continue;
+        c.seen++;
+        if (opts.dryRun) continue;
+        // `description: null` no filtro é o que torna a passada idempotente e
+        // o que impede de sobrescrever uma descrição que a casa mudou depois.
+        const { count } = await db.rollCall.updateMany({
+          where: { source: SOURCE, externalRef: v.id, description: null },
+          data: { description: v.descricao },
+        });
+        c.upserted += count;
+      }
+      opts.onProgress?.({ seen: c.seen, upserted: c.upserted });
     }
   }
 
@@ -930,6 +984,7 @@ async function recordVotos(
     government: null,
     opposition: null,
   },
+  description?: string | null,
 ): Promise<void> {
   const participants: Array<{ agentId: string; value: VoteValue }> = [];
   let presidingAgentId: string | null = null;
@@ -997,6 +1052,7 @@ async function recordVotos(
       presidingAgentId,
       governmentPosition: orientation.government,
       oppositionPosition: orientation.opposition,
+      description,
     });
   }
 }
