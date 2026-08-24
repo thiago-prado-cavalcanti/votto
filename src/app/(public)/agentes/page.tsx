@@ -143,6 +143,12 @@ export default async function AgentsPage({
             <Input
               variant="rule"
               name="q"
+              type="search"
+              inputMode="search"
+              enterKeyHint="search"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               defaultValue={q ?? ""}
               placeholder="Nome ou partido"
             />
@@ -185,7 +191,7 @@ export default async function AgentsPage({
             page one, so the choice lives in the URL. */}
         {sortOptions.length > 1 ? (
           // Pulled flush against the filter bar, whose `mb-10` would otherwise
-          // leave an empty band between its closing rule and this row.
+          // leave an empty band between the fields and this row.
           <SortHeader
             options={sortOptions}
             active={activeSort}

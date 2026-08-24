@@ -14,6 +14,7 @@ import { Container, Card, CardBody } from "@/components/ui";
 import { Reveal } from "@/components/public/motion";
 import { SocialButtons } from "@/components/public/SocialButtons";
 import { availableButtons } from "@/lib/auth/social/providers";
+import { sanitizeReturnTo } from "@/lib/auth/return-to";
 
 export const metadata: Metadata = {
   title: "Entrar",
@@ -31,9 +32,12 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
+  // Sanitized here as well as at the route that stores it: this value is about
+  // to be written into an href, and an unchecked one is an open redirect.
+  const returnTo = sanitizeReturnTo(next);
   const message = error ? ERROR_MESSAGES[error] ?? ERROR_MESSAGES.provider : null;
   const loginAvailable = availableButtons().length > 0;
 
@@ -61,7 +65,7 @@ export default async function LoginPage({
             ) : null}
 
             {loginAvailable ? (
-              <SocialButtons />
+              <SocialButtons returnTo={returnTo} />
             ) : (
               <div className="rounded-card border border-line bg-canvas px-4 py-3.5">
                 <p className="text-sm font-semibold text-navy-900">

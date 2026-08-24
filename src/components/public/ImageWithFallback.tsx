@@ -13,6 +13,13 @@
  * race by asking the DOM directly whether the image already finished loading
  * with no pixels (`complete && naturalWidth === 0`), which is exactly the
  * signature of a load that failed before hydration.
+ *
+ * Images are **lazy by default**, and that default is the whole reason this
+ * prop exists. `/agentes` ships 120 portraits; loading them all eagerly made
+ * them compete for the link with the text, and the page's LCP measured 4,0s on
+ * a throttled phone against 1,06s with the network unthrottled — the cost was
+ * bandwidth, not rendering. A portrait that genuinely opens a page (the one on
+ * a record masthead) passes `priority` and loads eagerly.
  */
 import * as React from "react";
 
@@ -21,11 +28,14 @@ export function ImageWithFallback({
   alt,
   className,
   fallback,
+  priority = false,
 }: {
   src?: string | null;
   alt: string;
   className?: string;
   fallback: React.ReactNode;
+  /** Above the fold, and worth the bandwidth before anything else. */
+  priority?: boolean;
 }) {
   const [failed, setFailed] = React.useState(false);
   const ref = React.useRef<HTMLImageElement>(null);
@@ -45,6 +55,9 @@ export function ImageWithFallback({
       src={src}
       alt={alt}
       className={className}
+      loading={priority ? "eager" : "lazy"}
+      decoding={priority ? "sync" : "async"}
+      fetchPriority={priority ? "high" : "auto"}
       onError={() => setFailed(true)}
     />
   );

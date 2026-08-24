@@ -326,7 +326,12 @@ function RatingCard(data: {
    */
   imageFit?: "cover" | "contain";
 }) {
-  const stars = data.alignment === null ? 0 : Math.round(data.alignment / 20);
+  // `null`, never `0`: five empty stars beside a named politician is an
+  // accusation the arithmetic never made — the same rule §3.3 applies to
+  // `qualityScore` (an agent we could not measure shows NO reading), and the
+  // one the embed already follows. A share card is the widest surface the
+  // project has, so it is the last place to publish a zero we did not measure.
+  const stars = data.alignment === null ? null : Math.round(data.alignment / 20);
   const fit = data.imageFit ?? "cover";
   // A portrait is cropped into its square. A party mark is not: it is sized by
   // HEIGHT with the width following its own intrinsic ratio, because the marks
@@ -411,7 +416,7 @@ function RatingCard(data: {
           ALINHAMENTO COM ELEITORES
         </span>
         <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 28 }}>
-          <Stars value={stars} size={64} />
+          {stars === null ? null : <Stars value={stars} size={64} />}
           <span style={{ fontFamily: "Newsreader", fontWeight: 500, fontSize: 92, color: INK }}>
             {data.alignment === null ? "—" : `${data.alignment}%`}
           </span>

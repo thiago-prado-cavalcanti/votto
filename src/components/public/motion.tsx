@@ -8,10 +8,14 @@
  * moment it fires — a list of five hundred agents therefore costs five hundred
  * one-shot observers and no scroll listener at all.
  *
- * Nothing here hides content on its own: the resting states are behind a
- * `(scripting: enabled) and (prefers-reduced-motion: no-preference)` guard in the
- * stylesheet, so a reader without JavaScript, or one who asked for less motion,
- * gets the finished page instead of a blank one.
+ * Nothing here hides content on its own: the resting states are behind
+ * `scripting: enabled` and `prefers-reduced-motion` in the stylesheet, so a
+ * reader without JavaScript, or one who asked for less motion, gets the finished
+ * page instead of a blank one. Because "scripting is allowed" is not "our
+ * bundle ran", a timeout in `layout.tsx` stamps the document visible after
+ * 2,5s unless this file gets far enough to call it off — without that, 63 of
+ * 65 blocks on `/temas` stayed at opacity zero for good whenever the bundle
+ * failed to arrive.
  */
 import * as React from "react";
 import { cn } from "@/lib/cn";
@@ -34,6 +38,8 @@ function useArrived(el: HTMLElement | null): boolean {
 
   React.useEffect(() => {
     if (!el || arrived) return;
+    keepMotionArmed();
+
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
@@ -41,13 +47,35 @@ function useArrived(el: HTMLElement | null): boolean {
           io.disconnect();
         }
       },
-      { threshold: 0, rootMargin: "0px 0px -10% 0px" },
+      // The top margin is the fix for a block the reader has already scrolled
+      // PAST: it is not intersecting and never will be again, so a plain root
+      // left a trail of permanently invisible blocks behind every fast flick —
+      // which is exactly how a touch screen is scrolled. Growing the root
+      // upwards puts everything above the viewport inside it, so those blocks
+      // arrive at once, while the bottom inset still decides what is "in view".
+      { threshold: 0, rootMargin: "9999px 0px -10% 0px" },
     );
     io.observe(el);
     return () => io.disconnect();
   }, [el, arrived]);
 
   return arrived;
+}
+
+/**
+ * Calls off the failsafe in `layout.tsx` that would stamp `data-motion="off"`
+ * and show the whole document at once.
+ *
+ * Reaching here proves the two things the stylesheet's guard cannot ask about
+ * on its own: this bundle ran, and it is now observing. Until that is true the
+ * resting states are a promise nobody is left to keep, so the timeout wins —
+ * see the motion block in globals.css.
+ */
+function keepMotionArmed(): void {
+  const w = window as typeof window & { __vtDisarm?: ReturnType<typeof setTimeout> };
+  if (w.__vtDisarm === undefined) return;
+  clearTimeout(w.__vtDisarm);
+  w.__vtDisarm = undefined;
 }
 
 /**

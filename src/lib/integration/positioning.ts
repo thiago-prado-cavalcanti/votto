@@ -39,6 +39,7 @@ import {
   AXIS_KEYS,
   bandGate,
   computePosition,
+  DEFAULT_WEIGHT_MODE,
   discrimination,
   MIN_DISCRIMINATION,
   MIN_HOUSE_AGENTS,
@@ -50,6 +51,7 @@ import {
   type ItemStats,
   type Position,
   type ScorableVote,
+  type WeightMode,
 } from "@/lib/indexes/positioning";
 import {
   agreementIndex,
@@ -166,14 +168,43 @@ function voteSign(v: VoteValue): number {
  * tornar visível.
  */
 export async function recomputePositioningIndex(
-  opts: { dryRun?: boolean; onProgress?: SyncOptions["onProgress"] } = {},
+  opts: {
+    dryRun?: boolean;
+    onProgress?: SyncOptions["onProgress"];
+    /**
+     * Modo de peso. Ausente é a metodologia em vigor.
+     *
+     * Qualquer coisa que não seja `discount` é **medição**: a escrita é
+     * recusada logo abaixo, não porque o resultado seja necessariamente pior,
+     * mas porque publicar sob um método que não é `POSITIONING_METHODOLOGY`
+     * quebraria a única garantia que o carimbo de versão dá — a de que dois
+     * números diferentes na mesma coluna foram produzidos pela mesma conta.
+     */
+    weights?: WeightMode;
+  } = {},
 ): Promise<{
   agents: AgentScore[];
   parties: PartyScore[];
   houses: HouseReport[];
   /** Fatia dos itens usados que ainda vem do formato de tag antigo. */
   legacyShare: number;
+  /** O modo que rodou, para o relatório carimbar o que está lendo. */
+  weights: WeightMode;
 }> {
+  const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
+
+  // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
+  // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
+  // inteiro para depois dizer não. O guarda vive aqui e não no script porque
+  // quem escreve é esta função — um caller futuro que esqueça `--dry` não deve
+  // conseguir publicar uma conta que não é `POSITIONING_METHODOLOGY`.
+  if (!opts.dryRun && weights !== DEFAULT_WEIGHT_MODE) {
+    throw new Error(
+      `Modo de peso "${weights}" é experimental e não é publicável. ` +
+        "Rode com --dry, ou adote o modo em POSITIONING_METHODOLOGY " +
+        "(version, changedAt, fingerprint) antes de gravar.",
+    );
+  }
   // ── Agentes ───────────────────────────────────────────────────────────────
   const agents = await db.publicAgent.findMany({
     where: {
@@ -292,7 +323,7 @@ export async function recomputePositioningIndex(
       });
     }
 
-    const position = computePosition(scorable);
+    const position = computePosition(scorable, weights);
     const contributing = position.economic.items + position.social.items;
     if (contributing > 0) {
       usedTotal += contributing;
@@ -538,6 +569,7 @@ export async function recomputePositioningIndex(
     parties,
     houses,
     legacyShare: usedTotal > 0 ? legacyUsedTotal / usedTotal : 0,
+    weights,
   };
 }
 

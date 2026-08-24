@@ -22,8 +22,17 @@ import { cn, type ClassValue } from "@/lib/cn";
 
 export type ControlVariant = "box" | "rule";
 
+/**
+ * `text-base` on a touch screen, `text-sm` from `sm` up.
+ *
+ * Below 16px, Safari on iOS zooms the page the moment a field takes focus, and
+ * then leaves it zoomed — every field on the CPF form did this. The breakpoint
+ * is width rather than `pointer: coarse` on purpose: Tailwind generates the
+ * `sm:` variant natively, and the small screens this protects are exactly the
+ * ones below it. The desktop keeps the 14px the design system specifies.
+ */
 const controlBase =
-  "w-full min-w-0 text-sm text-ink transition-colors placeholder:text-[var(--color-muted)] disabled:cursor-not-allowed disabled:text-[var(--color-muted)]";
+  "w-full min-w-0 text-base sm:text-sm text-ink transition-colors placeholder:text-[var(--color-muted)] disabled:cursor-not-allowed disabled:text-[var(--color-muted)]";
 
 const invalid =
   "aria-[invalid=true]:border-[var(--color-negative)] [&:user-invalid]:border-[var(--color-negative)]";
@@ -41,10 +50,18 @@ const controlVariants: Record<ControlVariant, string> = {
   ),
 };
 
-/** Height of a single-line control, per treatment. Textareas set their own. */
+/**
+ * Height of a single-line control, per treatment. Textareas set their own.
+ *
+ * `rule` is 44px on a phone and 36px from `sm` up. The 36 exist to match the
+ * `size="sm"` button *beside* it in the filter bar — but parity with a
+ * neighbour is a rule about a horizontal row, and on a phone the filter bar has
+ * no row: every field is stacked and the only thing 36px lines up with is a
+ * fingertip that needs 44.
+ */
 export const controlHeights: Record<ControlVariant, string> = {
   box: "h-11",
-  rule: "h-9",
+  rule: "h-11 sm:h-9",
 };
 
 /** Room on the right for the chevron of a select. */

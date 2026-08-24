@@ -157,6 +157,12 @@ export default async function ThemesPage({
             <Input
               variant="rule"
               name="q"
+              type="search"
+              inputMode="search"
+              enterKeyHint="search"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               defaultValue={q ?? ""}
               placeholder="Título ou PL 3085/2026"
             />

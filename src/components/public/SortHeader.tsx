@@ -58,9 +58,9 @@ export function SortHeader({
   return (
     <div
       className={cn(
-        // No rule of its own: it sits directly under the filter bar, which
-        // already closes with one. A second border, with the filter's bottom
-        // margin between them, read as an empty band.
+        // No rule of its own, and neither has the filter bar it sits under:
+        // a border here, with the filter's bottom margin above it, read as an
+        // empty band rather than as structure.
         "flex flex-wrap items-baseline gap-x-5 gap-y-1 py-2.5 text-[0.72rem]",
         className,
       )}

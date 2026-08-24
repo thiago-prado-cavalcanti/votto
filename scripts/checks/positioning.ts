@@ -45,6 +45,24 @@ ok("abaixo do corte de discriminação → 0", itemWeight(tag, { yes: 95, no: 5,
 ok("contaminação total → 0", itemWeight(tag, { yes: 50, no: 50, contamination: 1 }) === 0);
 ok("contaminação desconhecida não zera", itemWeight(tag, { yes: 50, no: 50, contamination: null }) === 1);
 
+// O modo de medição (`--weights=raw`) desliga o fator (1 − contaminação) e NADA
+// mais. As três asserções abaixo são o contrato: o padrão não muda, o desconto
+// some, e a discriminação continua valendo — uma votação unânime não separa
+// ninguém, o que não tem relação nenhuma com a coalizão.
+ok(
+  "raw ignora a contaminação",
+  itemWeight(tag, { yes: 50, no: 50, contamination: 1 }, "raw") === 1,
+);
+ok(
+  "raw ainda descarta a votação unânime",
+  itemWeight(tag, { yes: 95, no: 5, contamination: 0 }, "raw") === 0,
+);
+ok(
+  "o padrão continua sendo o desconto",
+  itemWeight(tag, { yes: 50, no: 50, contamination: 0.5 }) ===
+    itemWeight(tag, { yes: 50, no: 50, contamination: 0.5 }, "discount"),
+);
+
 console.log("\nFormato das tags");
 const v1 = parseDimensions({ economic: -0.8, social: 0 });
 ok("formato 1 vira legacy", v1.legacy && v1.scoreable && v1.economic?.direction === -1 && v1.social === null);

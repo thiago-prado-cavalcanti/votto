@@ -165,8 +165,10 @@ were exported on.
 
 ### Filters
 
-[`FilterBar`](../src/components/public/FilterBar.tsx): no box. Fields sit on the paper between
-two hairlines, each a small-caps label over a rule — `<Input variant="rule">`. It stays a plain
+[`FilterBar`](../src/components/public/FilterBar.tsx): no box and no rules around the block —
+the fields sit directly on the paper, each a small-caps label over a rule —
+`<Input variant="rule">`. The only hairlines are the ones under the fields themselves; a frame
+around them read as a second box competing with the masthead above. It stays a plain
 `<form method="get">`, so filtering works without JavaScript and the URL remains the state.
 Admin forms keep the boxed variant (`variant="box"`, the default), where density and an obvious
 hit area matter more.

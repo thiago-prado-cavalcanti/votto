@@ -85,6 +85,20 @@ function str(v: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Read a URL leaf, forced to https.
+ *
+ * The Senado still publishes some `UrlFotoParlamentar` over plain http, and a
+ * browser on an https page drops those images as mixed content — silently, and
+ * only in production, since a local dev server is itself http. The host answers
+ * `301` to the https form, so upgrading on the way in costs nothing and keeps
+ * the stored value usable by anything that reads it later.
+ */
+function secureUrl(v: unknown): string | undefined {
+  const raw = str(v);
+  return raw?.startsWith("http://") ? "https://" + raw.slice("http://".length) : raw;
+}
+
 /** Walk a dotted path through nested objects, tolerating missing levels. */
 function dig(root: unknown, path: string): unknown {
   let cur: unknown = root;
@@ -303,9 +317,9 @@ async function fetchSenators(): Promise<SenatorRecord[]> {
         str(ident.NomeParlamentar) ?? str(ident.NomeCompletoParlamentar) ?? "",
       partyAcronym: str(ident.SiglaPartidoParlamentar),
       state: str(ident.UfParlamentar),
-      imageUrl: str(ident.UrlFotoParlamentar),
+      imageUrl: secureUrl(ident.UrlFotoParlamentar),
       email: str(ident.EmailParlamentar),
-      profileUrl: str(ident.UrlPaginaParlamentar),
+      profileUrl: secureUrl(ident.UrlPaginaParlamentar),
     });
   }
   return out;

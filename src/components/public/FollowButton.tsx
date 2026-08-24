@@ -110,7 +110,7 @@ export function FollowButton({
           isFollowing ? `Deixar de acompanhar ${agentName}` : `Acompanhar ${agentName}`
         }
         className={cn(
-          "inline-flex shrink-0 items-center gap-1.5 rounded-card border border-navy-300 bg-surface px-3 py-1.5 text-xs font-semibold text-navy-900 transition-colors hover:border-navy-900 hover:bg-navy-100",
+          "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-card border border-navy-300 bg-surface px-3 py-1.5 text-xs font-semibold text-navy-900 transition-colors hover:border-navy-900 hover:bg-navy-100 sm:min-h-0",
           className,
         )}
       >

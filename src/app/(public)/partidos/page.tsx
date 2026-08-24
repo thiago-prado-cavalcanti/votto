@@ -168,15 +168,14 @@ export default async function PartiesPage({
 
       <Container className="py-10">
         {/* No filter bar here: this list has nothing to filter by, only to
-            order. So the sort header takes its place and carries the rules the
-            bar would have — on /agentes it hugs the filter instead, which
-            already closes with one. */}
+            order. So the sort header takes its place — on the same terms as the
+            filter bar, which carries no rules of its own either. */}
         {sortOptions.length > 1 ? (
           <SortHeader
             options={sortOptions}
             active={activeSort}
             direction={activeDir}
-            className="mb-10 border-y border-line"
+            className="mb-10"
           />
         ) : null}
 
@@ -185,7 +184,7 @@ export default async function PartiesPage({
             Nenhum partido cadastrado.
           </p>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map((row, i) => (
               <PartyCard
                 key={row.party.kid}

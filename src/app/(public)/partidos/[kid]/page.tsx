@@ -130,6 +130,8 @@ export default async function PartyDetailPage({
               <ImageWithFallback
                 src={dto.logoUrl}
                 alt={acronym}
+                // The mark opens the record; it is not a thumbnail in a list.
+                priority
                 className="h-16 w-auto max-w-52 shrink-0 object-contain mix-blend-multiply"
                 fallback={
                   <div className="flex h-16 shrink-0 items-center font-display text-2xl leading-none text-navy-700">
@@ -159,7 +161,7 @@ export default async function PartyDetailPage({
                   Nenhum agente ativo neste partido.
                 </p>
               ) : (
-                <div className="mt-4 grid gap-5 sm:grid-cols-2">
+                <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
                   {agents.map((a, i) => (
                     <AgentCard
                       key={a.kid}

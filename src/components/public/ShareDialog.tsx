@@ -24,7 +24,8 @@ import { createPortal } from "react-dom";
 
 export type ShareKind = "tema" | "agente" | "partido";
 
-const DETAIL_PATH: Record<ShareKind, string> = {
+/** Public detail path per shareable kind. Also read by `ShareButton`. */
+export const DETAIL_PATH: Record<ShareKind, string> = {
   tema: "temas",
   agente: "agentes",
   partido: "partidos",
@@ -109,7 +110,7 @@ export function ShareDialog({
       aria-label="Compartilhar"
     >
       <div
-        className="w-full max-w-md rounded-card bg-surface p-5 sm:p-6"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-card bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

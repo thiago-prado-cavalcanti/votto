@@ -23,6 +23,7 @@ import { nameMatchesRegistry, splitPersonName } from "@/lib/domain/names";
 import { seal } from "@/lib/crypto/box";
 import { cookies } from "next/headers";
 import { CITIZEN_COOKIE, sessionCookieOptions } from "@/lib/auth/session";
+import { clearReturnTo, readReturnTo } from "@/lib/auth/return-to";
 import {
   MAX_CPF_ATTEMPTS,
   clearPending,
@@ -214,11 +215,17 @@ export async function linkCpfAction(
   store.set(CITIZEN_COOKIE, token, sessionCookieOptions());
   await clearPending();
 
-  redirect("/");
+  // Back to the bill they were reading when the sign-up interrupted them, not
+  // to the home page. Somebody who has just given a provider, a CPF and a birth
+  // date to cast one vote should not have to go and find that vote again.
+  const destination = await readReturnTo();
+  await clearReturnTo();
+  redirect(destination);
 }
 
 /** Abandon a half-finished sign-up and return to the login page. */
 export async function cancelPendingAction(): Promise<void> {
   await clearPending();
+  await clearReturnTo();
   redirect("/login");
 }

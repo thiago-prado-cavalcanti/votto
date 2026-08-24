@@ -308,21 +308,63 @@ export function discrimination(stats: ItemStats): number {
 export const MIN_DISCRIMINATION = 0.2;
 
 /**
+ * Como a contaminação governista entra no peso de um item.
+ *
+ * `discount` é a metodologia **publicada** (`POSITIONING_METHODOLOGY`): o item
+ * é multiplicado por `(1 − contaminação)`. `raw` é um modo de **medição**, que
+ * remove esse fator e nada mais.
+ *
+ * `raw` existe por causa de um defeito medido, não por gosto de configuração.
+ * Os dois fatores são anticorrelacionados no Brasil: uma votação que **divide**
+ * a casa é quase por definição uma votação governo↔oposição, então `(1 − c)`
+ * esvazia justamente os itens que carregam informação, enquanto
+ * `MIN_DISCRIMINATION` zera o resto. Medido na Câmara em 24/08/2026, com 217
+ * itens e 458 deputados com leitura: as médias partidárias couberam em **15
+ * pontos** (PSOL −9 … PP +6) contra ~160 da régua externa — dispersão de **9%**,
+ * com o mínimo em 40%.
+ *
+ * O que `raw` mede é qual metade do defeito é o desconto. A dispersão é de
+ * escala; a âncora (ρ = 0,63) é de **ordenação**, e Spearman é livre de escala
+ * — devolver amplitude não move ρ por si só. Rodar os dois modos lado a lado
+ * separa "o desconto destruiu a variância" de "as tags apontam errado", que
+ * levam a trabalhos completamente diferentes (§11).
+ *
+ * **`raw` nunca é publicável.** Não é uma metodologia alternativa — é a
+ * ausência de um controle cujo teste de falseamento (`MAX_GOVERNMENT_CORRELATION`)
+ * existe precisamente porque a coalizão contamina o eixo. `recomputePositioningIndex`
+ * recusa a gravar sob qualquer modo que não seja `discount`, e adotar outro
+ * exigiria `version`, `changedAt` e fingerprint novos.
+ */
+export type WeightMode = "discount" | "raw";
+
+/** O modo da metodologia em vigor. Todo caller que não pede nada recebe este. */
+export const DEFAULT_WEIGHT_MODE: WeightMode = "discount";
+
+/**
  * Peso de um item para um eixo: discriminação × (1 − contaminação) × confiança ×
  * magnitude.
  *
  * Quatro coisas distintas, multiplicadas porque qualquer uma delas sendo zero
  * torna o item inútil: uma votação unânime, uma decidida pela coalizão, uma tag
  * em que o classificador não confia, e um tema que não toca o eixo.
+ *
+ * `mode` só governa o segundo fator, e só existe para medição — veja
+ * `WeightMode`. Os outros três valem nos dois modos: em `raw` uma votação
+ * unânime continua valendo zero, porque o que ela não faz é separar pessoas, e
+ * isso não tem nada a ver com a coalizão.
  */
-export function itemWeight(tag: AxisTag, stats: ItemStats): number {
+export function itemWeight(
+  tag: AxisTag,
+  stats: ItemStats,
+  mode: WeightMode = DEFAULT_WEIGHT_MODE,
+): number {
   const d = discrimination(stats);
   if (d < MIN_DISCRIMINATION) return 0;
   // Contaminação desconhecida não é contaminação zero — mas descartar o item
   // aqui esvaziaria o índice inteiro antes de a orientação ser importada. O
   // item entra, e quem recusa a publicação é o teste de falseamento do lote,
   // que sabe quantos itens ficaram sem controle.
-  const c = stats.contamination ?? 0;
+  const c = mode === "raw" ? 0 : (stats.contamination ?? 0);
   return d * (1 - c) * tag.confidence * tag.magnitude;
 }
 
@@ -492,7 +534,10 @@ function readAxis(
  * ganhou usuários. Aqui o espaço é definido pelas votações da casa e congelado;
  * o cidadão é projetado dentro dele, e nada que ele vote move ninguém.
  */
-export function computePosition(votes: ScorableVote[]): Position {
+export function computePosition(
+  votes: ScorableVote[],
+  mode: WeightMode = DEFAULT_WEIGHT_MODE,
+): Position {
   const byAxis: Record<AxisKey, Array<{ w: number; s: number; themeKey: string }>> = {
     economic: [],
     social: [],
@@ -512,7 +557,7 @@ export function computePosition(votes: ScorableVote[]): Position {
     for (const axis of AXIS_KEYS) {
       const tag = vote.dimensions[axis];
       if (!tag) continue;
-      const w = itemWeight(tag, vote.stats);
+      const w = itemWeight(tag, vote.stats, mode);
       if (w <= 0) continue;
       byAxis[axis].push({ w, s: sign * tag.direction, themeKey: vote.themeKey });
       contributed = true;

@@ -163,7 +163,11 @@ export function RankingTabs({
           )}
           aria-busy={pending}
         >
-          <table className="w-full min-w-[26rem] border-collapse text-left">
+          {/* The floor of 26rem is a desktop measure: on a 390px phone it pushed the
+              index column — the whole point of the table — off the visible box, so
+              ten rows showed no percentage at all. Below `sm` the table fits the
+              paper and the name column wraps instead. */}
+          <table className="w-full border-collapse text-left sm:min-w-[26rem]">
             <thead>
               <tr className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
                 <th scope="col" className="w-10 py-2.5 pr-2 font-semibold">
@@ -187,7 +191,7 @@ export function RankingTabs({
                         : "none"
                     }
                     className={cn(
-                      "py-2.5 pl-3 text-right font-semibold whitespace-nowrap",
+                      "py-2.5 pl-3 text-right font-semibold sm:whitespace-nowrap",
                       ranking.sort === c.key ? "text-navy-900" : null,
                     )}
                   >

@@ -197,6 +197,8 @@ export default async function AgentDetailPage({
           <ImageWithFallback
             src={dto.imageUrl}
             alt={fullName}
+            // Measured as this page's LCP element, served by the Câmara.
+            priority
             className="h-32 w-32 rounded-full border border-line bg-navy-50 object-cover sm:h-36 sm:w-36"
             fallback={
               <div className="flex h-32 w-32 items-center justify-center rounded-full border border-line bg-navy-100 font-display text-3xl text-navy-700 sm:h-36 sm:w-36">

@@ -23,12 +23,13 @@ import {
   buildAuthorizationUrl,
   flowCookieOptions,
 } from "@/lib/auth/social/oidc";
+import { RETURN_COOKIE, returnCookieOptions, sanitizeReturnTo } from "@/lib/auth/return-to";
 
 export const dynamic = "force-dynamic";
 
 /** GET /api/auth/social/{provider}/start — begin the (mock or real) flow. */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ provider: string }> },
 ): Promise<NextResponse> {
   const { provider: slug } = await params;
@@ -36,6 +37,17 @@ export async function GET(
   if (!provider) {
     return NextResponse.json({ error: "unknown_provider" }, { status: 404 });
   }
+
+  // Where the citizen was when the sign-in interrupted them. Captured here
+  // because this is the last point that still sees the browser's own query
+  // string: from the next redirect on, the URL belongs to the provider.
+  const returnTo = sanitizeReturnTo(new URL(req.url).searchParams.get("next"));
+
+  /** Carry the destination on whatever response this route ends up returning. */
+  const withReturn = (res: NextResponse): NextResponse => {
+    if (returnTo) res.cookies.set(RETURN_COOKIE, returnTo, returnCookieOptions());
+    return res;
+  };
 
   if (env.social.mode === "mock") {
     // The mock IdP needs only a CSRF `state`; there is no token to verify.
@@ -48,7 +60,7 @@ export async function GET(
 
     const res = NextResponse.redirect(url);
     res.cookies.set(SOCIAL_STATE_COOKIE, state, flowCookieOptions(provider));
-    return res;
+    return withReturn(res);
   }
 
   if (!provider.configured()) {
@@ -66,5 +78,5 @@ export async function GET(
   res.cookies.set(SOCIAL_STATE_COOKIE, authorization.state, options);
   res.cookies.set(SOCIAL_NONCE_COOKIE, authorization.nonce, options);
   res.cookies.set(SOCIAL_VERIFIER_COOKIE, authorization.codeVerifier, options);
-  return res;
+  return withReturn(res);
 }

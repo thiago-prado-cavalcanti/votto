@@ -40,6 +40,7 @@ import {
 import { findCitizenBySocial, resumeCitizenSession } from "@/lib/auth/citizen-login";
 import { createPendingToken, PENDING_COOKIE, pendingCookieOptions } from "@/lib/auth/pending";
 import { CITIZEN_COOKIE, sessionCookieOptions } from "@/lib/auth/session";
+import { RETURN_COOKIE, readReturnTo } from "@/lib/auth/return-to";
 
 export const dynamic = "force-dynamic";
 
@@ -59,13 +60,20 @@ function loginError(reason: string): NextResponse {
   return res;
 }
 
-/** Open the citizen session and land on the home page. */
-function completeLogin(token: string): NextResponse {
-  const res = NextResponse.redirect(new URL("/", env.appUrl), { status: 303 });
+/**
+ * Open the citizen session and land where the sign-in interrupted them.
+ *
+ * This is the leg an already-linked account takes, and it never mints a pending
+ * token — so the destination has to come from the return cookie rather than
+ * from anything the CPF step would later carry.
+ */
+async function completeLogin(token: string): Promise<NextResponse> {
+  const res = NextResponse.redirect(new URL(await readReturnTo(), env.appUrl), { status: 303 });
   res.cookies.set(CITIZEN_COOKIE, token, sessionCookieOptions());
   clearFlowCookies(res);
   // A finished login must not leave a half-finished one behind.
   res.cookies.set(PENDING_COOKIE, "", { path: "/", maxAge: 0 });
+  res.cookies.set(RETURN_COOKIE, "", { path: "/", maxAge: 0 });
   return res;
 }
 
@@ -80,7 +88,7 @@ async function land(provider: ProviderConfig, identity: SocialIdentity): Promise
   });
 
   if (linked) {
-    return completeLogin(await resumeCitizenSession(linked));
+    return await completeLogin(await resumeCitizenSession(linked));
   }
 
   const token = await createPendingToken({

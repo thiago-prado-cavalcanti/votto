@@ -112,7 +112,13 @@ export function VoteButtons({
 
   function handleVote(value: VoteValue) {
     if (!isAuthenticated) {
-      router.push("/login");
+      // Carry the bill through the sign-in. The value is deliberately NOT
+      // carried: a vote is recorded when the citizen presses the button, never
+      // replayed from a parameter afterwards (src/lib/auth/return-to.ts).
+      // Read from the document rather than `useSearchParams`, which would put
+      // this component behind a Suspense boundary on every page that mounts it.
+      const here = window.location.pathname + window.location.search;
+      router.push(`/login?next=${encodeURIComponent(here)}`);
       return;
     }
     setError(null);

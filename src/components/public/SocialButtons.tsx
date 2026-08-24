@@ -82,9 +82,13 @@ const BUTTONS: Record<ButtonKey, { label: string; mark: () => React.ReactElement
  * Render the buttons for every provider currently usable. Returns null when
  * none are — the login page decides what to say in that case.
  */
-export function SocialButtons() {
+export function SocialButtons({ returnTo }: { returnTo?: string | null }) {
   const keys = availableButtons();
   if (keys.length === 0) return null;
+
+  // Already sanitized by the page; encoded here because it becomes a query
+  // value. A citizen sent here mid-vote gets put back on that bill afterwards.
+  const suffix = returnTo ? `?next=${encodeURIComponent(returnTo)}` : "";
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -93,7 +97,7 @@ export function SocialButtons() {
         return (
           <a
             key={key}
-            href={`/api/auth/social/${key}/start`}
+            href={`/api/auth/social/${key}/start${suffix}`}
             className={
               "flex h-12 items-center gap-3 rounded-card border border-line bg-surface px-4 " +
               "text-sm font-medium text-navy-900 transition-colors hover:bg-navy-50 " +

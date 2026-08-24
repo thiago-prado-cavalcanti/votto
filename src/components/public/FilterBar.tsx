@@ -1,9 +1,11 @@
 /**
  * Filter row for the public lists.
  *
- * No box: the fields sit on the paper between two hairlines, each one a label in
- * small caps over a rule (`variant="rule"` on the controls) — the way a form is
- * printed rather than the way a web app draws one (docs/design.md).
+ * No box and no rules around it: the fields sit directly on the paper, each one a
+ * label in small caps over a rule (`variant="rule"` on the controls) — the way a
+ * form is printed rather than the way a web app draws one (docs/design.md). The
+ * only hairlines in the block are the ones under the fields themselves; a frame
+ * around them would make the bar a second box competing with the masthead above.
  *
  * Plain `<form method="get">`, so filtering keeps working without JavaScript and
  * the URL stays the state.
@@ -35,7 +37,7 @@ export function FilterBar({
       step={70}
       method="get"
       className={cn(
-        "mb-10 grid items-end gap-x-8 gap-y-5 border-y border-line py-5 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))]",
+        "mb-10 grid items-end gap-x-8 gap-y-5 py-5 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))]",
         className,
       )}
     >

@@ -70,7 +70,7 @@ export function FollowDialog({
       aria-label={isFollow ? "Acompanhar agente público" : "Deixar de acompanhar"}
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 sm:p-7"
+        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-card bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-7 sm:pb-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

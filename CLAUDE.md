@@ -780,6 +780,51 @@ Each method **must have a description** (doc comment). Required operations:
 - Keep infrastructure portable (containerized, env-driven config) so moving to a higher-capacity
   Brazilian infra is straightforward.
 
+### Running any `npm run` script against real data — **always through Docker**
+
+**There is no Node toolchain on the box.** Production is a single Lightsail instance running the
+compose stack, and the only place the sources, `tsx`, the Prisma CLI and a `DATABASE_URL` exist
+together is the `migrate` service (build target `builder`, profile `tools`). So a bare
+`npm run <script>` on the server does not run — it fails, and it fails for a reason that has
+nothing to do with the script.
+
+Every script in `package.json` that touches the database or the houses' APIs — `sync`, `backfill`,
+`reposition`, `requality`, `reprioritize`, `reauthor`, `summarize`, `estimate:ai`,
+`unbench:summaries`, `db:seed:admin` — runs like this:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  run --rm migrate npm run <script> [-- <flags>]
+```
+
+The `-- ` before the flags is npm's, and it survives the container: `npm run reposition -- --dry`
+becomes `tsx scripts/reposition.ts --dry`. `docker compose run` starts a `tools`-profile service
+without `--profile`, and `--rm` throws the container away afterwards.
+
+So the retune commands quoted throughout this file (§3.2, §3.3, §8, §11) read, in production:
+
+```bash
+# measure the positioning gates without writing anything
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  run --rm migrate npm run reposition -- --dry
+
+# same for the quality index
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  run --rm migrate npm run requality -- --dry
+
+# run the sync chain now (skips what is still fresh)
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  run --rm migrate npm run sync
+```
+
+The bare `npm run …` form in the sections below is the **local development** form and nothing
+else. When a command is being suggested to run against production data, wrap it. Full command set
+and the deploy procedure: [`docs/deploy.md`](docs/deploy.md).
+
+Two things this does **not** change: migrations still reach the database only through
+`prisma migrate deploy` on a `git push` (§5), and nobody opens a database console as the normal
+path.
+
 ---
 
 ## 8. Integration (official sources)
@@ -1104,6 +1149,33 @@ be), but the reference is a printed record, not a fintech app.
   the format-2 tags**, so classification volume is not the constraint it looked like; and the
   *ordering* already carries signal (PSOL/REDE/PSB/PT negative, PL/PSD/PP/MDB positive), so what is
   broken is the scale, not the sign structure.
+
+  **Measure before committing to it — `--weights=raw` is the experiment.**
+  `npm run reposition -- --dry --weights=raw` recomputes with the `(1 − contamination)` factor
+  switched off and *nothing else* changed (`WeightMode` in `src/lib/indexes/positioning.ts`).
+  It is measurement, never a methodology: `recomputePositioningIndex` throws before touching the
+  database under any mode that is not `discount`, and `check:positioning` pins the contract
+  (unanimous items still weigh zero in `raw` — discrimination has nothing to do with the coalition).
+
+  It exists because the live run of **2026-08-24** shows the Câmara failing gates 3 and 4 for
+  *different* reasons, and residualisation only addresses one: 217 items, 458/513 agents with a
+  reading, governismo **r = −0.19**, spread **9%** (min 40%) — but the anchor at **ρ = 0.63**, and
+  **Spearman is scale-free, so restoring amplitude cannot move it by itself**. The party table shows
+  an *identity* failure rather than a compression: our "Mercado" pole is the centrão (MDB, PP, PSD,
+  AVANTE all at +6) while **NOVO reads +1** (BLS +71) and **PCdoB reads −0.0** (BLS −82) — the two
+  most ideologically defined parties at each pole, both at the centre. Three outcomes to read:
+  spread up *and* ρ → 0.85 means the discount was the whole defect and residualisation is the
+  principled replacement; spread up with ρ ≈ 0.6 means the tags point wrong and the work is
+  `CODING_RUNS` (§11), not the weights; nothing moving puts the defect upstream of both.
+- **Two documented claims the 2026-08-24 run contradicts, to re-verify before quoting §3.2.**
+  (a) The Senado's block is **not** `MIN_HOUSE_ITEMS`: it has **38** usable items, over the floor of
+  20, and fails on **0/81 agents with a reading** — every senator is under `MIN_EFFECTIVE_ITEMS`,
+  which the `(1 − contamination)` factor alone can explain (38 items summing to under 8 units of
+  weight means a mean weight below 0.21, with `d ≥ 0.20` guaranteed). So the Senate may come back
+  under `raw`, and "the Senate cannot be scaled" is currently over-stated. (b) The two axes measure
+  **r = −0.48**, where CHES-LA measures **+0.94** for Brazilian parties. Wrong magnitude *and wrong
+  sign* — economically liberal reading as morally authoritarian inverts the known structure. §11
+  already names this case: below the literature points at noisy tags, not an unusual country.
 - **`MIN_SPREAD_RATIO` is provisional at 0.40**, like the other cut points. The mechanism is what is
   settled — an axis that compresses the known spectrum lies even when its ordering is right, and
   Spearman is structurally blind to it. The exact point recalibrates against a real histogram once

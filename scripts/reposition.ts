@@ -1,8 +1,14 @@
 /**
  * Recalcular o índice de posicionamento, e mostrar se ele pode ser publicado.
  *
- *   npm run reposition            # aplica e grava
- *   npm run reposition -- --dry   # só mede, não grava
+ *   npm run reposition                      # aplica e grava
+ *   npm run reposition -- --dry             # só mede, não grava
+ *   npm run reposition -- --dry --weights=raw   # mede sem o desconto de contaminação
+ *
+ * Em produção nada disso roda direto — não há toolchain Node na instância:
+ *
+ *   docker compose --env-file .env.production -f docker-compose.prod.yml \
+ *     run --rm migrate npm run reposition -- --dry --weights=raw
  *
  * Gêmeo de `requality` e `reprioritize`: tudo o que o índice lê já é coluna, então
  * retunar peso ou limiar é um recálculo sem rede.
@@ -25,7 +31,13 @@ import {
   recomputePositioningIndex,
   type AgentScore,
 } from "@/lib/integration/positioning";
-import { bandGate, POSITIONING_AXES, type AxisKey } from "@/lib/indexes/positioning";
+import {
+  bandGate,
+  DEFAULT_WEIGHT_MODE,
+  POSITIONING_AXES,
+  type AxisKey,
+  type WeightMode,
+} from "@/lib/indexes/positioning";
 import {
   anchorsFor,
   MAX_GOVERNMENT_CORRELATION,
@@ -56,10 +68,41 @@ function axisValues(agents: AgentScore[], axis: AxisKey): number[] {
     .filter((v): v is number => v !== null);
 }
 
+/**
+ * Ler `--weights=<modo>`.
+ *
+ * Recusa um valor desconhecido em vez de cair no padrão: um typo que
+ * silenciosamente rodasse a metodologia em vigor produziria dois relatórios
+ * idênticos e a conclusão de que o desconto não muda nada — que é exatamente a
+ * pergunta do experimento.
+ */
+function parseWeights(argv: string[]): WeightMode {
+  const arg = argv.find((a) => a.startsWith("--weights"));
+  if (!arg) return DEFAULT_WEIGHT_MODE;
+  const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
+  if (value === "discount" || value === "raw") return value;
+  console.error(
+    `Valor inválido para --weights: "${value}". Use "discount" (metodologia em vigor) ou "raw" (sem o desconto de contaminação).`,
+  );
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry");
+  const weights = parseWeights(process.argv);
 
-  const { agents, parties, houses, legacyShare } = await recomputePositioningIndex({ dryRun });
+  if (weights !== DEFAULT_WEIGHT_MODE) {
+    console.log(
+      `\n  ⚗ MEDIÇÃO — pesos "${weights}": o fator (1 − contaminação) está desligado.` +
+        "\n    Não é uma metodologia alternativa, é a ausência de um controle." +
+        "\n    Nada aqui é publicável, e a gravação é recusada mesmo sem --dry.\n",
+    );
+  }
+
+  const { agents, parties, houses, legacyShare } = await recomputePositioningIndex({
+    dryRun,
+    weights,
+  });
 
   if (agents.length === 0) {
     console.log("Nenhum agente em exercício encontrado. Rode `npm run backfill` primeiro.");
@@ -251,7 +294,8 @@ async function main(): Promise<void> {
     );
   }
 
-  if (dryRun) console.log("\n  (--dry: nada foi gravado)");
+  const stamp = weights === DEFAULT_WEIGHT_MODE ? "" : ` · pesos "${weights}" (medição)`;
+  if (dryRun) console.log(`\n  (--dry: nada foi gravado${stamp})`);
   else console.log("\n✓ Posicionamento atualizado.");
 
   await db.$disconnect();

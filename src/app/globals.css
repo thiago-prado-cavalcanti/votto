@@ -235,277 +235,294 @@ h3,
   height: 3.5rem;
 }
 
+/* A guarda tem duas metades, e a segunda foi acrescentada depois de medida.
+   `scripting: enabled` responde "scripts sao permitidos?", nunca "o nosso
+   script rodou?": com a folha presente e os chunks bloqueados — CDN fora do
+   ar, erro de hidratacao, rede que desistiu — 63 dos 65 blocos de /temas
+   ficavam em opacidade zero PARA SEMPRE, e a masthead flutuava sobre 1.900px
+   de papel branco.
+
+   O reparo e um atributo que SO APARECE para desarmar, nunca para armar, e a
+   direcao importa: a primeira tentativa exigia `[data-motion="on"]` posto por
+   um script inline, e um script inline nao executa enquanto ha folha de estilo
+   pendente. Numa rede de 1,6 Mbps ele so rodava depois do CSS, a animacao da
+   masthead comecava tarde junto, e o LCP de /temas media 3,9s contra 2,2s.
+   Assim o repouso vale desde a analise do CSS, sem custo, e `layout.tsx` so
+   agenda a retirada — cuja demora nao custa nada, porque e um salva-vidas de
+   2,5s. */
 @media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
-  /* ── O bloco ───────────────────────────────────────────────────────────── */
-  .vt-reveal {
-    opacity: 0;
-    transition:
-      opacity var(--vt-dur) var(--vt-ease),
-      transform var(--vt-dur) var(--vt-ease);
-  }
-  .vt-reveal[data-vt="rise"] {
-    transform: translate3d(0, 22px, 0);
-  }
-  .vt-reveal[data-vt="edge"] {
-    transform: translate3d(-22px, 0, 0);
-  }
-  .vt-reveal[data-vt="figure"] {
-    transform: scale(0.955) translate3d(0, 16px, 0);
-  }
-  /* O desfoque só existe nesta variante: aplicá-lo a todo bloco revelado
-     promoveria centenas de cartões a camadas de composição sem motivo. */
-  .vt-reveal[data-vt="ink"] {
-    transform: translate3d(0, 14px, 0);
-    filter: blur(7px);
-    transition:
-      opacity var(--vt-dur) var(--vt-ease),
-      transform var(--vt-dur) var(--vt-ease),
-      filter var(--vt-dur) var(--vt-ease);
-  }
-  .vt-reveal-in {
-    opacity: 1;
-    transform: none;
-  }
-  .vt-reveal-in[data-vt="ink"] {
-    filter: blur(0);
-  }
-
-  /* ── Os irmãos, em cascata ─────────────────────────────────────────────── */
-  .vt-reveal.vt-stagger > * {
-    opacity: 0;
-    transform: translate3d(0, 18px, 0);
-    transition:
-      opacity var(--vt-dur) var(--vt-ease) var(--vt-d),
-      transform var(--vt-dur) var(--vt-ease) var(--vt-d);
-  }
-  .vt-reveal-in.vt-stagger > * {
-    opacity: 1;
-    transform: none;
-  }
-  .vt-stagger > *:nth-child(2) {
-    --vt-d: calc(var(--vt-step) * 1);
-  }
-  .vt-stagger > *:nth-child(3) {
-    --vt-d: calc(var(--vt-step) * 2);
-  }
-  .vt-stagger > *:nth-child(4) {
-    --vt-d: calc(var(--vt-step) * 3);
-  }
-  .vt-stagger > *:nth-child(5) {
-    --vt-d: calc(var(--vt-step) * 4);
-  }
-  .vt-stagger > *:nth-child(6) {
-    --vt-d: calc(var(--vt-step) * 5);
-  }
-  .vt-stagger > *:nth-child(7) {
-    --vt-d: calc(var(--vt-step) * 6);
-  }
-  .vt-stagger > *:nth-child(n + 8) {
-    --vt-d: calc(var(--vt-step) * 7);
-  }
-
-  /* ── As partes ─────────────────────────────────────────────────────────── */
-  .vt-reveal .vt-lift {
-    opacity: 0;
-    transform: translate3d(0, 12px, 0);
-    transition:
-      opacity var(--vt-dur) var(--vt-ease) var(--vt-d),
-      transform var(--vt-dur) var(--vt-ease) var(--vt-d);
-  }
-  .vt-reveal-in .vt-lift {
-    opacity: 1;
-    transform: none;
-  }
-
-  .vt-reveal .vt-fade {
-    opacity: 0;
-    transition: opacity var(--vt-dur) var(--vt-ease) var(--vt-d);
-  }
-  .vt-reveal-in .vt-fade {
-    opacity: 1;
-  }
-
-  /* Barras de índice, filetes de abertura: pigmento que entra pela esquerda. */
-  .vt-reveal .vt-grow {
-    transform: scaleX(0);
-    transform-origin: left center;
-    transition: transform 0.95s var(--vt-ease) var(--vt-d);
-  }
-  .vt-reveal-in .vt-grow {
-    transform: none;
-  }
-
-  /* Traço de SVG que se desenha. O `pathLength="1"` no elemento normaliza o
-     comprimento, então o dash não precisa saber a geometria real. */
-  .vt-reveal .vt-draw {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    transition: stroke-dashoffset 1.05s var(--vt-ease) var(--vt-d);
-  }
-  .vt-reveal-in .vt-draw {
-    stroke-dashoffset: 0;
-  }
-
-  .vt-reveal .vt-pop {
-    transform: scale(0);
-    transform-box: fill-box;
-    transform-origin: center;
-    transition: transform 0.55s cubic-bezier(0.34, 1.5, 0.64, 1) var(--vt-d);
-  }
-  .vt-reveal-in .vt-pop {
-    transform: none;
-  }
-
-  /* ── Tabelas que trocam de aba: as linhas reentram em cascata. ─────────── */
-  .vt-rows > tr {
-    animation: vt-row-in 0.5s var(--vt-ease) both;
-    animation-delay: calc(var(--vt-step) * 0.4 * var(--vt-i, 0));
-  }
-  .vt-rows > tr:nth-child(1) { --vt-i: 0; }
-  .vt-rows > tr:nth-child(2) { --vt-i: 1; }
-  .vt-rows > tr:nth-child(3) { --vt-i: 2; }
-  .vt-rows > tr:nth-child(4) { --vt-i: 3; }
-  .vt-rows > tr:nth-child(5) { --vt-i: 4; }
-  .vt-rows > tr:nth-child(6) { --vt-i: 5; }
-  .vt-rows > tr:nth-child(7) { --vt-i: 6; }
-  .vt-rows > tr:nth-child(8) { --vt-i: 7; }
-  .vt-rows > tr:nth-child(9) { --vt-i: 8; }
-  .vt-rows > tr:nth-child(n + 10) { --vt-i: 9; }
-
-  @keyframes vt-row-in {
-    from {
+  :root:not([data-motion="off"]) {
+    /* ── O bloco ───────────────────────────────────────────────────────────── */
+    .vt-reveal {
       opacity: 0;
-      transform: translate3d(0, 9px, 0);
+      transition:
+        opacity var(--vt-dur) var(--vt-ease),
+        transform var(--vt-dur) var(--vt-ease);
     }
-  }
-
-  /* ── Cromo ─────────────────────────────────────────────────────────────── */
-  .vt-progress {
-    transition: transform 0.12s linear;
-  }
-  .vt-masthead {
-    transition: height 0.36s var(--vt-ease);
-  }
-
-  /* ── A primeira dobra, sem esperar o JavaScript ────────────────────────
-     Uma animação vence uma declaração normal na cascata, então cada regra
-     abaixo desarma sozinha o estado de repouso correspondente lá em cima —
-     nenhum `.vt-reveal-in` precisa chegar. */
-  .vt-reveal[data-vt-auto] {
-    animation: vt-in-rise var(--vt-dur) var(--vt-ease) both;
-  }
-  .vt-reveal[data-vt-auto][data-vt="fade"] {
-    animation-name: vt-in-fade;
-  }
-  .vt-reveal[data-vt-auto][data-vt="edge"] {
-    animation-name: vt-in-edge;
-  }
-  .vt-reveal[data-vt-auto][data-vt="figure"] {
-    animation-name: vt-in-figure;
-  }
-  .vt-reveal[data-vt-auto][data-vt="ink"] {
-    animation-name: vt-in-ink;
-  }
-
-  .vt-reveal[data-vt-auto].vt-stagger > *,
-  .vt-reveal[data-vt-auto] .vt-lift {
-    animation: vt-part-lift var(--vt-dur) var(--vt-ease) var(--vt-d) both;
-  }
-  .vt-reveal[data-vt-auto] .vt-fade {
-    animation: vt-in-fade var(--vt-dur) var(--vt-ease) var(--vt-d) both;
-  }
-  .vt-reveal[data-vt-auto] .vt-grow {
-    animation: vt-part-grow 0.95s var(--vt-ease) var(--vt-d) both;
-  }
-  .vt-reveal[data-vt-auto] .vt-draw {
-    animation: vt-part-draw 1.05s var(--vt-ease) var(--vt-d) both;
-  }
-  .vt-reveal[data-vt-auto] .vt-pop {
-    animation: vt-part-pop 0.55s cubic-bezier(0.34, 1.5, 0.64, 1) var(--vt-d) both;
-  }
-
-  @keyframes vt-in-fade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  @keyframes vt-in-rise {
-    from {
-      opacity: 0;
+    .vt-reveal[data-vt="rise"] {
       transform: translate3d(0, 22px, 0);
     }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  @keyframes vt-in-edge {
-    from {
-      opacity: 0;
+    .vt-reveal[data-vt="edge"] {
       transform: translate3d(-22px, 0, 0);
     }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  @keyframes vt-in-figure {
-    from {
-      opacity: 0;
+    .vt-reveal[data-vt="figure"] {
       transform: scale(0.955) translate3d(0, 16px, 0);
     }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  @keyframes vt-in-ink {
-    from {
-      opacity: 0;
+    /* O desfoque só existe nesta variante: aplicá-lo a todo bloco revelado
+       promoveria centenas de cartões a camadas de composição sem motivo. */
+    .vt-reveal[data-vt="ink"] {
       transform: translate3d(0, 14px, 0);
       filter: blur(7px);
+      transition:
+        opacity var(--vt-dur) var(--vt-ease),
+        transform var(--vt-dur) var(--vt-ease),
+        filter var(--vt-dur) var(--vt-ease);
     }
-    to {
+    .vt-reveal-in {
       opacity: 1;
       transform: none;
+    }
+    .vt-reveal-in[data-vt="ink"] {
       filter: blur(0);
     }
-  }
-  @keyframes vt-part-lift {
-    from {
+
+    /* ── Os irmãos, em cascata ─────────────────────────────────────────────── */
+    .vt-reveal.vt-stagger > * {
       opacity: 0;
-      transform: translate3d(0, 12px, 0);
+      transform: translate3d(0, 18px, 0);
+      transition:
+        opacity var(--vt-dur) var(--vt-ease) var(--vt-d),
+        transform var(--vt-dur) var(--vt-ease) var(--vt-d);
     }
-    to {
+    .vt-reveal-in.vt-stagger > * {
       opacity: 1;
       transform: none;
     }
-  }
-  @keyframes vt-part-grow {
-    from {
-      transform: scaleX(0);
+    .vt-stagger > *:nth-child(2) {
+      --vt-d: calc(var(--vt-step) * 1);
     }
-    to {
+    .vt-stagger > *:nth-child(3) {
+      --vt-d: calc(var(--vt-step) * 2);
+    }
+    .vt-stagger > *:nth-child(4) {
+      --vt-d: calc(var(--vt-step) * 3);
+    }
+    .vt-stagger > *:nth-child(5) {
+      --vt-d: calc(var(--vt-step) * 4);
+    }
+    .vt-stagger > *:nth-child(6) {
+      --vt-d: calc(var(--vt-step) * 5);
+    }
+    .vt-stagger > *:nth-child(7) {
+      --vt-d: calc(var(--vt-step) * 6);
+    }
+    .vt-stagger > *:nth-child(n + 8) {
+      --vt-d: calc(var(--vt-step) * 7);
+    }
+
+    /* ── As partes ─────────────────────────────────────────────────────────── */
+    .vt-reveal .vt-lift {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+      transition:
+        opacity var(--vt-dur) var(--vt-ease) var(--vt-d),
+        transform var(--vt-dur) var(--vt-ease) var(--vt-d);
+    }
+    .vt-reveal-in .vt-lift {
+      opacity: 1;
       transform: none;
     }
-  }
-  @keyframes vt-part-draw {
-    from {
-      stroke-dashoffset: 1;
+
+    .vt-reveal .vt-fade {
+      opacity: 0;
+      transition: opacity var(--vt-dur) var(--vt-ease) var(--vt-d);
     }
-    to {
+    .vt-reveal-in .vt-fade {
+      opacity: 1;
+    }
+
+    /* Barras de índice, filetes de abertura: pigmento que entra pela esquerda. */
+    .vt-reveal .vt-grow {
+      transform: scaleX(0);
+      transform-origin: left center;
+      transition: transform 0.95s var(--vt-ease) var(--vt-d);
+    }
+    .vt-reveal-in .vt-grow {
+      transform: none;
+    }
+
+    /* Traço de SVG que se desenha. O `pathLength="1"` no elemento normaliza o
+       comprimento, então o dash não precisa saber a geometria real. */
+    .vt-reveal .vt-draw {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      transition: stroke-dashoffset 1.05s var(--vt-ease) var(--vt-d);
+    }
+    .vt-reveal-in .vt-draw {
       stroke-dashoffset: 0;
     }
-  }
-  @keyframes vt-part-pop {
-    from {
+
+    .vt-reveal .vt-pop {
       transform: scale(0);
+      transform-box: fill-box;
+      transform-origin: center;
+      transition: transform 0.55s cubic-bezier(0.34, 1.5, 0.64, 1) var(--vt-d);
     }
-    to {
+    .vt-reveal-in .vt-pop {
       transform: none;
+    }
+
+    /* ── Tabelas que trocam de aba: as linhas reentram em cascata. ─────────── */
+    .vt-rows > tr {
+      animation: vt-row-in 0.5s var(--vt-ease) both;
+      animation-delay: calc(var(--vt-step) * 0.4 * var(--vt-i, 0));
+    }
+    .vt-rows > tr:nth-child(1) { --vt-i: 0; }
+    .vt-rows > tr:nth-child(2) { --vt-i: 1; }
+    .vt-rows > tr:nth-child(3) { --vt-i: 2; }
+    .vt-rows > tr:nth-child(4) { --vt-i: 3; }
+    .vt-rows > tr:nth-child(5) { --vt-i: 4; }
+    .vt-rows > tr:nth-child(6) { --vt-i: 5; }
+    .vt-rows > tr:nth-child(7) { --vt-i: 6; }
+    .vt-rows > tr:nth-child(8) { --vt-i: 7; }
+    .vt-rows > tr:nth-child(9) { --vt-i: 8; }
+    .vt-rows > tr:nth-child(n + 10) { --vt-i: 9; }
+
+    @keyframes vt-row-in {
+      from {
+        opacity: 0;
+        transform: translate3d(0, 9px, 0);
+      }
+    }
+
+    /* ── Cromo ─────────────────────────────────────────────────────────────── */
+    .vt-progress {
+      transition: transform 0.12s linear;
+    }
+    .vt-masthead {
+      transition: height 0.36s var(--vt-ease);
+    }
+
+    /* ── A primeira dobra, sem esperar o JavaScript ────────────────────────
+       Uma animação vence uma declaração normal na cascata, então cada regra
+       abaixo desarma sozinha o estado de repouso correspondente lá em cima —
+       nenhum `.vt-reveal-in` precisa chegar. */
+    .vt-reveal[data-vt-auto] {
+      animation: vt-in-rise var(--vt-dur) var(--vt-ease) both;
+    }
+    .vt-reveal[data-vt-auto][data-vt="fade"] {
+      animation-name: vt-in-fade;
+    }
+    .vt-reveal[data-vt-auto][data-vt="edge"] {
+      animation-name: vt-in-edge;
+    }
+    .vt-reveal[data-vt-auto][data-vt="figure"] {
+      animation-name: vt-in-figure;
+    }
+    .vt-reveal[data-vt-auto][data-vt="ink"] {
+      animation-name: vt-in-ink;
+    }
+
+    .vt-reveal[data-vt-auto].vt-stagger > *,
+    .vt-reveal[data-vt-auto] .vt-lift {
+      animation: vt-part-lift var(--vt-dur) var(--vt-ease) var(--vt-d) both;
+    }
+    .vt-reveal[data-vt-auto] .vt-fade {
+      animation: vt-in-fade var(--vt-dur) var(--vt-ease) var(--vt-d) both;
+    }
+    .vt-reveal[data-vt-auto] .vt-grow {
+      animation: vt-part-grow 0.95s var(--vt-ease) var(--vt-d) both;
+    }
+    .vt-reveal[data-vt-auto] .vt-draw {
+      animation: vt-part-draw 1.05s var(--vt-ease) var(--vt-d) both;
+    }
+    .vt-reveal[data-vt-auto] .vt-pop {
+      animation: vt-part-pop 0.55s cubic-bezier(0.34, 1.5, 0.64, 1) var(--vt-d) both;
+    }
+
+    @keyframes vt-in-fade {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+    @keyframes vt-in-rise {
+      from {
+        opacity: 0;
+        transform: translate3d(0, 22px, 0);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    @keyframes vt-in-edge {
+      from {
+        opacity: 0;
+        transform: translate3d(-22px, 0, 0);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    @keyframes vt-in-figure {
+      from {
+        opacity: 0;
+        transform: scale(0.955) translate3d(0, 16px, 0);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    @keyframes vt-in-ink {
+      from {
+        opacity: 0;
+        transform: translate3d(0, 14px, 0);
+        filter: blur(7px);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+        filter: blur(0);
+      }
+    }
+    @keyframes vt-part-lift {
+      from {
+        opacity: 0;
+        transform: translate3d(0, 12px, 0);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    @keyframes vt-part-grow {
+      from {
+        transform: scaleX(0);
+      }
+      to {
+        transform: none;
+      }
+    }
+    @keyframes vt-part-draw {
+      from {
+        stroke-dashoffset: 1;
+      }
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+    @keyframes vt-part-pop {
+      from {
+        transform: scale(0);
+      }
+      to {
+        transform: none;
+      }
     }
   }
 }

@@ -31,7 +31,8 @@ export function PerformanceInfo() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Como a performance política é calculada"
-        className="ml-1.5 inline-flex size-5 shrink-0 translate-y-[1px] items-center justify-center rounded-full border border-navy-300 text-navy-600 transition-colors hover:border-navy-600 hover:text-navy-900"
+        // The mark stays 20px; `after` gives the finger the 44 it needs.
+        className="relative ml-1.5 inline-flex size-5 shrink-0 translate-y-[1px] items-center justify-center rounded-full border border-navy-300 text-navy-600 transition-colors hover:border-navy-600 hover:text-navy-900 after:absolute after:-inset-3 after:content-[''] sm:after:hidden"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
           <path d="M12 16v-5M12 8h.01" strokeLinecap="round" />
@@ -66,7 +67,7 @@ function PerformanceSheet({ onClose }: { onClose: () => void }) {
       aria-label="Como a performance política é calculada"
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 sm:p-7"
+        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-card bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-7 sm:pb-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
