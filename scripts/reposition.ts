@@ -4,8 +4,11 @@
  *   npm run reposition                      # aplica e grava
  *   npm run reposition -- --dry             # só mede, não grava
  *   npm run reposition -- --dry --weights=raw     # mede sem o desconto de contaminação
- *   npm run reposition -- --dry --weights=clean --max-contamination=0.3
+ *   npm run reposition -- --dry --weights=clean --max-contamination=0.4
  *                                           # mede só sobre os itens que a coalizão não conduziu
+ *   npm run reposition -- --dry --weights=clean --max-contamination=0.4 --min-effective-items=2
+ *                                           # ...e afrouxa o piso por agente, para a ordenação
+ *                                           #    partidária poder ser medida sobre poucos itens
  *
  * Em produção nada disso roda direto — não há toolchain Node na instância:
  *
@@ -37,6 +40,7 @@ import {
   bandGate,
   CLEAN_MAX_CONTAMINATION,
   DEFAULT_WEIGHT_MODE,
+  MIN_EFFECTIVE_ITEMS,
   POSITIONING_AXES,
   type AxisKey,
   type WeightMode,
@@ -101,18 +105,39 @@ function parseMaxContamination(argv: string[]): number {
   process.exit(1);
 }
 
+/**
+ * Ler `--min-effective-items=<n>`. Zero é recusado junto com o resto: sem piso
+ * nenhum, um único item classificado devolveria ±100 e a média partidária
+ * passaria a ser sobre esses extremos.
+ */
+function parseMinEffectiveItems(argv: string[]): number {
+  const arg = argv.find((a) => a.startsWith("--min-effective-items"));
+  if (!arg) return MIN_EFFECTIVE_ITEMS;
+  const n = Number(arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : NaN);
+  if (Number.isFinite(n) && n > 0) return n;
+  console.error("Valor inválido para --min-effective-items: use um número maior que 0.");
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry");
   const weights = parseWeights(process.argv);
   const maxContamination = parseMaxContamination(process.argv);
+  const minEffectiveItems = parseMinEffectiveItems(process.argv);
+  const loweredFloor = minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
 
-  if (weights !== DEFAULT_WEIGHT_MODE) {
-    const what =
-      weights === "raw"
-        ? "o fator (1 − contaminação) está desligado"
-        : `só entram itens com contaminação ≤ ${maxContamination}, com peso cheio`;
+  if (weights !== DEFAULT_WEIGHT_MODE || loweredFloor) {
+    const lines: string[] = [];
+    if (weights === "raw") lines.push("o fator (1 − contaminação) está desligado");
+    if (weights === "clean")
+      lines.push(`só entram itens com contaminação ≤ ${maxContamination}, com peso cheio`);
+    if (loweredFloor)
+      lines.push(
+        `o piso por eixo é ${minEffectiveItems} em vez de ${MIN_EFFECTIVE_ITEMS} — ` +
+          "leitura individual sobre poucos itens, só a ordenação partidária significa algo",
+      );
     console.log(
-      `\n  ⚗ MEDIÇÃO — pesos "${weights}": ${what}.` +
+      `\n  ⚗ MEDIÇÃO — ${lines.join("; ")}.` +
         "\n    Não é uma metodologia alternativa, é a ausência (ou a caricatura) de um controle." +
         "\n    Nada aqui é publicável, e a gravação é recusada mesmo sem --dry.\n",
     );
@@ -122,6 +147,7 @@ async function main(): Promise<void> {
     dryRun,
     weights,
     maxContamination,
+    minEffectiveItems,
   });
 
   if (agents.length === 0) {
@@ -136,10 +162,16 @@ async function main(): Promise<void> {
   console.log("  Portas:");
   for (const h of houses) {
     const mark = h.blocked ? "✗" : "✓";
+    // `items` é o que o modo de fato usa e `itemsControlled` é onde a
+    // contaminação pôde ser medida. Em `clean` os dois divergem, e imprimi-los
+    // colados sem dizer isso lia como defeito ("35 itens (217 com controle)").
+    const scope =
+      h.items === h.itemsControlled
+        ? `${h.itemsControlled} com contaminação medida`
+        : `usados de ${h.itemsControlled} com contaminação medida`;
     console.log(
       `    ${mark} ${h.house.padEnd(7)} ${String(h.items).padStart(4)} itens ` +
-        `(${h.itemsControlled} com controle de governo) · ` +
-        `${h.agentsScored}/${h.agents} agentes com leitura`,
+        `(${scope}) · ${h.agentsScored}/${h.agents} agentes com leitura`,
     );
     if (h.governmentCorrelation !== null) {
       const flag = Math.abs(h.governmentCorrelation) > MAX_GOVERNMENT_CORRELATION ? "  ⚠" : "";
@@ -325,10 +357,11 @@ async function main(): Promise<void> {
     );
   }
 
-  const stamp =
-    weights === DEFAULT_WEIGHT_MODE
-      ? ""
-      : ` · pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""} (medição)`;
+  const parts: string[] = [];
+  if (weights !== DEFAULT_WEIGHT_MODE)
+    parts.push(`pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""}`);
+  if (loweredFloor) parts.push(`piso ${minEffectiveItems}`);
+  const stamp = parts.length > 0 ? ` · ${parts.join(" · ")} (medição)` : "";
   if (dryRun) console.log(`\n  (--dry: nada foi gravado${stamp})`);
   else console.log("\n✓ Posicionamento atualizado.");
 

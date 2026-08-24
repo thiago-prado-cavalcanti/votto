@@ -43,6 +43,7 @@ import {
   DEFAULT_WEIGHT_MODE,
   discrimination,
   MIN_DISCRIMINATION,
+  MIN_EFFECTIVE_ITEMS,
   MIN_HOUSE_AGENTS,
   MIN_GOVERNISMO_OPPORTUNITIES,
   MIN_HOUSE_ITEMS,
@@ -196,6 +197,8 @@ export async function recomputePositioningIndex(
     weights?: WeightMode;
     /** Teto do modo `clean`. Ignorado nos outros. */
     maxContamination?: number;
+    /** Piso de cobertura por eixo. Alterá-lo também torna a rodada não publicável. */
+    minEffectiveItems?: number;
   } = {},
 ): Promise<{
   agents: AgentScore[];
@@ -205,19 +208,33 @@ export async function recomputePositioningIndex(
   legacyShare: number;
   /** O modo que rodou, para o relatório carimbar o que está lendo. */
   weights: WeightMode;
+  /** O piso que rodou — igual a `MIN_EFFECTIVE_ITEMS` salvo numa medição. */
+  minEffectiveItems: number;
 }> {
   const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
   const maxContamination = opts.maxContamination ?? CLEAN_MAX_CONTAMINATION;
+  const minEffectiveItems = opts.minEffectiveItems ?? MIN_EFFECTIVE_ITEMS;
 
   // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
   // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
   // inteiro para depois dizer não. O guarda vive aqui e não no script porque
   // quem escreve é esta função — um caller futuro que esqueça `--dry` não deve
   // conseguir publicar uma conta que não é `POSITIONING_METHODOLOGY`.
-  if (!opts.dryRun && weights !== DEFAULT_WEIGHT_MODE) {
+  //
+  // `maxContamination` fica de fora da condição de propósito: ele é inerte em
+  // qualquer modo que não seja `clean`, e `clean` já está barrado pelo primeiro
+  // termo. Um guarda que checasse um parâmetro sem efeito recusaria rodadas
+  // publicáveis por engano.
+  const experimental =
+    weights !== DEFAULT_WEIGHT_MODE || minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
+  if (!opts.dryRun && experimental) {
+    const why =
+      weights !== DEFAULT_WEIGHT_MODE
+        ? `modo de peso "${weights}"`
+        : `piso de cobertura em ${minEffectiveItems} (metodologia: ${MIN_EFFECTIVE_ITEMS})`;
     throw new Error(
-      `Modo de peso "${weights}" é experimental e não é publicável. ` +
-        "Rode com --dry, ou adote o modo em POSITIONING_METHODOLOGY " +
+      `Configuração experimental (${why}) não é publicável. ` +
+        "Rode com --dry, ou adote a mudança em POSITIONING_METHODOLOGY " +
         "(version, changedAt, fingerprint) antes de gravar.",
     );
   }
@@ -339,7 +356,11 @@ export async function recomputePositioningIndex(
       });
     }
 
-    const position = computePosition(scorable, weights, maxContamination);
+    const position = computePosition(scorable, {
+      mode: weights,
+      maxContamination,
+      minEffectiveItems,
+    });
     const contributing = position.economic.items + position.social.items;
     if (contributing > 0) {
       usedTotal += contributing;
@@ -608,6 +629,7 @@ export async function recomputePositioningIndex(
     houses,
     legacyShare: usedTotal > 0 ? legacyUsedTotal / usedTotal : 0,
     weights,
+    minEffectiveItems,
   };
 }
 

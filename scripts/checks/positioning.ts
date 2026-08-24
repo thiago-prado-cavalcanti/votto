@@ -117,6 +117,26 @@ ok("eixo sem tag fica null", p1.social.value === null);
 // um item abaixo do piso NÃO pode devolver 0, porque 0 é a coordenada do centro.
 const atFloor = computePosition(Array.from({ length: N }, (_, i) => mk(i, "YES", 1, 50, 50)));
 const belowFloor = computePosition(Array.from({ length: N - 1 }, (_, i) => mk(i, "YES", 1, 50, 50)));
+
+// O piso de medição (`--min-effective-items`) sobrepõe MIN_EFFECTIVE_ITEMS e
+// nada mais. Os mesmos votos que ficam sem leitura no piso da metodologia
+// passam a ter uma quando o piso desce — que é a única coisa que o override
+// precisa fazer para a ordenação partidária poder ser medida sobre poucos itens.
+ok(
+  "piso de medição libera o que o piso da metodologia barra",
+  belowFloor.economic.value === null &&
+    computePosition(
+      Array.from({ length: N - 1 }, (_, i) => mk(i, "YES", 1, 50, 50)),
+      { minEffectiveItems: N - 1 },
+    ).economic.value !== null,
+);
+ok(
+  "piso de medição não mexe no valor, só na admissão",
+  computePosition(
+    Array.from({ length: N }, (_, i) => mk(i, "YES", 1, 50, 50)),
+    { minEffectiveItems: 1 },
+  ).economic.value === atFloor.economic.value,
+);
 ok("exatamente no piso → publica", atFloor.economic.value !== null, `(${N} itens)`);
 ok("um abaixo do piso → null, nunca 0", belowFloor.economic.value === null, `(${N - 1} itens)`);
 

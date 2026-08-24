@@ -372,6 +372,38 @@ export const DEFAULT_WEIGHT_MODE: WeightMode = "discount";
 export const CLEAN_MAX_CONTAMINATION = 0.3;
 
 /**
+ * Os três parâmetros que uma rodada de **medição** pode mexer.
+ *
+ * Um objeto, e não mais parâmetros posicionais, porque o terceiro chegou: com
+ * quatro posições ninguém lê `computePosition(v, "clean", 0.4, 2)` sem voltar
+ * na assinatura. Ausentes, todos caem na metodologia em vigor — `computePosition(votes)`
+ * continua sendo a conta publicada, e é o que o cidadão em `positions.ts` roda.
+ */
+export interface Weighting {
+  mode?: WeightMode;
+  /** Teto do modo `clean`. Inerte nos outros. */
+  maxContamination?: number;
+  /**
+   * Piso de cobertura por eixo, sobrepondo `MIN_EFFECTIVE_ITEMS`.
+   *
+   * Existe por um resultado medido: em 24/08/2026 o modo `clean` na Câmara
+   * devolveu **35 itens a ≤0,3 e 48 a ≤0,4, com 0 dos 513 deputados com
+   * leitura** — o subconjunto limpo é grande o bastante para a casa
+   * (`MIN_HOUSE_ITEMS`) e pequeno demais para a pessoa, então o teste não chega
+   * a rodar. É a mesma restrição que a medição original contornou:
+   * `docs/posicionamento.md` mediu ρ = +0,917 por **PCA no nível partidário
+   * sobre 15 votações**, sem piso por agente nenhum.
+   *
+   * Baixar o piso é legítimo para essa pergunta e ilegítimo para publicar. O
+   * piso protege a *posição de uma pessoa* de repousar sobre dados finos; a
+   * ordenação partidária é a média de 12 a 107 membros, onde o ruído individual
+   * se cancela. Por isso `recomputePositioningIndex` recusa a gravar com o piso
+   * alterado, exatamente como recusa `raw` e `clean`.
+   */
+  minEffectiveItems?: number;
+}
+
+/**
  * Peso de um item para um eixo: discriminação × (1 − contaminação) × confiança ×
  * magnitude.
  *
@@ -520,10 +552,11 @@ function weightedMean(contributions: Array<{ w: number; s: number }>): number | 
 /** Uma leitura de eixo a partir das contribuições já pesadas. */
 function readAxis(
   contributions: Array<{ w: number; s: number; themeKey: string }>,
+  minEffectiveItems: number = MIN_EFFECTIVE_ITEMS,
 ): AxisReading {
   const used = contributions.filter((c) => c.w > 0);
   const effectiveItems = used.reduce((sum, c) => sum + c.w, 0);
-  if (used.length === 0 || effectiveItems < MIN_EFFECTIVE_ITEMS) {
+  if (used.length === 0 || effectiveItems < minEffectiveItems) {
     return { ...EMPTY_AXIS, items: used.length, effectiveItems };
   }
 
@@ -575,11 +608,10 @@ function readAxis(
  * ganhou usuários. Aqui o espaço é definido pelas votações da casa e congelado;
  * o cidadão é projetado dentro dele, e nada que ele vote move ninguém.
  */
-export function computePosition(
-  votes: ScorableVote[],
-  mode: WeightMode = DEFAULT_WEIGHT_MODE,
-  maxContamination: number = CLEAN_MAX_CONTAMINATION,
-): Position {
+export function computePosition(votes: ScorableVote[], weighting: Weighting = {}): Position {
+  const mode = weighting.mode ?? DEFAULT_WEIGHT_MODE;
+  const maxContamination = weighting.maxContamination ?? CLEAN_MAX_CONTAMINATION;
+  const minEffectiveItems = weighting.minEffectiveItems ?? MIN_EFFECTIVE_ITEMS;
   const byAxis: Record<AxisKey, Array<{ w: number; s: number; themeKey: string }>> = {
     economic: [],
     social: [],
@@ -611,8 +643,8 @@ export function computePosition(
   }
 
   return {
-    economic: readAxis(byAxis.economic),
-    social: readAxis(byAxis.social),
+    economic: readAxis(byAxis.economic, minEffectiveItems),
+    social: readAxis(byAxis.social, minEffectiveItems),
     legacyShare: totalUsed > 0 ? legacyUsed / totalUsed : 0,
   };
 }
