@@ -388,13 +388,6 @@ h3,
     .vt-rows > tr:nth-child(9) { --vt-i: 8; }
     .vt-rows > tr:nth-child(n + 10) { --vt-i: 9; }
 
-    @keyframes vt-row-in {
-      from {
-        opacity: 0;
-        transform: translate3d(0, 9px, 0);
-      }
-    }
-
     /* ── Cromo ─────────────────────────────────────────────────────────────── */
     .vt-progress {
       transition: transform 0.12s linear;
@@ -439,90 +432,114 @@ h3,
     .vt-reveal[data-vt-auto] .vt-pop {
       animation: vt-part-pop 0.55s cubic-bezier(0.34, 1.5, 0.64, 1) var(--vt-d) both;
     }
+  }
 
-    @keyframes vt-in-fade {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
+  /* Os @keyframes vivem FORA da regra de estilo acima, e isso é estrutural, não
+     arrumação. `@keyframes` não é um at-rule válido dentro de uma regra de
+     estilo: aninhados em `:root:not([data-motion="off"])` o browser descarta os
+     dez, `animation-name` passa a apontar para nada, e o repouso `opacity: 0`
+     fica valendo para sempre. Custou a masthead de toda página de registro — os
+     blocos `autoplay` são 100% keyframe, não têm `.vt-reveal-in` para chegar, e
+     o salva-vidas de 2,5s já havia sido cancelado pelo primeiro Reveal que
+     hidratou. Uma definição de keyframes é inerte enquanto ninguém a referencia,
+     então aqui ela não custa nada — e é o único lugar onde ela existe. */
+  @keyframes vt-row-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 9px, 0);
     }
-    @keyframes vt-in-rise {
-      from {
-        opacity: 0;
-        transform: translate3d(0, 22px, 0);
-      }
-      to {
-        opacity: 1;
-        transform: none;
-      }
+  }
+
+  @keyframes vt-in-fade {
+    from {
+      opacity: 0;
     }
-    @keyframes vt-in-edge {
-      from {
-        opacity: 0;
-        transform: translate3d(-22px, 0, 0);
-      }
-      to {
-        opacity: 1;
-        transform: none;
-      }
+    to {
+      opacity: 1;
     }
-    @keyframes vt-in-figure {
-      from {
-        opacity: 0;
-        transform: scale(0.955) translate3d(0, 16px, 0);
-      }
-      to {
-        opacity: 1;
-        transform: none;
-      }
+  }
+
+  @keyframes vt-in-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 22px, 0);
     }
-    @keyframes vt-in-ink {
-      from {
-        opacity: 0;
-        transform: translate3d(0, 14px, 0);
-        filter: blur(7px);
-      }
-      to {
-        opacity: 1;
-        transform: none;
-        filter: blur(0);
-      }
+    to {
+      opacity: 1;
+      transform: none;
     }
-    @keyframes vt-part-lift {
-      from {
-        opacity: 0;
-        transform: translate3d(0, 12px, 0);
-      }
-      to {
-        opacity: 1;
-        transform: none;
-      }
+  }
+
+  @keyframes vt-in-edge {
+    from {
+      opacity: 0;
+      transform: translate3d(-22px, 0, 0);
     }
-    @keyframes vt-part-grow {
-      from {
-        transform: scaleX(0);
-      }
-      to {
-        transform: none;
-      }
+    to {
+      opacity: 1;
+      transform: none;
     }
-    @keyframes vt-part-draw {
-      from {
-        stroke-dashoffset: 1;
-      }
-      to {
-        stroke-dashoffset: 0;
-      }
+  }
+
+  @keyframes vt-in-figure {
+    from {
+      opacity: 0;
+      transform: scale(0.955) translate3d(0, 16px, 0);
     }
-    @keyframes vt-part-pop {
-      from {
-        transform: scale(0);
-      }
-      to {
-        transform: none;
-      }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes vt-in-ink {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 14px, 0);
+      filter: blur(7px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: blur(0);
+    }
+  }
+
+  @keyframes vt-part-lift {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes vt-part-grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  @keyframes vt-part-draw {
+    from {
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes vt-part-pop {
+    from {
+      transform: scale(0);
+    }
+    to {
+      transform: none;
     }
   }
 }
