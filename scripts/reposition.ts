@@ -324,6 +324,19 @@ async function main(): Promise<void> {
     }
     // A distribuição decide o teto do modo `clean`: só há subconjunto limpo
     // enquanto couber MIN_HOUSE_ITEMS embaixo dele.
+    // A validação que a literatura usa: ideologia estável entre presidências,
+    // dimensão de governo instável. Zucco & Lauderdale: 0,81 a 0,92 na primeira.
+    if (h.stability) {
+      const fmt = (x: { r: number | null; agents: number }) =>
+        x.r === null ? "—" : `${x.r >= 0 ? "+" : ""}${x.r.toFixed(2)}`;
+      const e = h.stability.economic;
+      const flag =
+        e.r !== null ? (e.r >= 0.8 ? "  ✓ na faixa da literatura" : "  ⚠ abaixo de 0,81") : "";
+      console.log(
+        `        estabilidade entre mandatos — eixo 1 ${fmt(e)} · eixo 2 ${fmt(h.stability.social)} ` +
+          `(${e.agents} agentes nos dois)${flag}`,
+      );
+    }
     if (h.rotation) {
       console.log(
         `        rotação ancorada — eixo 1 = ${h.rotation.w1.toFixed(2)}·PC1 + ` +

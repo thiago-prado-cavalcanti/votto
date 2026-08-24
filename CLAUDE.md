@@ -1430,6 +1430,41 @@ be), but the reference is a printed record, not a fintech app.
   (Câmara axis 1: governismo −0.92, anchor 0.90), which is the same collinearity restated: inside one
   presidency, "best predicts the ruler" and "is the government dimension" are the same direction.
 
+  **The literature's own test was then run, and it is harsher than the anchor.** `stabilityAcrossTerms`
+  estimates the axis separately on each presidential term's items, orients both by the same external
+  poles, and correlates each agent's two readings. Câmara, `--items=substantive`, 287 agents present
+  in both terms:
+
+  | configuration | governismo | anchor ρ | **stability, axis 1** |
+  |---|---|---|---|
+  | residualised (clean) | −0.34 | 0.75 | **+0.32** |
+  | rotated, unresidualised | −0.92 | 0.90 | **+0.71** |
+  | Zucco & Lauderdale, ideology dimension | — | — | **0.81–0.92** |
+
+  Senado, clean configuration: **+0.03**.
+
+  **Stability tracks governismo.** The more of the government↔opposition dimension an axis carries,
+  the more stable it is — 0.71 at governismo −0.92, 0.32 at −0.34, 0.03 at +0.17. The only stable
+  structure in the Brazilian roll-call matrix is the coalition cleavage, and even that falls below
+  the band the literature reports for ideology. **Once governismo is removed, what remains is not
+  stable enough to be a personal trait**, and the argument needs no ruler at all: a deputy does not
+  change ideology because the president changed.
+
+  One caveat stated rather than buried: each half is estimated on ~138 and ~201 items, so the
+  per-agent estimates are noisier than the full-corpus one and 0.32 is attenuated by measurement
+  error. Zucco & Lauderdale's halves are also single presidencies of comparable size, so the
+  comparison is roughly fair — but the true value is somewhat above 0.32, not at 0.81.
+
+  **This closes the question.** Three independent tests now agree, and the third was proposed in the
+  hope of vindicating the index: the anchor correlation reaches 0.75 against a bar of 0.85; the
+  (ρ, governismo) frontier never enters the required region; and the literature's threshold-free
+  stability test returns 0.32 against a published 0.81–0.92. Roll-call positioning is **not
+  publishable for Brazil**, and it is no longer a question of a threshold being too strict.
+
+  What survives is what §3.2 already said before any of this: `governismo` is a **count**, published
+  on its own, with its denominator beside it — and it is the most faithful reading a Brazilian
+  nominal vote supports.
+
   Three ways forward, and all three are product decisions rather than engineering ones: restate the
   provenance of `MIN_ANCHOR_CORRELATION` (see below) and decide what bar a *roll-call-against-survey*
   comparison deserves; find a data source that is not roll calls; or accept publishing governismo

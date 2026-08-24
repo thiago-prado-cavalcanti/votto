@@ -317,6 +317,16 @@ export interface HouseReport {
   validatedAgainst: "bolognesi+bls" | "bls (retida)";
   /** Os pesos da rotação ancorada, quando houve. */
   rotation: { w1: number; w2: number } | null;
+  /**
+   * Correlação da leitura de cada agente entre os dois mandatos presidenciais,
+   * estimados separadamente — a validação que Zucco & Lauderdale usam e a nossa
+   * porta 4 não.
+   *
+   * Referência publicada: **0,81 a 0,92** para a dimensão ideológica em seis
+   * transições, e valores mais baixos e instáveis para a de governo. O eixo 1
+   * ser estável e o 2 não é o padrão que confirma o modelo.
+   */
+  stability: Record<AxisKey, { r: number | null; agents: number }> | null;
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -343,6 +353,120 @@ export interface PartyScore {
   economic: PooledEstimate<string> | null;
   social: PooledEstimate<string> | null;
   cohesion: number | null;
+}
+
+/**
+ * Escore de cada agente a partir de um conjunto de cargas — média ponderada de
+ * `voto × direção`, a mesma conta do resto do índice.
+ *
+ * Extraído porque três lugares precisam dela: a rotação ancorada, a medida de
+ * estabilidade entre mandatos, e o diagnóstico por componente.
+ */
+function scoreFromLoadings(
+  votes: RecoveryVote[],
+  loadings: Map<string, { weight: number; direction: -1 | 1 }>,
+  keyOf: (themeId: string) => string | undefined,
+): Map<string, number> {
+  const acc = new Map<string, { num: number; den: number }>();
+  for (const v of votes) {
+    const key = keyOf(v.themeId);
+    if (!key) continue;
+    const item = loadings.get(key);
+    if (!item || item.weight <= 0) continue;
+    const a = acc.get(v.agentId) ?? { num: 0, den: 0 };
+    a.num += item.weight * v.sign * item.direction;
+    a.den += item.weight;
+    acc.set(v.agentId, a);
+  }
+  const out = new Map<string, number>();
+  for (const [id, a] of acc) if (a.den > 0) out.set(id, a.num / a.den);
+  return out;
+}
+
+/**
+ * Estabilidade da leitura entre mandatos presidenciais.
+ *
+ * **É o teste que a literatura de fato usa**, e a nossa porta 4 não. Zucco &
+ * Lauderdale validam a dimensão ideológica pela estabilidade dela entre
+ * presidências — reportam 0,81 · 0,86 · 0,89 · 0,89 · 0,90 · 0,92 em seis
+ * transições — e a dimensão de governo pela INstabilidade, que é o que se espera
+ * de algo que depende de quem está no poder.
+ *
+ * O raciocínio é forte porque não depende de régua nenhuma: a posição ideológica
+ * de um parlamentar não deve mudar porque o presidente mudou. Se muda, o que se
+ * está medindo não é ideologia — e nenhuma correlação com survey desmente isso.
+ *
+ * Cada metade é estimada **sozinha**, sobre os itens do seu próprio mandato, e as
+ * duas são orientadas pela mesma régua externa antes de comparar. Sem essa
+ * orientação o sinal seria arbitrário (um componente principal não tem sinal) e a
+ * correlação não teria como ser lida.
+ */
+function stabilityAcrossTerms(
+  matrixVotes: RecoveryVote[],
+  matrixItems: RecoveryItem[],
+  kidByTheme: Map<string, string>,
+  govByTerm: Map<string, Map<string, number>>,
+  partyOf: Map<string, string | null>,
+  opts: { residualise: boolean | number },
+): Record<AxisKey, { r: number | null; agents: number }> {
+  const terms = [...new Set(matrixItems.map((i) => i.term).filter(Boolean))] as string[];
+  const empty = { economic: { r: null, agents: 0 }, social: { r: null, agents: 0 } } as Record<
+    AxisKey,
+    { r: number | null; agents: number }
+  >;
+  if (terms.length < 2) return empty;
+  terms.sort();
+  const [a, b] = [terms[0], terms[terms.length - 1]];
+
+  const half = (term: string) => {
+    const items = matrixItems.filter((i) => i.term === term);
+    const ids = new Set(items.map((i) => i.themeId));
+    const votes = matrixVotes.filter((v) => ids.has(v.themeId));
+    const scores = {} as Record<AxisKey, Map<string, number>>;
+    for (const [skipComponents, axis] of AXIS_KEYS.entries()) {
+      const rec = recoverAxis(votes, items, govByTerm, {
+        residualise: opts.residualise,
+        skipComponents,
+      });
+      const byKid = new Map<string, { weight: number; direction: -1 | 1 }>();
+      for (const [themeId, item] of rec.items) {
+        const kid = kidByTheme.get(themeId);
+        if (kid) byKid.set(kid, item);
+      }
+      const raw = scoreFromLoadings(votes, byKid, (id) => kidByTheme.get(id));
+
+      // Orientar pela régua, senão o sinal é arbitrário e a correlação também.
+      const byParty = new Map<string, number[]>();
+      for (const [id, v] of raw) {
+        const acronym = partyOf.get(id);
+        if (!acronym) continue;
+        const list = byParty.get(acronym) ?? [];
+        list.push(v * 100);
+        byParty.set(acronym, list);
+      }
+      const { flip } = orientAxis(
+        [...byParty].map(([acronym, values]) => ({
+          acronym,
+          mean: values.reduce((sum, v) => sum + v, 0) / values.length,
+        })),
+      );
+      scores[axis] = new Map([...raw].map(([id, v]) => [id, v * flip]));
+    }
+    return scores;
+  };
+
+  const first = half(a);
+  const second = half(b);
+  const out = {} as Record<AxisKey, { r: number | null; agents: number }>;
+  for (const axis of AXIS_KEYS) {
+    const pairs: Array<{ a: number; b: number }> = [];
+    for (const [id, v] of first[axis]) {
+      const w = second[axis].get(id);
+      if (w !== undefined) pairs.push({ a: v, b: w });
+    }
+    out[axis] = { r: pairs.length >= 10 ? pearson(pairs) : null, agents: pairs.length };
+  }
+  return out;
 }
 
 /** A casa a que um tipo de agente pertence. */
@@ -676,6 +800,10 @@ export async function recomputePositioningIndex(
   const recoveryByHouse = new Map<House, Record<PositioningAxisKey, RecoveryDiagnostics>>();
   const droppedByHouse = new Map<House, number>();
   const rotationByHouse = new Map<House, { w1: number; w2: number }>();
+  const stabilityByHouse = new Map<
+    House,
+    Record<AxisKey, { r: number | null; agents: number }>
+  >();
   if (estimator === "pca") {
     const govByTerm = new Map(
       [...governismoByTerm].map(([term, byAgent]) => [
@@ -843,6 +971,19 @@ export async function recomputePositioningIndex(
       weigherByHouse.set(house, recoveredWeigher(recovered));
       recoveryByHouse.set(house, diagnostics);
       droppedByHouse.set(house, droppedNonPolicy);
+
+      // A validação que a literatura de fato usa — ver `stabilityAcrossTerms`.
+      stabilityByHouse.set(
+        house,
+        stabilityAcrossTerms(
+          matrixVotes,
+          matrixItems,
+          kidByTheme,
+          govByTerm,
+          new Map(houseAgents.map((a) => [a.id, a.party?.acronym ?? null])),
+          { residualise },
+        ),
+      );
     }
   }
 
@@ -1064,6 +1205,7 @@ export async function recomputePositioningIndex(
       components: null,
       validatedAgainst: rotate ? "bls (retida)" : "bolognesi+bls",
       rotation: rotationByHouse.get(house) ?? null,
+      stability: stabilityByHouse.get(house) ?? null,
       droppedNonPolicy: droppedByHouse.get(house) ?? 0,
       unanchored: [],
       blocked: null,
