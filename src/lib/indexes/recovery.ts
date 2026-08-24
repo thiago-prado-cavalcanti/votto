@@ -579,3 +579,84 @@ function normalise(v: Float64Array): number {
   for (let i = 0; i < v.length; i++) v[i] /= norm;
   return norm;
 }
+
+// ─── Rotação ancorada ────────────────────────────────────────────────────────
+
+/**
+ * Girar o plano de dois componentes para que o **primeiro** seja a ideologia.
+ *
+ * ── Por que isto substitui a residualização ─────────────────────────────────
+ *
+ * A arquitetura anterior recuperava um componente sem âncora, **subtraía** o
+ * governismo e exigia que o resíduo reproduzisse a régua. Medido em 24/08/2026,
+ * isso não tem solução: varrendo o quanto se subtrai, no ponto em que o
+ * governismo entra no limite a correlação com a âncora vale 0,83, e a região que
+ * as portas pedem fica vazia. A causa é que as duas dimensões não se separam por
+ * subtração — toda direção que correlaciona com a régua correlaciona com
+ * governismo.
+ *
+ * Zucco & Lauderdale (*LSQ* 36(3), 2011) não fazem assim, e o texto é explícito:
+ * *"In the ideology dimension, the party means π_k1 are informed by the
+ * legislator survey data"* e *"the scale and polarity of one of the dimensions is
+ * identified by the survey data"*. A régua entra como **entrada que identifica**,
+ * não como prova. A segunda dimensão eles deixam livre de propósito, para poder
+ * *descobrir* que ela é governo↔oposição em vez de assumi-lo.
+ *
+ * Esta função é a versão fechada disso: em vez de amostrar um modelo
+ * hierárquico, gira o plano já recuperado até que o primeiro eixo seja a direção
+ * que melhor prediz a régua. É a "rotação ancorada" — mais barata e sem MCMC,
+ * com a mesma lógica de identificação.
+ *
+ * ── E o que passa a valer como validação ────────────────────────────────────
+ *
+ * Depois disto, **a correlação do eixo 1 com a régua usada para ajustar não é
+ * mais validação** — é o alvo do ajuste. Quem valida passa a ser:
+ *
+ *  - a **outra** âncora, retida (temos duas justamente por isso, e elas
+ *    concordam a 0,979);
+ *  - a estabilidade do eixo 1 entre mandatos presidenciais (eles reportam
+ *    0,81 a 0,92 em seis transições);
+ *  - o eixo 2 acompanhando o governismo — que ali é **confirmação** do modelo e
+ *    não reprovação, exatamente como a Tabela 3 deles mostra o segundo eixo
+ *    seguindo o status de gabinete em sete presidências.
+ *
+ * Devolve os pesos `(w1, w2)` da combinação. Aplicá-los às CARGAS, e não aos
+ * escores, é o que preserva a escala −100..100: o eixo continua sendo média
+ * ponderada de ±1, sem constante inventada.
+ */
+export function anchoredRotation(
+  parties: Array<{ first: number; second: number; anchor: number; weight: number }>,
+): { w1: number; w2: number } | null {
+  if (parties.length < 3) return null;
+
+  const sumW = parties.reduce((s, p) => s + p.weight, 0);
+  if (sumW <= 0) return null;
+  const wmean = (f: (p: (typeof parties)[number]) => number) =>
+    parties.reduce((s, p) => s + p.weight * f(p), 0) / sumW;
+
+  const m1 = wmean((p) => p.first);
+  const m2 = wmean((p) => p.second);
+  const ma = wmean((p) => p.anchor);
+
+  // Os componentes são ortogonais por construção, então a direção ótima é
+  // simplesmente o vetor de covariâncias com a régua — sem precisar inverter a
+  // matriz de covariância. Padronizar cada eixo antes evita que o de maior
+  // variância domine a rotação só por ser maior.
+  const v1 = wmean((p) => (p.first - m1) ** 2);
+  const v2 = wmean((p) => (p.second - m2) ** 2);
+  if (v1 <= 0 && v2 <= 0) return null;
+  const s1 = v1 > 0 ? Math.sqrt(v1) : 1;
+  const s2 = v2 > 0 ? Math.sqrt(v2) : 1;
+
+  let c1 = wmean((p) => ((p.first - m1) / s1) * (p.anchor - ma));
+  let c2 = wmean((p) => ((p.second - m2) / s2) * (p.anchor - ma));
+  const norm = Math.hypot(c1, c2);
+  if (norm <= 0) return null;
+  c1 /= norm;
+  c2 /= norm;
+
+  // Devolvidos na escala das CARGAS, desfazendo a padronização: o chamador
+  // combina `w1 * L1 + w2 * L2` e continua com uma média ponderada de ±1.
+  const back = Math.hypot(c1 / s1, c2 / s2);
+  return { w1: c1 / s1 / back, w2: c2 / s2 / back };
+}

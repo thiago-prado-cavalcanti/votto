@@ -110,6 +110,11 @@ function parseWeights(argv: string[]): WeightMode {
   process.exit(1);
 }
 
+/** Ler `--rotate`. Só faz efeito sob `--estimator=pca`. */
+function parseRotate(argv: string[]): boolean {
+  return argv.includes("--rotate") || argv.includes("--rotate=on");
+}
+
 /** Ler `--max-contamination=<0..1>`. Recusa fora da faixa, pela mesma razão. */
 function parseMaxContamination(argv: string[]): number {
   const arg = argv.find((a) => a.startsWith("--max-contamination"));
@@ -211,6 +216,7 @@ async function main(): Promise<void> {
   const residualise = parseResidual(process.argv);
   const scoreResidual = parseScore(process.argv);
   const itemFilter = parseItems(process.argv);
+  const rotate = parseRotate(process.argv);
   const loweredFloor = minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
 
   if (
@@ -218,7 +224,8 @@ async function main(): Promise<void> {
     loweredFloor ||
     estimator !== "tags" ||
     scoreResidual ||
-    itemFilter !== "all"
+    itemFilter !== "all" ||
+    rotate
   ) {
     const lines: string[] = [];
     if (estimator === "pca")
@@ -227,7 +234,8 @@ async function main(): Promise<void> {
           (residualise ? "; colunas residualizadas contra o governismo" : "; SEM residualizar") +
           (scoreResidual ? "; governismo descontado TAMBÉM dos escores" : "") +
           (itemFilter === "policy" ? "; só identificador de mérito na matriz" : "") +
-          (itemFilter === "substantive" ? "; só votação de mérito na matriz, pela descrição" : ""),
+          (itemFilter === "substantive" ? "; só votação de mérito na matriz, pela descrição" : "") +
+          (rotate ? "; plano GIRADO para ancorar o eixo 1 em Bolognesi, validando contra o BLS retido" : ""),
       );
     if (weights === "raw") lines.push("o fator (1 − contaminação) está desligado");
     if (weights === "clean")
@@ -253,6 +261,7 @@ async function main(): Promise<void> {
     residualise,
     scoreResidual,
     itemFilter,
+    rotate,
   });
 
   if (agents.length === 0) {
@@ -294,7 +303,7 @@ async function main(): Promise<void> {
           ? ` · sem pesar pela bancada ρ=${h.anchorCorrelationAll.toFixed(2)}`
           : "";
       console.log(
-        `        âncora BLS ρ=${h.anchorCorrelation.toFixed(2)} ` +
+        `        âncora [${h.validatedAgainst}] ρ=${h.anchorCorrelation.toFixed(2)} ` +
           `(mín ${MIN_ANCHOR_CORRELATION}) · cobertura ${(h.anchorCoverage * 100).toFixed(0)}% das cadeiras${all}${flag}`,
       );
     }
@@ -315,6 +324,12 @@ async function main(): Promise<void> {
     }
     // A distribuição decide o teto do modo `clean`: só há subconjunto limpo
     // enquanto couber MIN_HOUSE_ITEMS embaixo dele.
+    if (h.rotation) {
+      console.log(
+        `        rotação ancorada — eixo 1 = ${h.rotation.w1.toFixed(2)}·PC1 + ` +
+          `${h.rotation.w2.toFixed(2)}·PC2 · eixo 2 = complemento ortogonal`,
+      );
+    }
     if (h.droppedNonPolicy > 0) {
       console.log(
         `        ${h.droppedNonPolicy} itens fora por serem rito e não mérito ` +
@@ -550,6 +565,7 @@ async function main(): Promise<void> {
     parts.push(`pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""}`);
   if (loweredFloor) parts.push(`piso ${minEffectiveItems}`);
   if (itemFilter !== "all") parts.push(`itens "${itemFilter}"`);
+  if (rotate) parts.push("rotação ancorada");
   const stamp = parts.length > 0 ? ` · ${parts.join(" · ")} (medição)` : "";
   if (dryRun) console.log(`\n  (--dry: nada foi gravado${stamp})`);
   else console.log("\n✓ Posicionamento atualizado.");

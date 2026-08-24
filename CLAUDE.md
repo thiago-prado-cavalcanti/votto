@@ -1395,6 +1395,41 @@ be), but the reference is a printed record, not a fintech app.
   ideology. `governismo` remains published on its own (§3.2), which is the reading a Brazilian
   nominal vote actually supports.
 
+  **Then the literature was read properly, and the framing turned out to be wrong.** Zucco &
+  Lauderdale do **not** validate a roll-call scale against a survey — they use the survey as a
+  *prior on party means in the ideology dimension*: *"In the ideology dimension, the party means
+  π_k1 are informed by the legislator survey data"*, *"the scale and polarity of one of the
+  dimensions is identified by the survey data"*. The second dimension is left free **on purpose**,
+  so that its being government↔opposition is a finding rather than an assumption — *"we would be
+  assuming that which we want to demonstrate"*. Their validation is (a) temporal stability of
+  dimension 1 across presidencies (0.81–0.92 over six transitions, Table 2) and (b) dimension 2
+  tracking cabinet status (Table 3: in-cabinet +0.16…+0.30, out-of-cabinet −0.17…−0.71, across seven
+  presidencies). So **gate 4 as written asks of an unanchored estimate something the literature never
+  asks of itself.**
+
+  `--rotate` implements the closed-form version of their identification: recover both components,
+  then rotate the plane so axis 1 is the direction that best predicts the anchor, with axis 2 the
+  orthogonal complement (`anchoredRotation` in `src/lib/indexes/recovery.ts`). Fitting on Bolognesi
+  and validating on the **held-out** BLS-9 — which is what having two anchors is for.
+
+  **And the result converges on 0.75 from three independent routes.** Câmara, `--items=substantive`:
+
+  | route | governismo | anchor ρ |
+  |---|---|---|
+  | column residualisation (λ = 1) | −0.34 | 0.75 |
+  | λ sweep, at 0.9 | −0.40 | 0.75 |
+  | orthogonal complement of the anchored rotation | **−0.04** | **0.75** (held-out BLS) |
+
+  Three different estimators, the same number. That is not a property of the method — it is a
+  property of the data: **the component of the Brazilian roll-call matrix that is orthogonal to
+  governismo correlates ≈0.75 with expert surveys, and no rearrangement moves it.** The third route
+  is also the cleanest configuration ever measured here (governismo −0.04, spread 100%, coverage
+  87%), and it would clear every gate except the anchor.
+
+  The rotation itself lands on the governista direction when told to maximise anchor correlation
+  (Câmara axis 1: governismo −0.92, anchor 0.90), which is the same collinearity restated: inside one
+  presidency, "best predicts the ruler" and "is the government dimension" are the same direction.
+
   Three ways forward, and all three are product decisions rather than engineering ones: restate the
   provenance of `MIN_ANCHOR_CORRELATION` (see below) and decide what bar a *roll-call-against-survey*
   comparison deserves; find a data source that is not roll calls; or accept publishing governismo

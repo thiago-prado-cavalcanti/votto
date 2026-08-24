@@ -60,6 +60,7 @@ import {
   type WeightMode,
 } from "@/lib/indexes/positioning";
 import {
+  anchoredRotation,
   recoverAxis,
   residualiseScores,
   type RecoveryDiagnostics,
@@ -76,6 +77,7 @@ import {
 } from "@/lib/indexes/pooling";
 import {
   anchorFor,
+  anchorsFor,
   MAX_GOVERNMENT_CORRELATION,
   MIN_ANCHOR_CORRELATION,
   MIN_SPREAD_RATIO,
@@ -311,6 +313,10 @@ export interface HouseReport {
    * prática, e nenhum estimador pode separar o que os dados não distinguem.
    */
   itemsByTerm: Record<string, number>;
+  /** Qual régua validou — muda quando a outra é usada para girar. */
+  validatedAgainst: "bolognesi+bls" | "bls (retida)";
+  /** Os pesos da rotação ancorada, quando houve. */
+  rotation: { w1: number; w2: number } | null;
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -377,6 +383,16 @@ export async function recomputePositioningIndex(
     /** Piso de cobertura por eixo. Alterá-lo também torna a rodada não publicável. */
     minEffectiveItems?: number;
     /**
+     * Só para `pca`: girar o plano dos dois componentes até o primeiro ser a
+     * direção que melhor prediz a âncora **primária**, em vez de subtrair o
+     * governismo (`anchoredRotation`).
+     *
+     * A âncora usada para girar deixa de validar por construção — quem valida
+     * passa a ser a **secundária**, retida, mais a estabilidade entre mandatos
+     * e o segundo eixo carregar o governismo.
+     */
+    rotate?: boolean;
+    /**
      * Só para `pca`: como separar mérito de rito.
      *
      * `"policy"` olha o identificador do tema — barato e quase inútil, porque
@@ -412,6 +428,8 @@ export async function recomputePositioningIndex(
   scoreResidual: boolean;
   /** Que filtro de item rodou. */
   itemFilter: "all" | "policy" | "substantive";
+  /** Se o plano foi girado para ancorar o primeiro eixo. */
+  rotate: boolean;
 }> {
   const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
   const maxContamination = opts.maxContamination ?? CLEAN_MAX_CONTAMINATION;
@@ -420,6 +438,7 @@ export async function recomputePositioningIndex(
   const residualise = opts.residualise ?? true;
   const scoreResidual = opts.scoreResidual ?? false;
   const itemFilter = opts.itemFilter ?? "all";
+  const rotate = opts.rotate ?? false;
 
   // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
   // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
@@ -436,7 +455,8 @@ export async function recomputePositioningIndex(
     minEffectiveItems !== MIN_EFFECTIVE_ITEMS ||
     estimator !== "tags" ||
     scoreResidual ||
-    itemFilter !== "all";
+    itemFilter !== "all" ||
+    rotate;
   if (!opts.dryRun && experimental) {
     const why =
       estimator !== "tags"
@@ -655,6 +675,7 @@ export async function recomputePositioningIndex(
   const weigherByHouse = new Map<House, ItemWeigher>();
   const recoveryByHouse = new Map<House, Record<PositioningAxisKey, RecoveryDiagnostics>>();
   const droppedByHouse = new Map<House, number>();
+  const rotationByHouse = new Map<House, { w1: number; w2: number }>();
   if (estimator === "pca") {
     const govByTerm = new Map(
       [...governismoByTerm].map(([term, byAgent]) => [
@@ -732,6 +753,93 @@ export async function recomputePositioningIndex(
         recovered[axis] = byKid;
         diagnostics[axis] = result.diagnostics;
       }
+      // ── Rotação ancorada ──────────────────────────────────────────────
+      //
+      // Gira o plano até o primeiro eixo ser a direção que melhor prediz a
+      // régua, em vez de subtrair o governismo — ver `anchoredRotation`. Os
+      // pesos são aplicados às CARGAS e não aos escores, o que preserva a
+      // escala: o eixo continua sendo média ponderada de ±1.
+      if (rotate) {
+        // Escore de cada agente em cada componente, direto das cargas.
+        const perAgent = new Map<string, { first: number; second: number }>();
+        const acc = new Map<string, { n1: number; d1: number; n2: number; d2: number }>();
+        for (const v of matrixVotes) {
+          const kid = kidByTheme.get(v.themeId);
+          if (!kid) continue;
+          const a = acc.get(v.agentId) ?? { n1: 0, d1: 0, n2: 0, d2: 0 };
+          const e = recovered.economic.get(kid);
+          const so = recovered.social.get(kid);
+          if (e) {
+            a.n1 += e.weight * v.sign * e.direction;
+            a.d1 += e.weight;
+          }
+          if (so) {
+            a.n2 += so.weight * v.sign * so.direction;
+            a.d2 += so.weight;
+          }
+          acc.set(v.agentId, a);
+        }
+        for (const [id, a] of acc) {
+          if (a.d1 <= 0 || a.d2 <= 0) continue;
+          perAgent.set(id, { first: a.n1 / a.d1, second: a.n2 / a.d2 });
+        }
+
+        // Médias partidárias contra a âncora PRIMÁRIA (Bolognesi), escolhida
+        // para girar por cobrir as bancadas grandes que o BLS-9, de 2021, não
+        // alcança — UNIÃO e as siglas nascidas das fusões de 2022.
+        const partyOfAgent = new Map(
+          houseAgents.filter((a) => a.party).map((a) => [a.id, a.party!.acronym]),
+        );
+        const byParty = new Map<string, { first: number[]; second: number[] }>();
+        for (const [id, sc] of perAgent) {
+          const acronym = partyOfAgent.get(id);
+          if (!acronym) continue;
+          const g = byParty.get(acronym) ?? { first: [], second: [] };
+          g.first.push(sc.first);
+          g.second.push(sc.second);
+          byParty.set(acronym, g);
+        }
+        const rows: Array<{ first: number; second: number; anchor: number; weight: number }> = [];
+        for (const [acronym, g] of byParty) {
+          const anchor = anchorsFor(acronym).bolognesi;
+          if (anchor === null) continue;
+          const avg = (xs: number[]) => xs.reduce((sum, x) => sum + x, 0) / xs.length;
+          rows.push({
+            first: avg(g.first),
+            second: avg(g.second),
+            anchor,
+            weight: g.first.length,
+          });
+        }
+
+        const w = anchoredRotation(rows);
+        if (w) {
+          const combine = (a: number, b: number) => {
+            const out = new Map<string, { weight: number; direction: -1 | 1 }>();
+            let max = 0;
+            const raw = new Map<string, number>();
+            for (const kid of new Set([...recovered.economic.keys(), ...recovered.social.keys()])) {
+              const e = recovered.economic.get(kid);
+              const so = recovered.social.get(kid);
+              const load =
+                a * (e ? e.weight * e.direction : 0) + b * (so ? so.weight * so.direction : 0);
+              raw.set(kid, load);
+              max = Math.max(max, Math.abs(load));
+            }
+            if (max <= 0) return out;
+            for (const [kid, load] of raw) {
+              out.set(kid, { weight: Math.abs(load) / max, direction: load < 0 ? -1 : 1 });
+            }
+            return out;
+          };
+          // Eixo 1 na direção ajustada; eixo 2 no complemento ortogonal, que é
+          // onde o governismo deve aparecer — e aparecer ali é confirmação.
+          recovered.economic = combine(w.w1, w.w2);
+          recovered.social = combine(-w.w2, w.w1);
+          rotationByHouse.set(house, w);
+        }
+      }
+
       weigherByHouse.set(house, recoveredWeigher(recovered));
       recoveryByHouse.set(house, diagnostics);
       droppedByHouse.set(house, droppedNonPolicy);
@@ -884,6 +992,13 @@ export async function recomputePositioningIndex(
   const houses: HouseReport[] = [];
   const passing = new Set<House>();
 
+  // **Quem gira não valida.** Ao ancorar a rotação em Bolognesi, a correlação
+  // com Bolognesi passa a ser o alvo do ajuste e não uma prova, então a porta 4
+  // muda de régua: valida contra o BLS-9, que ficou de fora. É para isto que
+  // `anchors.ts` tem duas — elas concordam a 0,979, então a retida é justa.
+  const validationAnchor = (acronym: string): number | null =>
+    rotate ? anchorsFor(acronym).bls : anchorFor(acronym);
+
   for (const house of [House.CAMARA, House.SENADO]) {
     const inHouse = scored.filter((s) => s.house === house);
     if (inHouse.length === 0) continue;
@@ -947,6 +1062,8 @@ export async function recomputePositioningIndex(
       recovery: recoveryByHouse.get(house) ?? null,
       orientation: orientationByHouse.get(house) ?? null,
       components: null,
+      validatedAgainst: rotate ? "bls (retida)" : "bolognesi+bls",
+      rotation: rotationByHouse.get(house) ?? null,
       droppedNonPolicy: droppedByHouse.get(house) ?? 0,
       unanchored: [],
       blocked: null,
@@ -991,7 +1108,7 @@ export async function recomputePositioningIndex(
         }
         const pairs: Array<{ a: number; b: number; w: number }> = [];
         for (const [acronym, values] of byP) {
-          const anchor = anchorFor(acronym);
+          const anchor = validationAnchor(acronym);
           if (anchor === null) continue;
           pairs.push({
             a: values.reduce((sum, v) => sum + v, 0) / values.length,
@@ -1033,7 +1150,7 @@ export async function recomputePositioningIndex(
     let anchoredSeats = 0;
     const unanchored: string[] = [];
     for (const [acronym, values] of byParty) {
-      const anchor = anchorFor(acronym);
+      const anchor = validationAnchor(acronym);
       if (anchor === null) {
         const why = UNANCHORED_PARTIES[anchorKey(acronym)] ?? "sem âncora publicada";
         unanchored.push(`${acronym} (${why})`);
@@ -1187,6 +1304,7 @@ export async function recomputePositioningIndex(
     estimator,
     scoreResidual,
     itemFilter,
+    rotate,
   };
 }
 
