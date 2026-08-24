@@ -283,6 +283,19 @@ export interface HouseReport {
   anchorCorrelationAll: number | null;
   /** Itens descartados por não serem proposição de mérito (`--items=policy`). */
   droppedNonPolicy: number;
+  /**
+   * Itens utilizáveis por mandato presidencial, mais os sem mandato conhecido.
+   *
+   * É o diagnóstico que diz se a identificação existe **de fato** no corpus. O
+   * backfill de 2019 foi feito porque, dentro de uma presidência, ideologia e
+   * governismo são quase a mesma variável, e o que os separa é a inversão de
+   * sinal do governismo na troca de presidente (Izumi; Zucco & Lauderdale). Mas
+   * a matriz só contém agentes **em exercício**, e um deputado de primeiro
+   * mandato não tem voto anterior a 2023 — então uma distribuição concentrada no
+   * mandato corrente significa que o corpus atravessa a troca no papel e não na
+   * prática, e nenhum estimador pode separar o que os dados não distinguem.
+   */
+  itemsByTerm: Record<string, number>;
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -863,6 +876,7 @@ export async function recomputePositioningIndex(
     }
     const BANDS = [0.1, 0.2, 0.3, 0.4, 0.5];
     const bandCounts = new Array<number>(BANDS.length).fill(0);
+    const itemsByTerm: Record<string, number> = {};
     let items = 0;
     let itemsControlled = 0;
     let itemsUncontrolled = 0;
@@ -887,6 +901,8 @@ export async function recomputePositioningIndex(
         if (stats.contamination === null || stats.contamination > maxContamination) continue;
       }
       items++;
+      const term = termByTheme.get(themeId) ?? "sem mandato";
+      itemsByTerm[term] = (itemsByTerm[term] ?? 0) + 1;
     }
 
     const withReading = inHouse.filter((s) => s.position.economic.value !== null);
@@ -908,6 +924,7 @@ export async function recomputePositioningIndex(
         items: bandCounts[i],
       })),
       itemsUncontrolled,
+      itemsByTerm,
       recovery: recoveryByHouse.get(house) ?? null,
       orientation: orientationByHouse.get(house) ?? null,
       droppedNonPolicy: droppedByHouse.get(house) ?? 0,

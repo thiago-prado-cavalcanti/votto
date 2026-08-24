@@ -1286,6 +1286,46 @@ be), but the reference is a printed record, not a fintech app.
   then replace PCA with IRT/Optimal Classification, which models each vote's cutting line rather
   than variance and is the literature's answer to exactly this.
 
+  **The procedural filter was the first real gain after the estimator change.** A vote on a
+  *requerimento* — urgency, waiving an interstice, taking a bill off the order paper — is not a
+  position on the merits of anything; it is a position on **procedure**, and procedure is decided
+  along the government↔opposition line almost by definition. `Theme.identifier` cannot see it
+  (`--items=policy` dropped **5 of 339**) because `proposicoesAfetadas` resolves to the underlying
+  bill: an urgency vote on PL X becomes a position on "PL X". The field that can see it is
+  `RollCall.description`, which always arrived in the list response `syncVotes` already downloads —
+  it was simply never stored. `npm run redescribe` fills the history with **list calls only**.
+
+  The classifier was written *after* reading real descriptions, and the format is not what one would
+  assume: there is no type label — the description is the **outcome sentence**, and what decides is
+  its object, right after the verb. `"Aprovado o Requerimento nº 4.491/2024… quebra de interstício"`
+  is procedure; `"Mantido o texto. Sim: 335; Não: 117"` is **merit** (it is a *destaque*, on which
+  provision survives). The regex anchors at the start of the sentence for the `isDeliberativeSession`
+  reason. Validated against the source rather than intuition: **59% of 100 real plenary votes**
+  classify as procedure, against the **58.8%** `docs/posicionamento.md` measured independently — and
+  **62% of the Câmara's 339 items** in the live run.
+
+  | Câmara | tags | pca (339 items) | **pca + substantive (129)** |
+  |---|---|---|---|
+  | anchor ρ | 0.63 | 0.69 | **0.75** |
+  | ρ unweighted | — | 0.71 | 0.72 |
+  | governismo r | −0.19 | −0.38 | −0.34 |
+  | spread | 9% | 91% | 76% |
+  | signal | — | 13.2× | 5.7× |
+
+  **The weighted ρ went above the unweighted for the first time** (0.75 vs 0.72). In every earlier
+  run weighting pulled the number down; now the large benches are better placed than the small ones,
+  which is the right way round.
+
+  **What is left is still PL.** 102 deputies — the largest measured bench, so it dominates the
+  weighted Spearman — read at **+43** where the anchor puts it at **+76**, *below* REPUBLICANOS
+  (+63), UNIÃO (+57), PP (+55) and MDB (+53). Our right pole is the centrão and the house's most
+  anti-government party reads as centre-right, which is the signature of governismo that was not
+  separated. Two notes for whoever picks this up: `repairDescriptions` is **Câmara-only**, so the
+  Senado still has no procedural filter (ρ 0.47); and `HouseReport.itemsByTerm` now prints how the
+  items split across presidential terms — if they concentrate in the current one, the identification
+  the 2019 backfill was for is not actually in the corpus, because the matrix holds only *sitting*
+  agents and a first-term deputy has no vote before 2023.
+
   **And `MIN_ANCHOR_CORRELATION = 0.85` needs its provenance restated before it blocks anything
   else.** §3.2 justifies it by Brazilian survey measures agreeing with each other at 0.947–0.988 —
   that is survey against survey. This is *roll call* against survey, a different and harder

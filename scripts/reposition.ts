@@ -314,6 +314,20 @@ async function main(): Promise<void> {
           "(requerimento, preferência, redação final)",
       );
     }
+    // A identificação que justificou o backfill de 2019 só existe se o corpus
+    // atravessar a troca de presidente NA PRÁTICA — ver `HouseReport.itemsByTerm`.
+    const terms = Object.entries(h.itemsByTerm).sort(([a], [b]) => a.localeCompare(b));
+    if (terms.length > 0) {
+      const total = terms.reduce((sum, [, n]) => sum + n, 0);
+      const cells = terms
+        .map(([term, n]) => `${term}: ${n} (${Math.round((n / Math.max(1, total)) * 100)}%)`)
+        .join("  ");
+      const single = terms.filter(([t]) => t !== "sem mandato").length < 2;
+      console.log(
+        `        mandatos — ${cells}` +
+          (single ? "  ⚠ um mandato só: ideologia e governismo não se separam" : ""),
+      );
+    }
     if (h.contaminationBands.length > 0) {
       const cells = h.contaminationBands
         .map((b) => `≤${b.maxContamination.toFixed(1)}: ${b.items}`)
