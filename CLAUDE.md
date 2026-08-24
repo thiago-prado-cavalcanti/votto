@@ -1326,6 +1326,41 @@ be), but the reference is a printed record, not a fintech app.
   the 2019 backfill was for is not actually in the corpus, because the matrix holds only *sitting*
   agents and a first-term deputy has no vote before 2023.
 
+  **Gate 2 caught a 0.94, and that is the most valuable measurement in this whole line of work.**
+  Run locally on the restored copy, 2026-08-24, `--items=substantive`:
+
+  | Câmara | anchor ρ | spread | **governismo r** | signal |
+  |---|---|---|---|---|
+  | column residualisation (baseline) | 0.75 | 76% | **−0.34** ✓ | 5.7× |
+  | `--residual=off` | **0.94** | 112% | **−0.83** ✗ | 18.2× |
+  | `--score=residual` | 0.56 | 69% | −0.00 | 5.7× |
+
+  Senado under `--residual=off`: ρ **0.83**, spread 129%, governismo **−0.86**.
+
+  Without residualisation PC1 *is* the government↔opposition dimension, and §3.2 predicted the
+  consequence exactly: a pure support-for-the-Executive index scores 0.81–0.93 against the anchor
+  because within one presidency the Brazilian coalition is ideologically ordered. So **ρ = 0.94 is
+  the failure mode, not the result** — an index measuring support for the Executive and printing
+  "Estado ↔ Mercado". It clears `MIN_ANCHOR_CORRELATION` comfortably and is stopped by
+  `MAX_GOVERNMENT_CORRELATION` alone. Nobody should ever propose relaxing that constant; this is
+  what it is for, demonstrated on live data rather than argued.
+
+  `--score=residual` remains over-control: governismo goes to 0.00 by construction and ρ collapses
+  to 0.56, even now that the corpus spans two presidencies. Linear subtraction takes ideology with it.
+
+  **0.75 therefore stands as the best VALID configuration, and the distance to 0.94 is exactly the
+  governismo component.** Closing it legitimately needs an estimator that *separates* the two
+  dimensions rather than removing one — recover both, then **name** which is which (the governista
+  one by its correlation with `governismo`, the ideological one by the anchor), so nothing is
+  subtracted and no ideology is lost with it. That is what Zucco & Lauderdale do, and the corpus now
+  supports it: `itemsByTerm` measures **41% of Câmara items from 2019–2022** and 59% from 2023+
+  (Senado 68%/32%), so the sign inversion that identifies the two dimensions is present in the data.
+
+  **When a configuration finally passes, `/sobre` and `/metodologia` must be rewritten in the same
+  change** — the formulas, the constants in force, the gates and what each one refuses. §2 makes
+  `/metodologia` the page where every published constant is *imported* rather than typed, so a
+  methodology change that skips it leaves the site quoting numbers the code no longer computes.
+
   **And `MIN_ANCHOR_CORRELATION = 0.85` needs its provenance restated before it blocks anything
   else.** §3.2 justifies it by Brazilian survey measures agreeing with each other at 0.947–0.988 —
   that is survey against survey. This is *roll call* against survey, a different and harder
