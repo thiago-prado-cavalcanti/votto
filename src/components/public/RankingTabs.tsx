@@ -19,6 +19,15 @@
  * Trocar de **aba** continua sendo local: a resposta traz as três bancadas já
  * ordenadas pelo critério em vigor, então não há nada a perguntar.
  *
+ * **A ordenação mora no cabeçalho da coluna, e não numa linha própria acima da
+ * tabela.** A tabela já imprime os rótulos das leituras — "Performance
+ * política", "Alinhamento com a base" — no alto de cada coluna de números; uma
+ * faixa "Ordenar por" repetia esses mesmos rótulos alguns pixels acima, gastando
+ * uma banda de papel para dizer duas vezes a mesma coisa. Clicar no cabeçalho é
+ * também onde a mão vai procurar. `SortHeader` continua sendo o controle das
+ * listas em cartões (`/agentes`, `/partidos`), que não têm coluna onde pendurar
+ * isto.
+ *
  * O primeiro estado vem renderizado do servidor, então a tabela existe e está
  * correta sem JavaScript — o que se perde sem ele é só a troca de critério.
  *
@@ -32,7 +41,7 @@ import { ButtonLink } from "@/components/ui";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { alignmentInk } from "@/lib/domain/tone";
 import { cn } from "@/lib/cn";
-import { SortHeader } from "@/components/public/SortHeader";
+import { SortArrow } from "@/components/public/SortArrow";
 import { rerankBenches } from "@/lib/actions/ranking";
 import {
   RANKING_LABELS,
@@ -76,6 +85,11 @@ export function RankingTabs({
   const columns = ranking.available
     .filter((key) => key !== "personal" || isAuthenticated)
     .map((key) => ({ key, label: RANKING_LABELS[key] }));
+
+  // Clicking the column already in force turns the arrow over; clicking another
+  // starts it descending, which is the end anybody asks for first.
+  const nextFor = (key: string): RankingDirection =>
+    key === ranking.sort ? (ranking.direction === "desc" ? "asc" : "desc") : "desc";
 
   const rerank = (key: string, next: RankingDirection) => {
     const id = ++requestId.current;
@@ -136,20 +150,6 @@ export function RankingTabs({
         ) : null}
       </div>
 
-      {/* Ordering is a header of the list, not a tab. The tabs say which bench
-          you are looking at; this says which reading ranks it — and the three
-          readings answer different questions, so one is never a subset of
-          another. The table already holds every row it ranks, so this re-sorts
-          in place rather than addressing the server. */}
-      {columns.length > 1 ? (
-        <SortHeader
-          options={columns.map((c) => ({ key: c.key, label: c.label }))}
-          active={ranking.sort}
-          direction={ranking.direction}
-          onChange={rerank}
-        />
-      ) : null}
-
       {rows.length === 0 ? (
         <p className="py-6 text-sm text-[var(--color-muted)]">Sem dados disponíveis.</p>
       ) : (
@@ -179,25 +179,45 @@ export function RankingTabs({
                 <th scope="col" className="hidden py-2.5 font-semibold sm:table-cell">
                   {logo ? "Sigla" : "Partido · UF"}
                 </th>
-                {columns.map((c) => (
-                  <th
-                    key={c.key}
-                    scope="col"
-                    aria-sort={
-                      ranking.sort === c.key
-                        ? ranking.direction === "desc"
-                          ? "descending"
-                          : "ascending"
-                        : "none"
-                    }
-                    className={cn(
-                      "py-2.5 pl-3 text-right font-semibold sm:whitespace-nowrap",
-                      ranking.sort === c.key ? "text-navy-900" : null,
-                    )}
-                  >
-                    {c.label}
-                  </th>
-                ))}
+                {columns.map((c) => {
+                  const isActive = ranking.sort === c.key;
+                  return (
+                    <th
+                      key={c.key}
+                      scope="col"
+                      aria-sort={
+                        isActive
+                          ? ranking.direction === "desc"
+                            ? "descending"
+                            : "ascending"
+                          : "none"
+                      }
+                      className="py-2.5 pl-3 text-right font-semibold sm:whitespace-nowrap"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => rerank(c.key, nextFor(c.key))}
+                        className={cn(
+                          // `group` so the head can offer its arrow on hover:
+                          // an inactive column looks like a label, and nothing
+                          // else on the page says the labels are clickable.
+                          "group inline-flex items-center gap-1 uppercase tracking-[0.14em] transition-colors",
+                          isActive ? "text-navy-900" : "hover:text-navy-900",
+                        )}
+                      >
+                        {c.label}
+                        <SortArrow
+                          direction={isActive ? ranking.direction : "desc"}
+                          className={
+                            isActive
+                              ? undefined
+                              : "opacity-0 transition-opacity group-hover:opacity-45"
+                          }
+                        />
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody key={`${current.key}:${ranking.sort}:${ranking.direction}`} className="vt-rows">
