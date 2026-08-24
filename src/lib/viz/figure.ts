@@ -46,7 +46,26 @@ const wobble = (k: number) => (Math.sin(k * 12.9898) * 43758.5453) % 1;
  */
 export function blobPath(values: number[], field: Field, jitter: number): string {
   const n = values.length;
-  const P = values.map((v, i) => vertexPoint(field, i, v, n));
+  return blobThrough(
+    values.map((v, i) => vertexPoint(field, i, v, n)),
+    jitter,
+  );
+}
+
+/**
+ * A mesma curva, por pontos explícitos em vez de valores igualmente espaçados.
+ *
+ * Existe porque uma leitura pode ter **buracos**: no radar por área, um eixo sem
+ * base suficiente é `null`, e desenhá-lo em zero afirmaria concordância zero —
+ * que é uma leitura, não uma ausência. A pétala então passa só pelos vértices
+ * que existem, nos ângulos verdadeiros deles, e os eixos sem leitura ficam
+ * marcados no lugar sem participar da forma.
+ *
+ * `blobPath` é o caso particular em que todos os vértices existem.
+ */
+export function blobThrough(P: Point[], jitter: number): string {
+  const n = P.length;
+  if (n < 3) return "";
   let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
   for (let i = 0; i < n; i++) {
     const p0 = P[(i - 1 + n) % n];

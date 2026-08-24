@@ -18,6 +18,7 @@ import { Container, Badge } from "@/components/ui";
 import { RecordIntro, SectionHead } from "@/components/public/Section";
 import { ReadingPlate } from "@/components/public/ReadingPlate";
 import { ThemeBriefList, type ThemeBriefItem } from "@/components/public/ThemeBrief";
+import { AreaAgreementPlate } from "@/components/public/AreaAgreementPlate";
 import { PositioningPlate } from "@/components/public/PositioningPlate";
 import { GovernismoReading } from "@/components/public/GovernismoReading";
 import { QualityPlate } from "@/components/public/QualityPlate";
@@ -37,6 +38,10 @@ import {
   agentElectorateAlignments,
   agentBaseAlignments,
 } from "@/lib/indexes/alignment";
+import {
+  citizenAgentAreaAgreement,
+  type AreaAgreement,
+} from "@/lib/indexes/area-alignment";
 import { citizenFollows, followSlot } from "@/lib/domain/follows";
 import { publicReading, followersNote } from "@/lib/domain/reading";
 import { agentTypeLabel, agentTypeProseLabel, voteValueLabel } from "@/lib/labels";
@@ -148,6 +153,7 @@ export default async function AgentDetailPage({
 
   let alignment: number | null = null;
   let sharedThemes = 0;
+  let areaAgreement: AreaAgreement[] | null = null;
   let follows: Awaited<ReturnType<typeof citizenFollows>> | null = null;
   if (session) {
     const user = await db.user.findUnique({
@@ -155,13 +161,18 @@ export default async function AgentDetailPage({
       select: { id: true, voteVersion: true },
     });
     if (user) {
-      const [result, followMap] = await Promise.all([
+      const [result, followMap, areas] = await Promise.all([
         citizenAgentAlignment(user.id, user.voteVersion, agent.kid),
         citizenFollows(user.id),
+        citizenAgentAreaAgreement(user.id, agent.kid),
       ]);
       alignment = result?.alignment ?? null;
       sharedThemes = result?.sharedThemes ?? 0;
       follows = followMap;
+      // Só mostra a figura quando ela tem o que dizer. Um radar em que todos os
+      // nove eixos estão sem leitura não é uma leitura vazia — é uma pessoa que
+      // ainda não votou o bastante, e a página já diz isso noutro lugar.
+      areaAgreement = areas.some((a) => a.agreement !== null) ? areas : null;
     }
   }
   const follow = followSlot(agent, session ? follows ?? new Map() : null);
@@ -425,6 +436,15 @@ export default async function AgentDetailPage({
                   pillars={parseQualityPillars(agent.qualityPillars)}
                   note={`${agent.qualityScore}/100`}
                 />
+              </div>
+            </Reveal>
+          ) : null}
+
+          {areaAgreement ? (
+            <Reveal as="aside" variant="fade" delay={110}>
+              <h2 className="text-xl text-navy-900">Alinhamento por área</h2>
+              <div className="mt-4">
+                <AreaAgreementPlate areas={areaAgreement} agentName={fullName} />
               </div>
             </Reveal>
           ) : null}
