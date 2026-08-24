@@ -1233,6 +1233,64 @@ be), but the reference is a printed record, not a fintech app.
   and `check:positioning` pins the contract (a unanimous item still weighs zero in every mode —
   discrimination has nothing to do with the coalition; the measurement floor changes admission and
   never the value).
+
+  **The estimator was then changed, and it works — `--estimator=pca`.** Direction and weight come
+  from the first principal component of the house's vote matrix (`src/lib/indexes/recovery.ts`);
+  tags are demoted to a diagnostic. Everything downstream is untouched — same weighted mean, same
+  Kish standard error, same `MIN_EFFECTIVE_ITEMS`, same four gates — so the change is falsifiable by
+  the tests that failed the old one. Measured on the Câmara, 2026-08-24:
+
+  | | tags/discount | pca (217 items) | pca (339 items, after backfill) |
+  |---|---|---|---|
+  | anchor ρ | 0.63 | 0.79 | 0.69 (0.71 unweighted) |
+  | spread | 9% | 104% | 91% |
+  | governismo r | −0.19 | −0.45 | −0.38 |
+
+  The Senado went from unmeasurable to measured: 114 items, signal 2.40×, governismo +0.17,
+  spread 63%, ρ 0.47. **Both houses now fail on gate 4 alone.**
+
+  Five things this cost, each a defect found by measuring and worth not repeating:
+
+  - **A principal component has no sign.** Orienting it by tags put the whole Brazilian spectrum on
+    the page mirrored (PSOL +62, PL −59) because tag agreement was −0.10 — noise. Worse, orientation
+    had *two owners* with different measures (the power-iteration seed, and a post-hoc flip). Now
+    `canonicaliseSign` makes the pre-orientation sign a pure function of the matrix and `orientAxis`
+    is the sole authority, naming the poles from the anchor's three extremes per side. **That spends
+    one bit of gate 4, and the methodology must say so**: the gate tests ordering, not sign.
+  - **The social axis has no external ruler.** `anchors.ts` publishes left-right only; orienting PC2
+    with `anchorFor` named a morals axis with an economic ruler. An axis that cannot be oriented is
+    not published — PC2 stays as the figure, the number goes.
+  - **"17% of variance" is not a claim on its own.** The Marchenko–Pastur edge `(1+√(M/N))²/M` is the
+    ruler: 1.0% for a 503×339 matrix, 4.2% for 54×114. `MIN_SIGNAL_RATIO` blocks a component
+    indistinguishable from a random matrix — which is what the Senado was at 38 items (1.93×).
+  - **The recovery estimator must not inherit the tags estimator's item filter.** `dimensions is not
+    null` kept the matrix at 217 items after a backfill that imported seven years of roll calls.
+    Dropping it for `pca` took the Câmara to 339 and the Senado to 114 — and the noise floor falls
+    with M, which is what rescued the Senate. "Never classified" and "classified and excluded" are
+    now distinct: the AI's `scoreable: false` is respected, a missing tag is not.
+  - **A minimum bench size was the wrong shape for a real problem.** Spearman counts a 2-member
+    party like a 104-member one; excluding thin benches cost the Câmara twice (0.79→0.78, 0.71→0.65)
+    and **blocked the Senado entirely** — with 81 seats over fifteen parties almost no bench reaches
+    ten, so the pairs emptied and spread came back `null`. `weightedSpearman` weights each pair by
+    bench size instead: no threshold, nothing discarded, no house where it misbehaves. It reads
+    **lower** than unweighted here (0.69 vs 0.71) and is kept anyway — picking the higher number
+    would be choosing the result. Both are printed.
+
+  **What still blocks gate 4 is resolution inside the right bloc.** PC1 separates the left (PSOL,
+  PT, PCdoB, PSB, PV) cleanly and orders the rest badly: PL — the largest measured bench at 104 and
+  the anchor's most right-wing party at +76 — reads +48, *below* MDB, PSDB, PODE, PP, UNIÃO and
+  REPUBLICANOS, which the anchor places from +30 to +67. Eight parties covering ~380 deputies fall
+  in 19 points where the ruler spreads them over 46. Two candidates, in order of cost: filter
+  procedural votes (the 122 items the backfill added were never seen by the AI, and
+  `docs/posicionamento.md` measures **58.8% of Câmara plenary votes as procedural by description**),
+  then replace PCA with IRT/Optimal Classification, which models each vote's cutting line rather
+  than variance and is the literature's answer to exactly this.
+
+  **And `MIN_ANCHOR_CORRELATION = 0.85` needs its provenance restated before it blocks anything
+  else.** §3.2 justifies it by Brazilian survey measures agreeing with each other at 0.947–0.988 —
+  that is survey against survey. This is *roll call* against survey, a different and harder
+  comparison, and no published Brazilian benchmark for it is cited anywhere in this repo. The bar
+  may still be right; the argument printed next to it is not the argument for it.
 - **Two documented claims the 2026-08-24 run contradicts, to fix before quoting §3.2.**
   (a) The Senado's block is **not** `MIN_HOUSE_ITEMS`: it has **38** usable items, over the floor of
   20, and failed on **0/81 agents with a reading** — every senator was under `MIN_EFFECTIVE_ITEMS`,
