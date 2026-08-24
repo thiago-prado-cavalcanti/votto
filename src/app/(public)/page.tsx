@@ -6,22 +6,13 @@ import { Container, ButtonLink } from "@/components/ui";
 import { StatStrip } from "@/components/public/StatStrip";
 import { SectionHead } from "@/components/public/Section";
 import { ThemeRow, ThemeList } from "@/components/public/ThemeRow";
-import { RankingTabs, type RankingRow } from "@/components/public/RankingTabs";
+import { RankingTabs } from "@/components/public/RankingTabs";
 import { HeroB } from "@/components/public/HeroB";
 import { db } from "@/lib/db";
 import { THEME_AUTHOR_INCLUDE, toPublicTheme } from "@/lib/dto";
 import { getCitizenSession } from "@/lib/auth/session";
-import {
-  citizenAgentAlignments,
-  citizenPartyAlignments,
-  agentElectorateAlignments,
-  partyElectorateAlignments,
-  agentBaseAlignments,
-  partyBaseAlignments,
-} from "@/lib/indexes/alignment";
-import { partyQualityScores } from "@/lib/domain/quality";
-import { publicReading } from "@/lib/domain/reading";
-import type { Prisma, VoteValue } from "@/generated/prisma";
+import { rankBenches } from "@/lib/domain/agent-ranking";
+import type { VoteValue } from "@/generated/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -66,95 +57,18 @@ export default async function HomePage() {
     currentVotes = new Map(votes.map((v) => [v.theme.kid, v.value]));
   }
 
-  // ─── Alignment ranking (top deputies / senators / parties) ──────────────────
-  type AgentWithParty = Prisma.PublicAgentGetPayload<{ include: { party: true } }>;
-  const [deputies, senators, allParties] = await Promise.all([
-    db.publicAgent.findMany({ where: { status: "ACTIVE", inOffice: true, type: "FEDERAL_DEPUTY" }, include: { party: true } }),
-    db.publicAgent.findMany({ where: { status: "ACTIVE", inOffice: true, type: "SENATOR" }, include: { party: true } }),
-    db.party.findMany({ where: { status: "ACTIVE" } }),
-  ]);
-
-  // The published reading (base first, electorate as fallback) + the personal
-  // alignment when somebody is logged in.
-  const [agentEngage, partyEngage, agentBase, partyBase, partyQuality] = await Promise.all([
-    agentElectorateAlignments(),
-    partyElectorateAlignments(),
-    agentBaseAlignments(),
-    partyBaseAlignments(),
-    partyQualityScores(),
-  ]);
-  let agentAlign: Map<string, { alignment: number | null; sharedThemes: number }> | null = null;
-  let partyAlign: Map<string, { alignment: number | null; agents: number }> | null = null;
-  if (session) {
-    const user = await db.user.findUnique({
-      where: { kid: session.userKid },
-      select: { id: true, voteVersion: true },
-    });
-    if (user) {
-      [agentAlign, partyAlign] = await Promise.all([
-        citizenAgentAlignments(user.id, user.voteVersion),
-        citizenPartyAlignments(user.id, user.voteVersion),
-      ]);
-    }
-  }
-
-  // Ranking score: personal alignment when logged in, else the published
-  // reading — the agent's own base where they have one, the electorate where
-  // they do not (`publicReading`).
-  // Every row carries all three readings. Which of them become columns, and
-  // which one ranks the table, is the table's decision — a visitor who is not
-  // logged in has no personal alignment, and until citizens have voted there is
-  // no base reading either, so a ranking that printed only "Alinhamento" was
-  // printing a column of dashes.
-  const toAgentRow = (a: AgentWithParty): RankingRow => ({
-    kid: a.kid,
-    name: `${a.firstName} ${a.lastName}`.trim(),
-    subtitle: [a.party?.acronym ?? a.party?.name, a.state].filter(Boolean).join(" · ") || "—",
-    imageUrl: a.imageUrl,
-    href: `/agentes/${a.kid}`,
-    quality: a.qualityScore,
-    base: publicReading(agentBase.get(a.kid), agentEngage.get(a.kid)?.alignment ?? null).value,
-    personal: isAuthenticated ? agentAlign?.get(a.kid)?.alignment ?? null : null,
-  });
-
-  // Ranked here only to decide WHICH ten make the cut; the table re-sorts by
-  // whichever reading the citizen picks. Performance is the cut-off because it
-  // is the one that exists logged out.
-  //
-  // **Só performance, nunca caindo para o alinhamento.** A versão anterior era
-  // `y.quality ?? y.base ?? -1`, que troca de grandeza no meio da comparação:
-  // performance política e alinhamento são os dois 0–100, então o `??` não
-  // reclama, e um agente sem performance medida com 95% de alinhamento passa na
-  // frente de um com 80 de performance. O defeito ficou invisível enquanto
-  // ninguém tinha votado — sem cidadãos, `base` é null para todos e a expressão
-  // se reduz a `quality ?? -1`. Bastou o primeiro voto para os 44 agentes sem
-  // performance medida saltarem ao topo de um ranking de performance.
-  //
-  // Sem medida vai para o fim, que é o que "não medido" significa numa lista
-  // ordenada por essa medida.
-  const topBy = (rows: RankingRow[], n: number) =>
-    [...rows]
-      .sort((x, y) => (y.quality ?? -1) - (x.quality ?? -1) || x.name.localeCompare(y.name))
-      .slice(0, n);
-
-  const topDeputies = topBy(deputies.map(toAgentRow), 10);
-  const topSenators = topBy(senators.map(toAgentRow), 10);
-  const topParties = topBy(
-    allParties.map((p) => ({
-      kid: p.kid,
-      name: p.name,
-      subtitle: p.acronym ?? "",
-      imageUrl: p.logoUrl,
-      href: `/partidos/${p.kid}`,
-      quality: partyQuality.get(p.kid) ?? null,
-      base: publicReading(partyBase.get(p.kid), partyEngage.get(p.kid)?.alignment ?? null).value,
-      personal: isAuthenticated ? partyAlign?.get(p.kid)?.alignment ?? null : null,
-    })),
-    // Ten, like the two benches above it: the tabs are read side by side and a
-    // shorter table reads as "there are fewer parties", which is not the point
-    // the cut is making.
-    10,
-  );
+  // ─── Ranking ────────────────────────────────────────────────────────────────
+  // Ordenado sobre a base inteira em `rankBenches`, não sobre uma fatia já
+  // carregada: as três leituras respondem a perguntas diferentes e os dez
+  // melhores em cada uma podem não se sobrepor. A mesma função atende a server
+  // action que reordena, para as duas não divergirem.
+  const citizen = session
+    ? await db.user.findUnique({
+        where: { kid: session.userKid },
+        select: { id: true, voteVersion: true },
+      })
+    : null;
+  const ranking = await rankBenches("quality", "desc", citizen);
 
   return (
     <>
@@ -193,30 +107,7 @@ export default async function HomePage() {
           />
 
           <div className="mt-6">
-            <RankingTabs
-              isAuthenticated={isAuthenticated}
-              tabs={[
-                {
-                  key: "deputados",
-                  label: "Deputados federais",
-                  rows: topDeputies,
-                  hrefAll: "/agentes?type=FEDERAL_DEPUTY",
-                },
-                {
-                  key: "senadores",
-                  label: "Senadores",
-                  rows: topSenators,
-                  hrefAll: "/agentes?type=SENATOR",
-                },
-                {
-                  key: "partidos",
-                  label: "Partidos",
-                  rows: topParties,
-                  hrefAll: "/partidos",
-                  avatarShape: "logo",
-                },
-              ]}
-            />
+            <RankingTabs isAuthenticated={isAuthenticated} initial={ranking} />
           </div>
         </section>
 

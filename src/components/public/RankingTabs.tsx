@@ -3,11 +3,24 @@
 /**
  * Tabbed alignment ranking, set as a table.
  *
- * Three tabs (Deputados federais / Senadores / Partidos), each a ranked table
- * with an explicit index column — a table of standings rather than a card grid
- * (docs/design.md). The value shown is the global "alinhamento com eleitores"
- * when logged out, or the citizen's personal alignment when logged in (the parent
- * decides which).
+ * Três abas (Deputados federais / Senadores / Partidos), cada uma uma tabela
+ * ordenada com coluna de índice explícita — uma tabela de classificação, não uma
+ * grade de cartões (docs/design.md).
+ *
+ * **A ordenação bate no servidor, e isso não é escolha de arquitetura.** As três
+ * leituras respondem a perguntas diferentes e nenhuma é subconjunto da outra: os
+ * dez melhores em performance e os dez melhores em alinhamento podem não ter
+ * ninguém em comum. Este componente já reordenou em memória as dez linhas que a
+ * página havia escolhido *por performance*, e o resultado era uma tabela
+ * intitulada "Alinhamento com a base" contendo os dez melhores em performance —
+ * uma resposta errada com aparência de certa. Trocar de critério agora refaz a
+ * consulta sobre a base inteira (`rerankBenches`).
+ *
+ * Trocar de **aba** continua sendo local: a resposta traz as três bancadas já
+ * ordenadas pelo critério em vigor, então não há nada a perguntar.
+ *
+ * O primeiro estado vem renderizado do servidor, então a tabela existe e está
+ * correta sem JavaScript — o que se perde sem ele é só a troca de critério.
  *
  * Switching tabs re-keys the body, so the new standings deal in from the top
  * rather than swapping in place — the one moment on the page where motion is
@@ -20,39 +33,14 @@ import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { alignmentInk } from "@/lib/domain/tone";
 import { cn } from "@/lib/cn";
 import { SortHeader } from "@/components/public/SortHeader";
+import { rerankBenches } from "@/lib/actions/ranking";
+import {
+  RANKING_LABELS,
+  type Ranking,
+  type RankingDirection,
+} from "@/lib/domain/ranking";
 
-export interface RankingRow {
-  kid: string;
-  name: string;
-  subtitle: string;
-  imageUrl: string | null;
-  href: string;
-  /** Performance política — the reading that exists whether or not anyone is logged in. */
-  quality: number | null;
-  /** Alinhamento com a base de eleitores. */
-  base: number | null;
-  /** The signed-in citizen's own alignment. Null when logged out. */
-  personal: number | null;
-}
-
-/** The three readings a bench can be ranked by. */
-const SORTS = [
-  { key: "quality", label: "Performance política", pick: (r: RankingRow) => r.quality },
-  { key: "base", label: "Alinhamento com a base", pick: (r: RankingRow) => r.base },
-  { key: "personal", label: "Seu alinhamento", pick: (r: RankingRow) => r.personal },
-] as const;
-
-type SortKey = (typeof SORTS)[number]["key"];
-
-export interface RankingTab {
-  key: string;
-  label: string;
-  rows: RankingRow[];
-  hrefAll?: string;
-  /** `portrait` crops an agent photo into a circle; `logo` fits a party mark
-   *  whole, unclipped and uncut. */
-  avatarShape?: "portrait" | "logo";
-}
+export type { RankingRow } from "@/lib/domain/ranking";
 
 function initialsOf(name: string): string {
   return name
@@ -65,46 +53,39 @@ function initialsOf(name: string): string {
 }
 
 export function RankingTabs({
-  tabs,
+  initial,
   isAuthenticated = false,
 }: {
-  tabs: RankingTab[];
+  initial: Ranking;
   isAuthenticated?: boolean;
 }) {
-  const [active, setActive] = React.useState(tabs[0]?.key ?? "");
-  // Performance leads by default: it is the only one of the three that reads
-  // for a visitor who is not logged in, which is most of them.
-  const [sort, setSort] = React.useState<SortKey>("quality");
-  const [direction, setDirection] = React.useState<"asc" | "desc">("desc");
-  const current = tabs.find((t) => t.key === active) ?? tabs[0];
+  const [ranking, setRanking] = React.useState<Ranking>(initial);
+  const [active, setActive] = React.useState(initial.benches[0]?.key ?? "");
+  const [pending, startTransition] = React.useTransition();
+  // A resposta que chegar por último manda, mesmo que outra tenha sido pedida
+  // depois: cliques rápidos em critérios diferentes voltam fora de ordem, e sem
+  // isto a tabela pode acabar exibindo a ordenação anterior sob o rótulo da nova.
+  const requestId = React.useRef(0);
 
-  // A column is offered when it has something to say — the personal one only
-  // to somebody signed in, the others only where the data exists at all. That
-  // is what keeps the table from printing a row of dashes and calling it a
-  // ranking.
-  const columns = React.useMemo(() => {
-    const rows = tabs.flatMap((t) => t.rows);
-    return SORTS.filter((s) => {
-      if (s.key === "personal" && !isAuthenticated) return false;
-      return rows.some((r) => s.pick(r) !== null);
-    });
-  }, [tabs, isAuthenticated]);
+  const current = ranking.benches.find((t) => t.key === active) ?? ranking.benches[0];
 
-  const ordering = columns.find((c) => c.key === sort) ?? columns[0];
-  const rows = React.useMemo(() => {
-    if (!current || !ordering) return current?.rows ?? [];
-    const desc = direction === "desc";
-    return [...current.rows].sort((a, b) => {
-      const x = ordering.pick(a);
-      const y = ordering.pick(b);
-      // The unmeasured sink either way: they are not the worst, they are the
-      // ones missing from the ranking.
-      if (x === null && y === null) return a.name.localeCompare(b.name);
-      if (x === null) return 1;
-      if (y === null) return -1;
-      return (desc ? y - x : x - y) || a.name.localeCompare(b.name);
+  // Colunas: decididas no servidor, sobre a coorte inteira. Perguntar aqui se
+  // "alguma das linhas na tela tem valor" escondia a coluna quando os dez
+  // primeiros por acaso não tinham a leitura — mesmo com quinhentos agentes que
+  // tinham.
+  const columns = ranking.available
+    .filter((key) => key !== "personal" || isAuthenticated)
+    .map((key) => ({ key, label: RANKING_LABELS[key] }));
+
+  const rerank = (key: string, next: RankingDirection) => {
+    const id = ++requestId.current;
+    startTransition(async () => {
+      const fresh = await rerankBenches(key, next);
+      if (id === requestId.current) setRanking(fresh);
     });
-  }, [current, ordering, direction]);
+  };
+
+  const rows = current?.rows ?? [];
 
   if (!current) return null;
   const logo = current.avatarShape === "logo";
@@ -125,7 +106,7 @@ export function RankingTabs({
         {/* `w-full` until sm keeps the tab strip on its own line, so the "Ver
             todos" link never wraps *under* it and steals the rule the tabs sit on. */}
         <div className="order-2 -mb-px flex w-full flex-wrap sm:order-none sm:w-auto">
-          {tabs.map((tab) => (
+          {ranking.benches.map((tab) => (
             <button
               key={tab.key}
               type="button"
@@ -163,19 +144,25 @@ export function RankingTabs({
       {columns.length > 1 ? (
         <SortHeader
           options={columns.map((c) => ({ key: c.key, label: c.label }))}
-          active={ordering?.key ?? "quality"}
-          direction={direction}
-          onChange={(key, next) => {
-            setSort(key as SortKey);
-            setDirection(next);
-          }}
+          active={ranking.sort}
+          direction={ranking.direction}
+          onChange={rerank}
         />
       ) : null}
 
       {rows.length === 0 ? (
         <p className="py-6 text-sm text-[var(--color-muted)]">Sem dados disponíveis.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div
+          className={cn(
+            "overflow-x-auto transition-opacity",
+            // A reordenação vai ao servidor, então há uma espera real. A tabela
+            // esmaece em vez de sumir: trocar o conteúdo por um esqueleto faria
+            // a página saltar, e o que muda é a ordem das mesmas dez linhas.
+            pending ? "opacity-50" : null,
+          )}
+          aria-busy={pending}
+        >
           <table className="w-full min-w-[26rem] border-collapse text-left">
             <thead>
               <tr className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
@@ -193,15 +180,15 @@ export function RankingTabs({
                     key={c.key}
                     scope="col"
                     aria-sort={
-                      ordering?.key === c.key
-                        ? direction === "desc"
+                      ranking.sort === c.key
+                        ? ranking.direction === "desc"
                           ? "descending"
                           : "ascending"
                         : "none"
                     }
                     className={cn(
                       "py-2.5 pl-3 text-right font-semibold whitespace-nowrap",
-                      ordering?.key === c.key ? "text-navy-900" : null,
+                      ranking.sort === c.key ? "text-navy-900" : null,
                     )}
                   >
                     {c.label}
@@ -209,7 +196,7 @@ export function RankingTabs({
                 ))}
               </tr>
             </thead>
-            <tbody key={`${current.key}:${ordering?.key ?? ""}`} className="vt-rows">
+            <tbody key={`${current.key}:${ranking.sort}:${ranking.direction}`} className="vt-rows">
               {rows.map((row, i) => (
                 <tr
                   key={row.kid}
@@ -256,7 +243,7 @@ export function RankingTabs({
                     {row.subtitle || "—"}
                   </td>
                   {columns.map((c) => {
-                    const value = c.pick(row);
+                    const value = row[c.key];
                     return (
                       <td key={c.key} className="py-2.5 pl-3 text-right align-middle">
                         {value !== null ? (
