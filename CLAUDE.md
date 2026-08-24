@@ -924,6 +924,17 @@ Verified against the live APIs; `npm run check:sources` re-checks them.
   above return 400. Undocumented until it cost an import: `tryFetch` turns every failure into `null`
   and `syncVotes` returned zero counts for it, so a refused four-year request reached the panel as
   "0 registros atualizados · OK". The window is now chunked and a refused chunk throws.
+- **The Senado's `/processo` list DOES filter by subject — `codigoClasse`, and it behaves nothing
+  like the Câmara's `codTema`.** The taxonomy is at `/processo/classes`: ten macro-areas, 179 nodes.
+  A macro code matches its **whole subtree** (Meio Ambiente returns 710; its eleven children sum to
+  664). But **repeating the parameter does not union** — the first value wins and the rest are
+  dropped, with HTTP 200 and no complaint, which is the opposite of `codTema`. So a query per class
+  node, and never a list of them in one call. Two consequences worth keeping: an invalid code
+  returns `[]`, **indistinguishable from an unsupported parameter** — always probe with a code taken
+  from `/processo/classes`, which is how this was missed once; and because
+  `/processo?codigoParlamentarAutor=` returns a senator's entire record in one call, the class sets
+  and the author sets **join locally by `id`, exactly matching the server's own combined answer**,
+  so the class dimension is fetched once for the house instead of once per senator.
 - A party must exist **once** across both houses: the Senado importer reuses a party already
   imported by the Câmara when the acronym matches.
 - Câmara `deputados/{id}/despesas` returns `[]` **without `idLegislatura`** — with HTTP 200, which is
@@ -1635,30 +1646,82 @@ be), but the reference is a printed record, not a fintech app.
   on the newly imported bills (it is not wired into the importers yet).
 - **Per-area alignment is built** (§3.4); the hero's `AlignmentRadar` stays fictional until it is
   fed from the same computation.
-- **The authorship radar — what a parliamentarian chooses to work on — is costed but unbuilt.**
+- **The authorship radar is built for the Câmara and costed for the Senado** (§3.4).
   It is the honest answer to "which areas is this person about", and it needs a *complete*
   enumeration of what they filed: measured on 2026-08-24, our corpus holds **14** of Erika Kokay's
   bills against the **≥100** the Câmara publishes since 2023, because the importer sweeps what
   *moved* and not what was *filed*. Publishing a focus profile from a movement-selected 14% would
-  describe the Câmara's agenda filtered through her, not her interests.
-  The cost is measured and the Câmara is cheap, because three properties of the API compose:
-  `codTema` accepts repetition as a union, `idDeputadoAutor` combines with it, and `itens=1` plus
-  the `last` link yields the exact count **without downloading any bill**. That is
-  **513 × (9 areas + 1 total) ≈ 5.100 requests, ~40 min**. The Senado is 5× dearer for a sixth of
-  the people — its `/processo` list has no classification filter (six parameter names tested, all
-  ignored), so classification only comes from the per-bill detail: ~16.500 distinct bills over the
-  legislature, ~2 h.
-  Two things to settle before building: the reading must be **descriptive, never inferential**
+  describe the Câmara's agenda filtered through her, not her interests. So `syncAuthorship` runs a
+  sweep of its own: **513 × (9 areas + 1 total) ≈ 5.100 requests, ~40 min**, cheap because three
+  properties of the API compose — `codTema` accepts repetition as a union, `idDeputadoAutor`
+  combines with it, and `itens=1` plus the `last` link yields the exact count **without downloading
+  any bill**.
+
+  **The Senado was recorded here as 5× dearer, and that was my own measurement error.** The note
+  said its `/processo` list has no classification filter, "six parameter names tested, all ignored",
+  putting the cost at ~16.500 per-bill detail requests. `codigoClasse` **is** accepted — the earlier
+  probe passed it a code that does not exist in the taxonomy, got `[]`, and read the empty result as
+  a dead parameter. **A filter that returns nothing for an invalid value is indistinguishable from a
+  filter that is not there**, and the only way to tell them apart is to pass a value known to exist,
+  from `/processo/classes`. Re-measured on 2026-08-24, the Senado is not dearer than the Câmara —
+  it is **45× cheaper**:
+
+  - `codigoClasse=<macro>` **includes the whole subtree** (Meio Ambiente = 710, its eleven children
+    sum to 664);
+  - repeating it does **not** union, unlike `codTema` — the first value wins and the rest are
+    dropped silently, so one request per class node;
+  - `/processo?codigoParlamentarAutor=` returns the senator's **entire** record in one call;
+  - and the two sets **join locally, exactly**: intersecting them by `id` reproduces the server's
+    own `autor + classe` answer to the row (19 = 19).
+
+  So the class dimension is fetched **once for the whole house** rather than once per senator, and
+  the minimal cut the area map requires is **33 nodes** — computed from `/processo/classes` against
+  `senadoArea()`, with zero unknown nodes out of 179. Total: **33 + 81 ≈ 114 requests**, against
+  5.100 for the Câmara. Which also answers the parallelisation question that prompted the
+  re-measurement: at 114 requests there is nothing to parallelise, and adding concurrency against a
+  public source we do not pay for would only spend the goodwill the whole import depends on.
+
+  Two things settled while building it: the reading is **descriptive, never inferential**
   (*"of the 47 bills he filed, 40% are health"* is a census with no error bar; *"he cares about
-  health"* is an estimate of a latent trait, and with the median deputy filing 4–6 bills that
-  estimate is ±40pp); and the slices need `relevance === 1`, since the labels are multi-label and
-  otherwise sum to 2.16 rather than 1 — while the code comment in `senado.ts` says the Senado does
-  **not** order its classifications, so "principal" is our convention there and must be measured
-  before it is trusted.
-- **`Direitos Humanos` may be a modifier rather than a subject**, and it is one Jaccard away from
-  being known. It is 34.1% of every Câmara bill at 2.16 labels per bill; if it co-occurs above ~0.3
-  with Saúde or Educação, that axis is an adjective and measures the classifier's vocabulary rather
-  than a policy area. Two of the four panel classifiers reached this suspicion by different routes.
+  health"* estimates a latent trait, and with the median deputy filing 4–6 bills that estimate is
+  ±40pp) — hence `MIN_AUTHORSHIP_TOTAL`, a floor on the **total** and never on the slice, because
+  this is one multinomial and a per-slice floor would erase exactly the small areas that carry the
+  profile. And the slices are **not** normalised to sum to 100: `codTema` unions, a sanitation bill
+  is health *and* infrastructure, and the figure says so rather than forcing a pie.
+- **`Direitos` was suspected of being a modifier rather than a subject, and the measurement
+  acquits it.** It is 34.1% of every Câmara bill at 2.16 labels per bill, and two of the four panel
+  classifiers independently reached the suspicion that an axis that large is measuring the
+  classifier's vocabulary rather than a policy area. The test was one Jaccard: above ~0.3 with
+  Saúde or Educação it would be an adjective. Measured on 2026-08-24 over 4.709 classified Câmara
+  bills and 2.730 Senado ones, it peaks at **0.21** (with saúde) and **0.19** (with segurança) in
+  the Câmara, **0.17** (with segurança) in the Senado — and **no pair anywhere in either matrix
+  reaches 0.3**. The area is large *and* distinct: the 34% is volume, not overlap. The nine areas
+  stand as mapped.
+- **The radiodifusão outorgas are at the top of `/temas`, and the filter they need is on
+  ingestion — not on the alignment reading.** They were recorded as a threat to the per-area
+  agreement, on the reasoning that hundreds of near-identical concession renewals would dominate
+  `infraestrutura`. Measured on 2026-08-24 against the restored copy, that is **not** what they do:
+  67 of them in the corpus, 65 filed as PDL, and **zero carry a nominal vote** — they are decided
+  conclusively in the CCTCI by symbolic process, so they never enter an agreement denominator on the
+  agent side. `syncAuthorship` is likewise safe by construction (`idDeputadoAutor` excludes them:
+  all 67 have **no author**, being Executive acts submitted under CF art. 223).
+
+  What they actually cost is elsewhere, and it is larger than the original worry:
+
+  - **They rank near the top of the themes list.** 49 of the 67 sit at "Pronta para Pauta", which
+    `priority` scores highest, and their mean priority is **58** — the "Prioritário" band. A citizen
+    opening `/temas` meets a run of *"Aprova o ato que renova a outorga à Rádio X"*.
+  - **They already spent 67 AI passes**, all 67 of them, rewriting one sentence sixty-seven times.
+    `AI_ELIGIBLE` admits them because they are in progress and above `MIN_AI_PRIORITY` — the two
+    clauses that were meant to bound the queue to what can still matter.
+  - **They can still be voted by citizens**, and those votes would enter the per-area denominator.
+    That is the residue of the original concern, and it is real but downstream of the two above.
+
+  The signature is precise: PDL, no author, and an ementa matching outorga/radiodifusão. The
+  decision to take is whether that is a `priority` cap (the honest reading: a concession renewal is
+  not a national question, whatever its procedural situation), an `AI_ELIGIBLE` exclusion, or both.
+  It is a product decision because it changes what the themes list ranks, so it is written down
+  rather than applied.
 - The two layouts the humanized study proposed but this pass did not apply: agent/party lists as
   tables, and the theme detail page with the official record as a marginal column
   (`docs/design.md` §7).

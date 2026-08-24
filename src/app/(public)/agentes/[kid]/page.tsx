@@ -19,6 +19,7 @@ import { RecordIntro, SectionHead } from "@/components/public/Section";
 import { ReadingPlate } from "@/components/public/ReadingPlate";
 import { ThemeBriefList, type ThemeBriefItem } from "@/components/public/ThemeBrief";
 import { AreaAgreementPlate } from "@/components/public/AreaAgreementPlate";
+import { AreaAuthorshipPlate } from "@/components/public/AreaAuthorshipPlate";
 import { PositioningPlate } from "@/components/public/PositioningPlate";
 import { GovernismoReading } from "@/components/public/GovernismoReading";
 import { QualityPlate } from "@/components/public/QualityPlate";
@@ -42,6 +43,7 @@ import {
   citizenAgentAreaAgreement,
   type AreaAgreement,
 } from "@/lib/indexes/area-alignment";
+import { authorshipReading } from "@/lib/domain/authorship";
 import { citizenFollows, followSlot } from "@/lib/domain/follows";
 import { publicReading, followersNote } from "@/lib/domain/reading";
 import { agentTypeLabel, agentTypeProseLabel, voteValueLabel } from "@/lib/labels";
@@ -176,6 +178,7 @@ export default async function AgentDetailPage({
     }
   }
   const follow = followSlot(agent, session ? follows ?? new Map() : null);
+  const authorship = authorshipReading(agent.authorshipAreas);
 
 
   const dto = toPublicAgent(agent);
@@ -445,6 +448,19 @@ export default async function AgentDetailPage({
               <h2 className="text-xl text-navy-900">Alinhamento por área</h2>
               <div className="mt-4">
                 <AreaAgreementPlate areas={areaAgreement} agentName={fullName} />
+              </div>
+            </Reveal>
+          ) : null}
+
+          {/* Pública, ao contrário da placa acima: a autoria é um censo de
+              documentos da casa e não depende de quem está lendo. É também a
+              leitura que a de cima é confundida com — e tê-las na mesma página,
+              cada uma com seu título, é o que separa as duas. */}
+          {authorship?.publishable ? (
+            <Reveal as="aside" variant="fade" delay={115}>
+              <h2 className="text-xl text-navy-900">Sobre o que legisla</h2>
+              <div className="mt-4">
+                <AreaAuthorshipPlate reading={authorship} agentName={fullName} />
               </div>
             </Reveal>
           ) : null}

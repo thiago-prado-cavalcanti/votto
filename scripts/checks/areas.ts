@@ -28,6 +28,7 @@ import {
   type PolicyArea,
 } from "@/lib/domain/policy-areas";
 import { areaAgreements } from "@/lib/indexes/area-alignment";
+import { MIN_AUTHORSHIP_TOTAL, authorshipReading } from "@/lib/domain/authorship";
 
 let fails = 0;
 const ok = (name: string, cond: boolean, extra = "") => {
@@ -206,6 +207,55 @@ ok(
     (r) => r.sharedThemes === 1,
   ).length === 2,
 );
+
+console.log("\nAutoria por área");
+// A leitura irmã da de cima, e as duas erram em direções OPOSTAS se alguém
+// copiar uma regra da outra: na concordância um eixo sem base tem de ser `null`
+// (a dupla não votou os mesmos projetos); na autoria o zero é MEDIDO — a
+// varredura conta as nove áreas para todo mundo, então "nenhum projeto de
+// saúde" é um fato sobre a pessoa e não uma lacuna.
+{
+  ok("varredura que nunca rodou é null, não zero projetos", authorshipReading(null) === null);
+  ok("JSON sem total é null", authorshipReading({ byArea: { saude: 3 } }) === null);
+
+  const zerado = authorshipReading({ total: 0, byArea: {} });
+  ok("total zero é uma leitura, não uma ausência", zerado !== null && zerado.total === 0);
+  ok("e não é publicável como figura", zerado?.publishable === false);
+
+  const magro = authorshipReading({ total: MIN_AUTHORSHIP_TOTAL - 1, byArea: { saude: 5 } });
+  ok("abaixo do piso não vira figura", magro?.publishable === false);
+  ok("mas a contagem continua de pé", magro?.slices.find((s) => s.area === "saude")?.count === 5);
+
+  const cheio = authorshipReading({
+    total: 50,
+    byArea: { saude: 20, infraestrutura: 15, ambiente: 15 },
+  });
+  ok("no piso ou acima, publica", cheio?.publishable === true);
+  ok("devolve as nove áreas sempre", cheio?.slices.length === 9);
+  ok("fatia é sobre o total", cheio?.slices.find((s) => s.area === "saude")?.share === 40);
+  // O piso é sobre o TOTAL e nunca sobre a fatia. Um piso por área apagaria
+  // justamente as pequenas — que são as que informam o perfil — deixando de pé
+  // só a maior, o contrário do pretendido. É uma multinomial, não nove leituras.
+  ok(
+    "área pequena não é apagada por ser pequena",
+    cheio?.slices.every((s) => typeof s.share === "number") === true,
+  );
+
+  // `codTema` faz UNIÃO: saneamento é saúde e infraestrutura, e conta nas duas.
+  // Somar as fatias tem de poder passar de 100 — desenhar isto como pizza seria
+  // o erro.
+  const soma = cheio?.slices.reduce((t, s) => t + s.share, 0) ?? 0;
+  ok("as fatias podem somar mais de 100%", soma === 100, `(somaram ${soma}%)`);
+  const sobreposto = authorshipReading({ total: 10, byArea: { saude: 8, infraestrutura: 7 } });
+  ok(
+    "e somam, quando os projetos se sobrepõem",
+    (sobreposto?.slices.reduce((t, s) => t + s.share, 0) ?? 0) === 150,
+  );
+  ok(
+    "nenhuma fatia passa de 100% sozinha",
+    sobreposto?.slices.every((s) => s.share <= 100) === true,
+  );
+}
 
 console.log(fails === 0 ? "\n✓ tudo passou\n" : `\n✗ ${fails} falha(s)\n`);
 process.exit(fails === 0 ? 0 : 1);
