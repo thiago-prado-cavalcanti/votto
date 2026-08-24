@@ -15,6 +15,9 @@
  *   npm run reposition -- --dry --estimator=pca --residual=off
  *                                           # ...sem residualizar o governismo, para a porta 2
  *                                           #    voltar a significar algo
+ *   npm run reposition -- --dry --estimator=pca --items=policy
+ *                                           # ...admitindo so proposicao de merito, sem
+ *                                           #    requerimento de urgencia e afins
  *   npm run reposition -- --dry --estimator=pca --score=residual
  *                                           # ...descontando o governismo tambem dos escores,
  *                                           #    e nao so das cargas
@@ -130,6 +133,24 @@ function parseEstimator(argv: string[]): Estimator {
 }
 
 /**
+ * Ler `--items=all|policy`.
+ *
+ * `policy` descarta requerimentos e afins da matriz — ver
+ * `src/lib/domain/bill-types.ts`. Faz diferença só sob `--estimator=pca`, porque
+ * o estimador de tags nunca viu esses itens: a IA já os marcava `scoreable:
+ * false`, e foi soltar o filtro de tag que os trouxe para dentro.
+ */
+function parseItems(argv: string[]): boolean {
+  const arg = argv.find((a) => a.startsWith("--items"));
+  if (!arg) return false;
+  const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
+  if (value === "all") return false;
+  if (value === "policy") return true;
+  console.error(`Valor inválido para --items: "${value}". Use "all" ou "policy".`);
+  process.exit(1);
+}
+
+/**
  * Ler `--score=raw|residual`.
  *
  * `residual` desconta o governismo dos escores, além das cargas. É medição: a
@@ -180,15 +201,23 @@ async function main(): Promise<void> {
   const estimator = parseEstimator(process.argv);
   const residualise = parseResidual(process.argv);
   const scoreResidual = parseScore(process.argv);
+  const policyItemsOnly = parseItems(process.argv);
   const loweredFloor = minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
 
-  if (weights !== DEFAULT_WEIGHT_MODE || loweredFloor || estimator !== "tags" || scoreResidual) {
+  if (
+    weights !== DEFAULT_WEIGHT_MODE ||
+    loweredFloor ||
+    estimator !== "tags" ||
+    scoreResidual ||
+    policyItemsOnly
+  ) {
     const lines: string[] = [];
     if (estimator === "pca")
       lines.push(
         "direção e peso vêm do componente principal da matriz de votos, com as tags só orientando" +
           (residualise ? "; colunas residualizadas contra o governismo" : "; SEM residualizar") +
-          (scoreResidual ? "; governismo descontado TAMBÉM dos escores" : ""),
+          (scoreResidual ? "; governismo descontado TAMBÉM dos escores" : "") +
+          (policyItemsOnly ? "; só proposições de mérito na matriz" : ""),
       );
     if (weights === "raw") lines.push("o fator (1 − contaminação) está desligado");
     if (weights === "clean")
@@ -213,6 +242,7 @@ async function main(): Promise<void> {
     estimator,
     residualise,
     scoreResidual,
+    policyItemsOnly,
   });
 
   if (agents.length === 0) {
@@ -275,6 +305,12 @@ async function main(): Promise<void> {
     }
     // A distribuição decide o teto do modo `clean`: só há subconjunto limpo
     // enquanto couber MIN_HOUSE_ITEMS embaixo dele.
+    if (h.droppedNonPolicy > 0) {
+      console.log(
+        `        ${h.droppedNonPolicy} itens fora por não serem proposição de mérito ` +
+          "(requerimento, questão de ordem)",
+      );
+    }
     if (h.contaminationBands.length > 0) {
       const cells = h.contaminationBands
         .map((b) => `≤${b.maxContamination.toFixed(1)}: ${b.items}`)
@@ -468,6 +504,7 @@ async function main(): Promise<void> {
   if (weights !== DEFAULT_WEIGHT_MODE)
     parts.push(`pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""}`);
   if (loweredFloor) parts.push(`piso ${minEffectiveItems}`);
+  if (policyItemsOnly) parts.push("só mérito");
   const stamp = parts.length > 0 ? ` · ${parts.join(" · ")} (medição)` : "";
   if (dryRun) console.log(`\n  (--dry: nada foi gravado${stamp})`);
   else console.log("\n✓ Posicionamento atualizado.");

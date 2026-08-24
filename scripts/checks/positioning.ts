@@ -33,6 +33,7 @@ import {
   type RecoveryVote,
 } from "@/lib/indexes/recovery";
 import { pool, betweenVariance, agreementIndex, excessCohesion, expectedRandomAgreement } from "@/lib/indexes/pooling";
+import { billType, isPolicyBill } from "@/lib/domain/bill-types";
 import {
   spearman,
   weightedSpearman,
@@ -404,6 +405,21 @@ ok("acaso n=90: bate com Rice 0,084", Math.abs(expectedRandomAgreement(90) - fro
 ok("acaso decresce com o tamanho", expectedRandomAgreement(2) > expectedRandomAgreement(10) && expectedRandomAgreement(10) > expectedRandomAgreement(90));
 ok("bancada de um não recebe coesão", excessCohesion(1, 1) === null);
 ok("coesão em excesso desconta o tamanho", (excessCohesion(0.9, 2) ?? 0) < (excessCohesion(0.9, 90) ?? 0));
+
+console.log("\nTipo de proposição");
+// Requerimento não é posição sobre mérito, e foi soltar o filtro de tag para o
+// estimador de recuperação que trouxe esses itens para dentro da matriz.
+ok("PL entra", isPolicyBill("PL 3085/2026"));
+ok("PEC entra", isPolicyBill("PEC 45/2019"));
+ok("MPV entra", isPolicyBill("MPV 1234/2024"));
+ok("PDC entra (nome antigo do decreto legislativo)", isPolicyBill("PDC 12/2020"));
+ok("requerimento sai", !isPolicyBill("REQ 123/2024"));
+ok("RQU sai", !isPolicyBill("RQU 45/2025"));
+ok(
+  "identificador sem sigla sai — omissão não é mérito",
+  !isPolicyBill("Proposição 12345") && !isPolicyBill(null) && !isPolicyBill(""),
+);
+ok("o tipo sai do começo do identificador", billType("PLP 108/2024") === "PLP");
 
 console.log("\nÂncoras");
 ok("PL à direita", (anchorFor("PL") ?? 0) > 0.7, `(${anchorFor("PL")})`);

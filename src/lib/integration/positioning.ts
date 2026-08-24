@@ -89,6 +89,7 @@ import {
   UNANCHORED_PARTIES,
   anchorKey,
 } from "@/lib/domain/anchors";
+import { isPolicyBill } from "@/lib/domain/bill-types";
 import { CURRENT_TERM, currentTermStart, termOf } from "@/lib/domain/terms";
 import { AgentType, EntityStatus, House, Prisma, VoteValue } from "@/generated/prisma";
 
@@ -280,6 +281,8 @@ export interface HouseReport {
    * escolha conveniente.
    */
   anchorCorrelationAll: number | null;
+  /** Itens descartados por não serem proposição de mérito (`--items=policy`). */
+  droppedNonPolicy: number;
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -345,6 +348,11 @@ export async function recomputePositioningIndex(
     maxContamination?: number;
     /** Piso de cobertura por eixo. Alterá-lo também torna a rodada não publicável. */
     minEffectiveItems?: number;
+    /**
+     * Só para `pca`: admitir apenas proposições de mérito, descartando
+     * requerimentos e afins (`src/lib/domain/bill-types.ts`).
+     */
+    policyItemsOnly?: boolean;
     /** De onde vêm direção e peso. Ausente é a metodologia em vigor. */
     estimator?: Estimator;
     /** Só para `pca`: residualizar as colunas contra o governismo antes de decompor. */
@@ -370,6 +378,8 @@ export async function recomputePositioningIndex(
   estimator: Estimator;
   /** Se o governismo foi descontado também dos escores. */
   scoreResidual: boolean;
+  /** Se só proposições de mérito foram admitidas na matriz. */
+  policyItemsOnly: boolean;
 }> {
   const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
   const maxContamination = opts.maxContamination ?? CLEAN_MAX_CONTAMINATION;
@@ -377,6 +387,7 @@ export async function recomputePositioningIndex(
   const estimator = opts.estimator ?? "tags";
   const residualise = opts.residualise ?? true;
   const scoreResidual = opts.scoreResidual ?? false;
+  const policyItemsOnly = opts.policyItemsOnly ?? false;
 
   // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
   // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
@@ -392,7 +403,8 @@ export async function recomputePositioningIndex(
     weights !== DEFAULT_WEIGHT_MODE ||
     minEffectiveItems !== MIN_EFFECTIVE_ITEMS ||
     estimator !== "tags" ||
-    scoreResidual;
+    scoreResidual ||
+    policyItemsOnly;
   if (!opts.dryRun && experimental) {
     const why =
       estimator !== "tags"
@@ -456,7 +468,7 @@ export async function recomputePositioningIndex(
       estimator === "pca"
         ? { status: EntityStatus.ACTIVE, votes: { some: { voterType: "AGENT" } } }
         : { status: EntityStatus.ACTIVE, dimensions: { not: Prisma.DbNull } },
-    select: { id: true, kid: true, dimensions: true },
+    select: { id: true, kid: true, dimensions: true, identifier: true },
   });
   // **"Nunca classificado" e "classificado e excluído" não são a mesma coisa**, e
   // `parseDimensions(null)` devolve `scoreable: false` para os dois. A diferença
@@ -470,6 +482,7 @@ export async function recomputePositioningIndex(
       t.id,
       {
         kid: t.kid,
+        policy: isPolicyBill(t.identifier),
         dims:
           estimator === "pca" && t.dimensions === null
             ? UNTAGGED_DIMENSIONS
@@ -576,6 +589,7 @@ export async function recomputePositioningIndex(
   // de scorecard esticam e deslocam entre casas; aqui seria pior que isso.
   const weigherByHouse = new Map<House, ItemWeigher>();
   const recoveryByHouse = new Map<House, Record<PositioningAxisKey, RecoveryDiagnostics>>();
+  const droppedByHouse = new Map<House, number>();
   if (estimator === "pca") {
     const govByTerm = new Map(
       [...governismoByTerm].map(([term, byAgent]) => [
@@ -596,11 +610,17 @@ export async function recomputePositioningIndex(
       }
       const matrixItems: RecoveryItem[] = [];
       const kidByTheme = new Map<string, string>();
+      let droppedNonPolicy = 0;
       for (const themeId of themeIds) {
         const stats = statsByTheme.get(themeId);
         const theme = dimensionsByTheme.get(themeId);
         if (!stats || !theme?.dims.scoreable) continue;
         if (discrimination(stats) < MIN_DISCRIMINATION) continue;
+        // Requerimento não é posição sobre mérito — ver `bill-types.ts`.
+        if (policyItemsOnly && !theme.policy) {
+          droppedNonPolicy++;
+          continue;
+        }
         if (weights === "clean") {
           if (stats.contamination === null || stats.contamination > maxContamination) continue;
         }
@@ -645,6 +665,7 @@ export async function recomputePositioningIndex(
       }
       weigherByHouse.set(house, recoveredWeigher(recovered));
       recoveryByHouse.set(house, diagnostics);
+      droppedByHouse.set(house, droppedNonPolicy);
     }
   }
 
@@ -848,6 +869,7 @@ export async function recomputePositioningIndex(
       itemsUncontrolled,
       recovery: recoveryByHouse.get(house) ?? null,
       orientation: orientationByHouse.get(house) ?? null,
+      droppedNonPolicy: droppedByHouse.get(house) ?? 0,
       unanchored: [],
       blocked: null,
     };
@@ -1046,6 +1068,7 @@ export async function recomputePositioningIndex(
     minEffectiveItems,
     estimator,
     scoreResidual,
+    policyItemsOnly,
   };
 }
 
