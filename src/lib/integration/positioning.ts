@@ -44,6 +44,7 @@ import {
   discrimination,
   MIN_DISCRIMINATION,
   MIN_EFFECTIVE_ITEMS,
+  recoveredWeigher,
   MIN_HOUSE_AGENTS,
   MIN_GOVERNISMO_OPPORTUNITIES,
   MIN_HOUSE_ITEMS,
@@ -52,9 +53,17 @@ import {
   type AxisKey,
   type ItemStats,
   type Position,
+  type AxisKey as PositioningAxisKey,
+  type ItemWeigher,
   type ScorableVote,
   type WeightMode,
 } from "@/lib/indexes/positioning";
+import {
+  recoverAxis,
+  type RecoveryDiagnostics,
+  type RecoveryItem,
+  type RecoveryVote,
+} from "@/lib/indexes/recovery";
 import {
   agreementIndex,
   betweenVariance,
@@ -80,6 +89,21 @@ import { AgentType, EntityStatus, House, Prisma, VoteValue } from "@/generated/p
 
 /** Piso de variância para um membro, evitando divisão por zero no encolhimento. */
 const VARIANCE_FLOOR = 25;
+
+/**
+ * De onde saem a direção e o peso de cada votação.
+ *
+ * `tags` é a metodologia em vigor: pergunta ao classificador. `pca` recupera as
+ * duas coisas do componente principal da matriz de votos e usa as tags apenas
+ * para orientar qual ponta do eixo é "Mercado" (`src/lib/indexes/recovery.ts`).
+ *
+ * Existe porque a medição de 24/08/2026 fechou o diagnóstico contra `tags`:
+ * ponderar não era o defeito (`--weights=raw` dobrou a correlação com o
+ * governismo e não moveu a dispersão) e selecionar item não era o conserto
+ * (`--weights=clean` devolveu escala e derrubou a âncora para 0,27, com o PT
+ * lendo à direita do PL sobre bancadas de dezenas). §11.
+ */
+export type Estimator = "tags" | "pca";
 
 /** Por que uma casa não foi gravada. */
 export type HouseBlock =
@@ -134,6 +158,17 @@ export interface HouseReport {
   contaminationBands: Array<{ maxContamination: number; items: number }>;
   /** Itens utilizáveis sem contaminação medida — inelegíveis para `clean`. */
   itemsUncontrolled: number;
+  /**
+   * O que a decomposição encontrou, quando o estimador é `pca`. `null` sob
+   * `tags`.
+   *
+   * `tagAgreement` é o número a ler: é a concordância entre o sinal que os
+   * votos revelam e o que a IA etiquetou. Perto de 1, as tags estavam certas e
+   * o estimador antigo falhou por peso; perto de 0, as tags eram ruído — e é
+   * essa a leitura que a rodada de 24/08/2026 tornou provável, porque nenhum
+   * tamanho de amostra explica PT e PL colados.
+   */
+  recovery: Record<AxisKey, RecoveryDiagnostics> | null;
   /** Partidos sem âncora, com o motivo, para o relatório. */
   unanchored: string[];
   /** `null` quando a casa passou em tudo. */
@@ -199,6 +234,10 @@ export async function recomputePositioningIndex(
     maxContamination?: number;
     /** Piso de cobertura por eixo. Alterá-lo também torna a rodada não publicável. */
     minEffectiveItems?: number;
+    /** De onde vêm direção e peso. Ausente é a metodologia em vigor. */
+    estimator?: Estimator;
+    /** Só para `pca`: residualizar as colunas contra o governismo antes de decompor. */
+    residualise?: boolean;
   } = {},
 ): Promise<{
   agents: AgentScore[];
@@ -210,10 +249,14 @@ export async function recomputePositioningIndex(
   weights: WeightMode;
   /** O piso que rodou — igual a `MIN_EFFECTIVE_ITEMS` salvo numa medição. */
   minEffectiveItems: number;
+  /** O estimador que rodou. */
+  estimator: Estimator;
 }> {
   const weights = opts.weights ?? DEFAULT_WEIGHT_MODE;
   const maxContamination = opts.maxContamination ?? CLEAN_MAX_CONTAMINATION;
   const minEffectiveItems = opts.minEffectiveItems ?? MIN_EFFECTIVE_ITEMS;
+  const estimator = opts.estimator ?? "tags";
+  const residualise = opts.residualise ?? true;
 
   // Um modo experimental é medição e nunca chega ao banco. Antes de qualquer
   // leitura: o cálculo leva minutos, e recusar no fim seria cobrar o trabalho
@@ -226,12 +269,16 @@ export async function recomputePositioningIndex(
   // termo. Um guarda que checasse um parâmetro sem efeito recusaria rodadas
   // publicáveis por engano.
   const experimental =
-    weights !== DEFAULT_WEIGHT_MODE || minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
+    weights !== DEFAULT_WEIGHT_MODE ||
+    minEffectiveItems !== MIN_EFFECTIVE_ITEMS ||
+    estimator !== "tags";
   if (!opts.dryRun && experimental) {
     const why =
-      weights !== DEFAULT_WEIGHT_MODE
-        ? `modo de peso "${weights}"`
-        : `piso de cobertura em ${minEffectiveItems} (metodologia: ${MIN_EFFECTIVE_ITEMS})`;
+      estimator !== "tags"
+        ? `estimador "${estimator}"`
+        : weights !== DEFAULT_WEIGHT_MODE
+          ? `modo de peso "${weights}"`
+          : `piso de cobertura em ${minEffectiveItems} (metodologia: ${MIN_EFFECTIVE_ITEMS})`;
     throw new Error(
       `Configuração experimental (${why}) não é publicável. ` +
         "Rode com --dry, ou adote a mudança em POSITIONING_METHODOLOGY " +
@@ -335,6 +382,82 @@ export async function recomputePositioningIndex(
     votesByAgent.set(v.agentId, list);
   }
 
+  // ── Recuperar direção e peso da matriz de votos, se for o estimador ───────
+  //
+  // **Uma matriz por casa, e isso é obrigatório, não preferência.** Um deputado
+  // e um senador nunca votam na mesma votação nominal, então uma matriz com as
+  // duas casas é bloco-diagonal e o primeiro componente dela é "em que casa
+  // você senta". Groseclose, Levitt & Snyder (*APSR* 1999) já dizem que escalas
+  // de scorecard esticam e deslocam entre casas; aqui seria pior que isso.
+  const weigherByHouse = new Map<House, ItemWeigher>();
+  const recoveryByHouse = new Map<House, Record<PositioningAxisKey, RecoveryDiagnostics>>();
+  if (estimator === "pca") {
+    const govScores = new Map([...governismo].map(([id, g]) => [id, g.score]));
+    for (const house of [House.CAMARA, House.SENADO]) {
+      const houseAgents = agents.filter((a) => agentHouse.get(a.id) === house);
+      if (houseAgents.length === 0) continue;
+
+      // Seleção de item para a matriz: votada nesta casa, classificada e que
+      // dividiu. Independe de eixo — o componente decide sozinho de que eixo a
+      // votação fala, e as tags entram depois, só para orientar a ponta.
+      const themeIds = new Set<string>();
+      for (const a of houseAgents) {
+        for (const v of votesByAgent.get(a.id) ?? []) themeIds.add(v.themeId);
+      }
+      const matrixItems: RecoveryItem[] = [];
+      const kidByTheme = new Map<string, string>();
+      for (const themeId of themeIds) {
+        const stats = statsByTheme.get(themeId);
+        const theme = dimensionsByTheme.get(themeId);
+        if (!stats || !theme?.dims.scoreable) continue;
+        if (discrimination(stats) < MIN_DISCRIMINATION) continue;
+        if (weights === "clean") {
+          if (stats.contamination === null || stats.contamination > maxContamination) continue;
+        }
+        matrixItems.push({ themeId, tagDirection: 0 });
+        kidByTheme.set(themeId, theme.kid);
+      }
+
+      const matrixVotes: RecoveryVote[] = [];
+      for (const a of houseAgents) {
+        for (const v of votesByAgent.get(a.id) ?? []) {
+          if (!kidByTheme.has(v.themeId)) continue;
+          const sign = voteSign(v.value);
+          if (sign === 0) continue;
+          matrixVotes.push({ agentId: a.id, themeId: v.themeId, sign: sign as -1 | 1 });
+        }
+      }
+
+      // PC1 → econômico, PC2 → social. Extrair "o componente principal" duas
+      // vezes sobre a mesma matriz devolveria o mesmo vetor.
+      const recovered = {} as Record<
+        PositioningAxisKey,
+        Map<string, { weight: number; direction: -1 | 1 }>
+      >;
+      const diagnostics = {} as Record<PositioningAxisKey, RecoveryDiagnostics>;
+      for (const [skipComponents, axis] of AXIS_KEYS.entries()) {
+        const oriented = matrixItems.map((it) => ({
+          themeId: it.themeId,
+          tagDirection: dimensionsByTheme.get(it.themeId)?.dims[axis]?.direction ?? 0,
+        }));
+        const result = recoverAxis(matrixVotes, oriented, govScores, {
+          residualise,
+          skipComponents,
+        });
+        // Rechaveado pelo kid, que é o que `ScorableVote.themeKey` carrega.
+        const byKid = new Map<string, { weight: number; direction: -1 | 1 }>();
+        for (const [themeId, item] of result.items) {
+          const kid = kidByTheme.get(themeId);
+          if (kid) byKid.set(kid, item);
+        }
+        recovered[axis] = byKid;
+        diagnostics[axis] = result.diagnostics;
+      }
+      weigherByHouse.set(house, recoveredWeigher(recovered));
+      recoveryByHouse.set(house, diagnostics);
+    }
+  }
+
   const scored: AgentScore[] = [];
   let legacyUsedTotal = 0;
   let usedTotal = 0;
@@ -360,6 +483,7 @@ export async function recomputePositioningIndex(
       mode: weights,
       maxContamination,
       minEffectiveItems,
+      weigher: weigherByHouse.get(house),
     });
     const contributing = position.economic.items + position.social.items;
     if (contributing > 0) {
@@ -449,6 +573,7 @@ export async function recomputePositioningIndex(
         items: bandCounts[i],
       })),
       itemsUncontrolled,
+      recovery: recoveryByHouse.get(house) ?? null,
       unanchored: [],
       blocked: null,
     };
@@ -630,6 +755,7 @@ export async function recomputePositioningIndex(
     legacyShare: usedTotal > 0 ? legacyUsedTotal / usedTotal : 0,
     weights,
     minEffectiveItems,
+    estimator,
   };
 }
 

@@ -26,6 +26,11 @@ import {
   MIN_EFFECTIVE_ITEMS,
   type ScorableVote,
 } from "@/lib/indexes/positioning";
+import {
+  recoverAxis,
+  type RecoveryItem,
+  type RecoveryVote,
+} from "@/lib/indexes/recovery";
 import { pool, betweenVariance, agreementIndex, excessCohesion, expectedRandomAgreement } from "@/lib/indexes/pooling";
 import { spearman, pearson, anchorFor, stdDev, MIN_SPREAD_RATIO } from "@/lib/domain/anchors";
 
@@ -85,6 +90,108 @@ ok(
 ok(
   "clean: unânime continua valendo zero",
   itemWeight(tag, { yes: 95, no: 5, contamination: 0 }, "clean", 0.3) === 0,
+);
+
+console.log("\nRecuperação de dimensão");
+
+// Uma casa sintética com estrutura conhecida: dois blocos de agentes que votam
+// sempre em lados opostos, sobre itens perfeitamente divisivos. O componente
+// tem de encontrar exatamente essa clivagem, e a única coisa que as tags fazem
+// é decidir qual bloco fica no lado positivo.
+function synthetic(nPerBloc: number, nItems: number, tagDirection: -1 | 0 | 1) {
+  const votes: RecoveryVote[] = [];
+  for (let j = 0; j < nItems; j++) {
+    for (let i = 0; i < nPerBloc; i++) {
+      votes.push({ agentId: `esq${i}`, themeId: `t${j}`, sign: -1 });
+      votes.push({ agentId: `dir${i}`, themeId: `t${j}`, sign: 1 });
+    }
+  }
+  const items: RecoveryItem[] = Array.from({ length: nItems }, (_, j) => ({
+    themeId: `t${j}`,
+    tagDirection,
+  }));
+  return { votes, items };
+}
+
+const syn = synthetic(20, 10, 1);
+const rec = recoverAxis(syn.votes, syn.items, new Map(), { residualise: false });
+ok("recupera todos os itens", rec.items.size === 10);
+ok(
+  "clivagem perfeita → peso cheio em todo item",
+  [...rec.items.values()].every((it) => Math.abs(it.weight - 1) < 1e-6),
+);
+ok(
+  "orienta pelas tags: +1 → direção +1",
+  [...rec.items.values()].every((it) => it.direction === 1),
+);
+ok("concordância total com as tags", Math.abs(rec.diagnostics.tagAgreement - 1) < 1e-9);
+
+// A ponta do eixo é decidida pelas tags e por nada mais: a mesma matriz, com as
+// tags invertidas, tem de devolver o eixo espelhado. É o que torna o estimador
+// robusto a tag ruim de item — só a soma dos sinais decide.
+const flipped = recoverAxis(
+  syn.votes,
+  synthetic(20, 10, -1).items,
+  new Map(),
+  { residualise: false },
+);
+ok(
+  "tags invertidas → eixo espelhado",
+  [...flipped.items.values()].every((it) => it.direction === -1),
+);
+
+// Sem tag alguma o componente ainda existe, mas a ponta é arbitrária — e o
+// diagnóstico tem de dizer isso em vez de publicar um sinal inventado.
+const blind = recoverAxis(syn.votes, synthetic(20, 10, 0).items, new Map(), {
+  residualise: false,
+});
+ok("sem tags → marcado como não orientado", blind.diagnostics.unoriented);
+
+// Uma votação unânime não tem variância, então o componente lhe dá carga zero
+// sem que ninguém precise reaplicar `discrimination()`.
+const withUnanimous = synthetic(20, 10, 1);
+for (let i = 0; i < 20; i++) {
+  withUnanimous.votes.push({ agentId: `esq${i}`, themeId: "unan", sign: 1 });
+  withUnanimous.votes.push({ agentId: `dir${i}`, themeId: "unan", sign: 1 });
+}
+withUnanimous.items.push({ themeId: "unan", tagDirection: 1 });
+const withU = recoverAxis(withUnanimous.votes, withUnanimous.items, new Map(), {
+  residualise: false,
+});
+ok(
+  "votação unânime recebe carga zero sem reaplicar discriminação",
+  (withU.items.get("unan")?.weight ?? 1) < 1e-9,
+);
+
+// Deflação: o segundo componente não pode ser o primeiro outra vez. Sobre uma
+// matriz com uma clivagem só, o PC2 não tem o que carregar.
+const pc2 = recoverAxis(syn.votes, syn.items, new Map(), {
+  residualise: false,
+  skipComponents: 1,
+});
+ok(
+  "PC2 sobre clivagem única não carrega variância",
+  pc2.diagnostics.explained < 1e-6 && rec.diagnostics.explained > 0.9,
+);
+
+// Residualizar contra o governismo tem de remover a clivagem que É o
+// governismo. Aqui os dois blocos são exatamente governo e oposição, então o
+// resíduo não deve sobrar nada — que é o teste de que o controle age.
+const govMap = new Map<string, number>();
+for (let i = 0; i < 20; i++) {
+  govMap.set(`esq${i}`, 100);
+  govMap.set(`dir${i}`, 0);
+}
+const resid = recoverAxis(syn.votes, syn.items, govMap, { residualise: true });
+ok(
+  "residualizar remove a clivagem governista",
+  resid.diagnostics.explained < 1e-6,
+  `(explicada ${(resid.diagnostics.explained * 100).toFixed(1)}%)`,
+);
+ok(
+  "e sem residualizar ela continua lá",
+  rec.diagnostics.explained > 0.9,
+  `(explicada ${(rec.diagnostics.explained * 100).toFixed(1)}%)`,
 );
 
 console.log("\nFormato das tags");

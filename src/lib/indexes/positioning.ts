@@ -379,8 +379,63 @@ export const CLEAN_MAX_CONTAMINATION = 0.3;
  * na assinatura. Ausentes, todos caem na metodologia em vigor — `computePosition(votes)`
  * continua sendo a conta publicada, e é o que o cidadão em `positions.ts` roda.
  */
+/**
+ * De onde saem o peso e a direção de um item.
+ *
+ * Duas implementações, e a diferença entre elas é a **única** diferença entre os
+ * dois estimadores: `tagWeigher` lê `tag.direction` e `tag.confidence`, isto é
+ * pergunta a um classificador; `recoveredWeigher` lê o componente principal da
+ * matriz de votos. Depois disso a conta é a mesma — média ponderada, erro padrão
+ * de Kish, `MIN_EFFECTIVE_ITEMS`, análise de influência — e é de propósito: a
+ * mudança de estimador fica falseável pelas mesmas quatro portas que reprovaram
+ * a anterior.
+ *
+ * `null` significa "este item não entra neste eixo".
+ */
+export type ItemWeigher = (
+  vote: ScorableVote,
+  axis: AxisKey,
+) => { weight: number; direction: -1 | 1 } | null;
+
+/** O peso e a direção como a tag os afirma — a metodologia em vigor. */
+export function tagWeigher(
+  mode: WeightMode = DEFAULT_WEIGHT_MODE,
+  maxContamination: number = CLEAN_MAX_CONTAMINATION,
+): ItemWeigher {
+  return (vote, axis) => {
+    const tag = vote.dimensions[axis];
+    if (!tag || tag.direction === 0) return null;
+    const weight = itemWeight(tag, vote.stats, mode, maxContamination);
+    if (weight <= 0) return null;
+    return { weight, direction: tag.direction };
+  };
+}
+
+/**
+ * O peso e a direção como os votos os revelam (`src/lib/indexes/recovery.ts`).
+ *
+ * A discriminação **não** é reaplicada aqui, e isso não é esquecimento: uma
+ * votação unânime não tem variância, então o componente já lhe dá carga zero.
+ * Multiplicar por `discrimination()` de novo seria descontar duas vezes o mesmo
+ * fato.
+ */
+export function recoveredWeigher(
+  recovered: Record<AxisKey, Map<string, { weight: number; direction: -1 | 1 }>>,
+): ItemWeigher {
+  return (vote, axis) => {
+    const found = recovered[axis].get(vote.themeKey);
+    if (!found || found.weight <= 0) return null;
+    return found;
+  };
+}
+
 export interface Weighting {
   mode?: WeightMode;
+  /**
+   * De onde vêm peso e direção. Ausente é `tagWeigher` no modo em vigor —
+   * `computePosition(votes)` continua sendo a conta publicada.
+   */
+  weigher?: ItemWeigher;
   /** Teto do modo `clean`. Inerte nos outros. */
   maxContamination?: number;
   /**
@@ -609,9 +664,10 @@ function readAxis(
  * o cidadão é projetado dentro dele, e nada que ele vote move ninguém.
  */
 export function computePosition(votes: ScorableVote[], weighting: Weighting = {}): Position {
-  const mode = weighting.mode ?? DEFAULT_WEIGHT_MODE;
-  const maxContamination = weighting.maxContamination ?? CLEAN_MAX_CONTAMINATION;
   const minEffectiveItems = weighting.minEffectiveItems ?? MIN_EFFECTIVE_ITEMS;
+  const weigher =
+    weighting.weigher ??
+    tagWeigher(weighting.mode ?? DEFAULT_WEIGHT_MODE, weighting.maxContamination);
   const byAxis: Record<AxisKey, Array<{ w: number; s: number; themeKey: string }>> = {
     economic: [],
     social: [],
@@ -629,11 +685,13 @@ export function computePosition(votes: ScorableVote[], weighting: Weighting = {}
 
     let contributed = false;
     for (const axis of AXIS_KEYS) {
-      const tag = vote.dimensions[axis];
-      if (!tag) continue;
-      const w = itemWeight(tag, vote.stats, mode, maxContamination);
-      if (w <= 0) continue;
-      byAxis[axis].push({ w, s: sign * tag.direction, themeKey: vote.themeKey });
+      const found = weigher(vote, axis);
+      if (!found) continue;
+      byAxis[axis].push({
+        w: found.weight,
+        s: sign * found.direction,
+        themeKey: vote.themeKey,
+      });
       contributed = true;
     }
     if (contributed) {

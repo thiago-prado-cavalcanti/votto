@@ -9,6 +9,12 @@
  *   npm run reposition -- --dry --weights=clean --max-contamination=0.4 --min-effective-items=2
  *                                           # ...e afrouxa o piso por agente, para a ordenação
  *                                           #    partidária poder ser medida sobre poucos itens
+ *   npm run reposition -- --dry --estimator=pca
+ *                                           # direção e peso vindos da matriz de votos, com as
+ *                                           #    tags só orientando a ponta do eixo
+ *   npm run reposition -- --dry --estimator=pca --residual=off
+ *                                           # ...sem residualizar o governismo, para a porta 2
+ *                                           #    voltar a significar algo
  *
  * Em produção nada disso roda direto — não há toolchain Node na instância:
  *
@@ -35,6 +41,7 @@ import {
   describeBlock,
   recomputePositioningIndex,
   type AgentScore,
+  type Estimator,
 } from "@/lib/integration/positioning";
 import {
   bandGate,
@@ -105,6 +112,29 @@ function parseMaxContamination(argv: string[]): number {
   process.exit(1);
 }
 
+/** Ler `--estimator=<tags|pca>`. Recusa desconhecido, pela mesma razão. */
+function parseEstimator(argv: string[]): Estimator {
+  const arg = argv.find((a) => a.startsWith("--estimator"));
+  if (!arg) return "tags";
+  const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
+  if (value === "tags" || value === "pca") return value;
+  console.error(
+    `Valor inválido para --estimator: "${value}". Use "tags" (metodologia em vigor) ou "pca".`,
+  );
+  process.exit(1);
+}
+
+/** Ler `--residual=on|off`. Só tem efeito sob `--estimator=pca`. */
+function parseResidual(argv: string[]): boolean {
+  const arg = argv.find((a) => a.startsWith("--residual"));
+  if (!arg) return true;
+  const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : "";
+  if (value === "on") return true;
+  if (value === "off") return false;
+  console.error(`Valor inválido para --residual: "${value}". Use "on" ou "off".`);
+  process.exit(1);
+}
+
 /**
  * Ler `--min-effective-items=<n>`. Zero é recusado junto com o resto: sem piso
  * nenhum, um único item classificado devolveria ±100 e a média partidária
@@ -124,10 +154,17 @@ async function main(): Promise<void> {
   const weights = parseWeights(process.argv);
   const maxContamination = parseMaxContamination(process.argv);
   const minEffectiveItems = parseMinEffectiveItems(process.argv);
+  const estimator = parseEstimator(process.argv);
+  const residualise = parseResidual(process.argv);
   const loweredFloor = minEffectiveItems !== MIN_EFFECTIVE_ITEMS;
 
-  if (weights !== DEFAULT_WEIGHT_MODE || loweredFloor) {
+  if (weights !== DEFAULT_WEIGHT_MODE || loweredFloor || estimator !== "tags") {
     const lines: string[] = [];
+    if (estimator === "pca")
+      lines.push(
+        "direção e peso vêm do componente principal da matriz de votos, com as tags só orientando" +
+          (residualise ? "; colunas residualizadas contra o governismo" : "; SEM residualizar"),
+      );
     if (weights === "raw") lines.push("o fator (1 − contaminação) está desligado");
     if (weights === "clean")
       lines.push(`só entram itens com contaminação ≤ ${maxContamination}, com peso cheio`);
@@ -148,6 +185,8 @@ async function main(): Promise<void> {
     weights,
     maxContamination,
     minEffectiveItems,
+    estimator,
+    residualise,
   });
 
   if (agents.length === 0) {
@@ -212,6 +251,21 @@ async function main(): Promise<void> {
         `        contaminação — ${cells}` +
           (h.itemsUncontrolled > 0 ? `  · sem medida: ${h.itemsUncontrolled}` : ""),
       );
+    }
+    if (h.recovery) {
+      // `tags` é o número que diz por que o estimador antigo falhou: quanto os
+      // sinais que os votos revelam concordam com os que a IA etiquetou.
+      for (const axis of ["economic", "social"] as const) {
+        const r = h.recovery[axis];
+        const flag = Math.abs(r.tagAgreement) < 0.3 ? "  ⚠ tags ≈ ruído" : "";
+        console.log(
+          `        ${axis === "economic" ? "PC1 econômico" : "PC2 social   "} — ` +
+            `${(r.explained * 100).toFixed(0)}% da variância · ` +
+            `concordância com as tags ${r.tagAgreement >= 0 ? "+" : ""}${r.tagAgreement.toFixed(2)} ` +
+            `sobre ${r.oriented} itens etiquetados${flag}` +
+            (r.unoriented ? "  ⚠ sem tag alguma: a ponta do eixo é arbitrária" : ""),
+        );
+      }
     }
     if (h.unanchored.length > 0) {
       console.log(`        sem âncora: ${h.unanchored.join(", ")}`);
@@ -358,6 +412,7 @@ async function main(): Promise<void> {
   }
 
   const parts: string[] = [];
+  if (estimator !== "tags") parts.push(`estimador "${estimator}"${residualise ? "" : " sem resíduo"}`);
   if (weights !== DEFAULT_WEIGHT_MODE)
     parts.push(`pesos "${weights}"${weights === "clean" ? ` ≤${maxContamination}` : ""}`);
   if (loweredFloor) parts.push(`piso ${minEffectiveItems}`);
