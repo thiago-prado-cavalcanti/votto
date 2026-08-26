@@ -88,6 +88,7 @@ export async function signInCitizen(identity: VerifiedIdentity): Promise<string>
       lastName,
       cpfEncrypted,
       cpfHash,
+      identityConfirmedAt: new Date(),
       cpfPrefix,
       birthYear: identity.birthYear,
       birthDateEncrypted: identity.birthDateEncrypted,
@@ -100,6 +101,10 @@ export async function signInCitizen(identity: VerifiedIdentity): Promise<string>
       birthYear: identity.birthYear,
       birthDateEncrypted: identity.birthDateEncrypted,
       politicalConsentAt: identity.politicalConsentAt,
+      // O cadastro É uma prova de identidade: o cidadão digitou CPF e data de
+      // nascimento inteiros e os dois foram confirmados contra o registro. É o
+      // que dispensa o desafio de voto nas 24h seguintes (§5).
+      identityConfirmedAt: new Date(),
       ...verified,
     },
     select: { id: true, kid: true, cpfHash: true, firstName: true, lastName: true },

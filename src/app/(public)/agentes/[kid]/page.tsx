@@ -25,6 +25,8 @@ import { GovernismoReading } from "@/components/public/GovernismoReading";
 import { QualityPlate } from "@/components/public/QualityPlate";
 import { PerformanceInfo } from "@/components/public/PerformanceInfo";
 import { AreaInfo } from "@/components/public/AreaInfo";
+import { AlignmentInfo } from "@/components/public/AlignmentInfo";
+import { PositioningInfo } from "@/components/public/PositioningInfo";
 import { parseQualityPillars } from "@/lib/domain/quality";
 import { ImageWithFallback } from "@/components/public/ImageWithFallback";
 import { ShareButton } from "@/components/public/ShareButton";
@@ -109,7 +111,7 @@ export default async function AgentDetailPage({
     OR: [{ proposerId: agent.id }, { rapporteurId: agent.id }],
   };
 
-  const [recentVotes, authoredRaw, authoredTotal, voteTally] = await Promise.all([
+  const [recentVotes, authoredRaw, authoredTotal] = await Promise.all([
     db.vote.findMany({
       where: { agentId: agent.id, voterType: "AGENT" },
       orderBy: { createdAt: "desc" },
@@ -133,14 +135,7 @@ export default async function AgentDetailPage({
       },
     }),
     db.theme.count({ where: authoredWhere }),
-    db.vote.groupBy({
-      by: ["value"],
-      where: { agentId: agent.id, voterType: "AGENT" },
-      _count: { _all: true },
-    }),
   ]);
-
-  const totalAgentVotes = voteTally.reduce((sum, row) => sum + row._count._all, 0);
 
   const authored: ThemeBriefItem[] = authoredRaw.map((theme) => ({
     kid: theme.kid,
@@ -286,7 +281,7 @@ export default async function AgentDetailPage({
             number opened without it. Explicit placement from `lg` up, because
             auto-placement would otherwise follow `order` and put the margin
             column on the left. */}
-        <div className="grid gap-14 lg:grid-cols-[1fr_19rem] lg:gap-16">
+        <div className="grid gap-14 lg:grid-cols-[1fr_23rem] lg:gap-16">
           {/* ── The record: what the agent proposed, then how they voted ── */}
           <div className="order-2 min-w-0 lg:order-none lg:col-start-1 lg:row-start-1">
             <section>
@@ -386,10 +381,17 @@ export default async function AgentDetailPage({
             delay={80}
             className="order-1 lg:order-none lg:col-start-2 lg:row-start-1"
           >
-            <h2 className="text-xl text-navy-900">Alinhamento</h2>
+            <h2 className="flex items-center text-xl text-navy-900">
+              Alinhamento
+              <AlignmentInfo />
+            </h2>
             <div className="mt-4">
               <ReadingPlate
-                caption="Com os eleitores"
+                // O título segue a leitura em vez de ser fixo. `publicReading`
+                // escolhe entre a base e o eleitorado (§3.1), e um título
+                // cravado em "Com os eleitores" descrevia errado o caso da base
+                // — além de repetir, palavra por palavra, o rótulo logo abaixo.
+                caption={session ? "Seu alinhamento" : reading.shortLabel}
                 readings={[
                   session
                     ? {
@@ -420,12 +422,6 @@ export default async function AgentDetailPage({
                       },
                 ]}
               />
-              {totalAgentVotes > 0 ? (
-                <p className="mt-4 text-xs leading-relaxed text-[var(--color-muted)]">
-                  {totalAgentVotes.toLocaleString("pt-BR")}{" "}
-                  {totalAgentVotes === 1 ? "votação registrada" : "votações registradas"}.
-                </p>
-              ) : null}
             </div>
           </Reveal>
 
@@ -463,7 +459,7 @@ export default async function AgentDetailPage({
           {authorship?.publishable ? (
             <Reveal as="aside" variant="fade" delay={115}>
               <h2 className="flex items-center text-xl text-navy-900">
-                Sobre o que legisla
+                Propostas
                 <AreaInfo kind="authorship" />
               </h2>
               <div className="mt-4">
@@ -473,20 +469,29 @@ export default async function AgentDetailPage({
           ) : null}
 
           <Reveal as="aside" variant="fade" delay={120}>
-            <h2 className="text-xl text-navy-900">Posicionamento</h2>
+            <h2 className="flex items-center text-xl text-navy-900">
+              Posicionamento
+              <PositioningInfo />
+            </h2>
             <div className="mt-4">
-              <PositioningPlate
-                economic={position.economic}
-                social={position.social}
-                detail={position.detail}
-              />
-              {/* Fora da placa, de propósito. A placa mostra os dois eixos, que
-                  só existem depois dos três portões do §3.2; esta leitura não
-                  depende de nenhum deles e tem de aparecer quando eles barram —
-                  que é justamente quando a ficha ficaria sem posição alguma. */}
+              {/* Governismo primeiro, e não como apêndice da placa de eixos.
+                  Enquanto os portões do §3.2 barram os eixos — o que hoje vale
+                  para as duas casas — esta É a leitura de posição da ficha, e
+                  imprimi-la depois de um aviso de ausência invertia os papéis.
+                  Não depende de portão nenhum porque é contagem, não inferência. */}
               <GovernismoReading
                 reading={governismoReading(agent.governismo, agent.governismoBase)}
               />
+              {/* Silenciosa enquanto não há leitura, e volta sozinha no dia em
+                  que houver: `PositioningPlate` devolve `null` com os dois eixos
+                  nulos, então nada aqui precisa mudar quando uma casa passar. */}
+              <div className="mt-8 empty:mt-0">
+                <PositioningPlate
+                  economic={position.economic}
+                  social={position.social}
+                  detail={position.detail}
+                />
+              </div>
             </div>
           </Reveal>
           </div>

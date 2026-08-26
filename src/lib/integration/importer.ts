@@ -303,6 +303,19 @@ export async function verifyImageUrl(url: string | null | undefined): Promise<st
   }
 }
 
+/**
+ * Rótulos que as casas põem no campo do partido e que não são partido nenhum.
+ * Comparados sem espaços nem pontos, em caixa alta.
+ */
+const NOT_A_PARTY = new Set([
+  "S/PARTIDO",
+  "SEMPARTIDO",
+  "S/PART",
+  "SPARTIDO",
+  "NAOINFORMADO",
+  "-",
+]);
+
 /** Lowercase alphanumerics only — for comparing names across sources. */
 function foldName(value: string | null | undefined): string {
   return (value ?? "")
@@ -323,12 +336,22 @@ function foldName(value: string | null | undefined): string {
  * on the abbreviation — the Câmara writes `PODE` where the Senado writes
  * `PODEMOS` — but they do agree on the full name ("Podemos"), so the name is the
  * reliable tiebreaker. Passing `name` is therefore worth it wherever it is known.
+ *
+ * Returns `null` for a label that is not a party. The houses put the *absence*
+ * of a party in the same field as the party — the Senado publishes `S/PARTIDO`
+ * for an unaffiliated senator — and taking that at face value created a Party
+ * row called "S/PARTIDO" that then appeared on `/partidos` like an organisation,
+ * accumulating every unaffiliated member as if they were a bench. Guarded here,
+ * at the single choke point both houses go through, for the same reason the
+ * curated logo is applied here: a per-importer check is a check that one of them
+ * will be missing.
  */
 export async function resolvePartyIdByAcronym(
   acronym: string,
   fallback: { source: ImportSource; name?: string },
-): Promise<string> {
+): Promise<string | null> {
   const normalized = acronym.trim().toUpperCase();
+  if (NOT_A_PARTY.has(normalized.replace(/[\s.]/g, ""))) return null;
 
   const byAcronym = await db.party.findFirst({
     where: { acronym: { equals: normalized, mode: "insensitive" } },

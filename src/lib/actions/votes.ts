@@ -15,6 +15,7 @@ import {
   issueChallenge,
   verifyChallenge,
   type VoteChallenge,
+  challengeRequired,
 } from "@/lib/auth/vote-challenge";
 import type { VoteValue } from "@/generated/prisma";
 
@@ -48,14 +49,20 @@ export async function castVote(themeKid: string, value: VoteValue): Promise<Cast
 
   const user = await db.user.findUnique({
     where: { kid: session.userKid },
-    select: { id: true, cpfHash: true, birthDateEncrypted: true },
+    select: { id: true, cpfHash: true, birthDateEncrypted: true, identityConfirmedAt: true },
   });
   if (!user) {
     return { ok: false, error: "Cidadão não encontrado." };
   }
 
-  // First vote of the session: hold it and ask who is at the keyboard.
-  if (!session.voteConfirmed) {
+  // Duas condições, e as duas têm de falhar para o desafio aparecer.
+  //
+  // O claim de sessão é o caminho curto: quem já respondeu nesta sessão não
+  // responde de novo. A coluna é o que atravessa sessões — o cadastro conta
+  // como prova, e dentro de `IDENTITY_MAX_AGE_MS` não se pergunta nada. Sem a
+  // segunda, alguém que se cadastrou há dez minutos e entrou de novo seria
+  // interrogado sobre o CPF que acabou de confirmar contra a Receita.
+  if (!session.voteConfirmed && challengeRequired(user.identityConfirmedAt)) {
     const challenge = await issueChallenge(
       session.userKid,
       Boolean(user.birthDateEncrypted),
@@ -185,7 +192,12 @@ export async function confirmAndCastVote(
       return { ok: false, error: "Não foi possível confirmar agora. Tente em instantes." };
   }
 
-  // Confirmed for the rest of this session, then cast the held vote.
+  // Confirmado para o resto desta sessão — e para as próximas 24h, o que é o
+  // que impede a plataforma de reinterrogar quem acabou de provar quem é.
   await markVoteConfirmed(session);
+  await db.user.update({
+    where: { kid: session.userKid },
+    data: { identityConfirmedAt: new Date() },
+  });
   return castVoteConfirmed(themeKid, value, session.userKid);
 }

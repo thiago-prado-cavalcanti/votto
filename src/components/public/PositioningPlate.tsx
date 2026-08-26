@@ -99,19 +99,20 @@ export function PositioningPlate({
 }) {
   const hasReading = economic !== null || social !== null;
 
-  if (!hasReading) {
-    return (
-      <div className="border-t-2 border-navy-900 pt-4">
-        <p className="text-[0.86rem] leading-relaxed text-navy-700">
-          Ainda não há proposições classificadas suficientes para posicionar.
-        </p>
-        <p className="mt-2 text-[0.78rem] leading-relaxed text-[var(--color-muted)]">
-          A leitura fica em branco em vez de aparecer no centro: zero, nesses eixos, é a
-          coordenada de quem está no meio — e não a de quem não foi medido.
-        </p>
-      </div>
-    );
-  }
+  // Sem leitura, a placa não desenha nada — nem sequer um aviso.
+  //
+  // Ela anunciava a ausência ("ainda não há proposições classificadas
+  // suficientes"), e isso descrevia mal o que aconteceu: os eixos não estão
+  // atrasados, eles **reprovaram** em três testes independentes (§11), e uma
+  // mensagem de "ainda" promete para amanhã o que não depende de esperar. Pior,
+  // ela ocupava o lugar de destaque de uma seção cuja leitura real —
+  // `governismo` — vinha logo abaixo, menor, como se fosse a nota de rodapé da
+  // ausência.
+  //
+  // O `null` também é o que mantém o retorno automático: no dia em que uma casa
+  // passar nos portões, `economic`/`social` deixam de ser nulos e o gráfico
+  // aparece sem que ninguém precise mexer aqui.
+  if (!hasReading) return null;
 
   return (
     <div>

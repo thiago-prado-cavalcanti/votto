@@ -12,10 +12,17 @@
  * A reading with no value is not hidden — it says why it is missing, because
  * "not enough shared themes yet" is itself information about the platform.
  *
+ * **A lone reading does not repeat the caption.** The caption names the plate and
+ * each label names one reading among several; with a single reading the two are
+ * the same sentence, and the agent record printed "COM OS ELEITORES" twice, one
+ * under the other. The label still exists — it is the React key, and it is what
+ * distinguishes rows the day a plate carries more than one.
+ *
  * Server-component friendly (no client hooks); the bars are armed by whatever
  * `.vt-reveal` block the plate is dropped into.
  */
 import type { CSSProperties } from "react";
+import { Bar } from "@/components/ui/Bar";
 import { alignmentInk, alignmentTone } from "@/lib/domain/tone";
 
 export interface Reading {
@@ -45,9 +52,11 @@ export function ReadingPlate({
 
         return (
           <div key={reading.label} className="border-t border-line py-4">
-            <div className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
-              {reading.label}
-            </div>
+            {readings.length > 1 ? (
+              <div className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-muted)]">
+                {reading.label}
+              </div>
+            ) : null}
 
             {pct === null ? (
               <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
@@ -62,10 +71,10 @@ export function ReadingPlate({
                   {pct}
                   <span className="text-[1.35rem]">%</span>
                 </div>
-                <div className="mt-3 h-1.5 w-full bg-navy-200">
-                  <span
-                    className="vt-grow block h-full"
-                    style={{ ...beat, width: `${pct}%`, background: alignmentTone(pct) }}
+                <div className="mt-3">
+                  <Bar
+                    style={beat}
+                    segments={[{ key: "v", width: pct, color: alignmentTone(pct) }]}
                   />
                 </div>
                 {reading.hint ? (

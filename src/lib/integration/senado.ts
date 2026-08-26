@@ -236,7 +236,6 @@ function billUrl(codigoMateria: number | undefined): string | null {
  */
 export async function syncParties(opts: SyncOptions = {}): Promise<SyncResult> {
   const c = counters();
-  const nameByAcronym = await partyNames();
 
   const acronyms = new Set<string>();
   for (const senator of await fetchSenators()) {
@@ -247,7 +246,7 @@ export async function syncParties(opts: SyncOptions = {}): Promise<SyncResult> {
   for (const acronym of acronyms) {
     if (opts.limit && c.seen >= opts.limit) break;
     c.seen++;
-    await resolvePartyId(acronym, nameByAcronym.get(acronym));
+    await resolvePartyId(acronym);
     c.upserted++;
   }
 
@@ -265,24 +264,54 @@ export async function syncParties(opts: SyncOptions = {}): Promise<SyncResult> {
  * what lets a Senado acronym match a party the Câmara already imported under a
  * different abbreviation.
  */
+let partyNamesOnce: Promise<Map<string, string>> | null = null;
+
 async function partyNames(): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  const list = await tryFetch(`/composicao/lista/partidos`);
-  await sleep(REQUEST_DELAY);
-  for (const p of arr(dig(list, "ListaPartidos.Partidos.Partido"))) {
-    const sigla = str(obj(p).Sigla);
-    const nome = str(obj(p).Nome);
-    if (sigla && nome) names.set(sigla.toUpperCase(), nome);
-  }
-  return names;
+  // Memoizada porque `resolvePartyId` agora consulta o nome a cada sigla, e o
+  // job de votos resolve uma sigla por senador de cada votação — sem isto seriam
+  // milhares de requisições para a mesma lista de trinta linhas.
+  //
+  // Cache de processo, e a defasagem é aceitável: o que ela guarda é a *dica de
+  // casamento* entre sigla e nome, não o dado publicado. O nome que vai para o
+  // banco vem de `upsertParty`, no job de partidos, a cada execução.
+  partyNamesOnce ??= (async () => {
+    const names = new Map<string, string>();
+    const list = await tryFetch(`/composicao/lista/partidos`);
+    await sleep(REQUEST_DELAY);
+    for (const p of arr(dig(list, "ListaPartidos.Partidos.Partido"))) {
+      const sigla = str(obj(p).Sigla);
+      const nome = str(obj(p).Nome);
+      if (sigla && nome) names.set(sigla.toUpperCase(), nome);
+    }
+    return names;
+  })();
+  return partyNamesOnce;
 }
 
 /**
  * Resolve the internal Party id for an acronym, reusing a party already imported
  * by any source (typically the Câmara) so each party exists exactly once.
+ *
+ * **O nome é buscado aqui, e nunca recebido do chamador.** O desempate entre
+ * casas é por nome — a Câmara escreve `PODE` onde o Senado escreve `PODEMOS`, e
+ * as duas concordam em "Podemos" —, então passar a própria sigla no lugar do
+ * nome não só perde o desempate como o *desliga*: `resolvePartyIdByAcronym` só
+ * consulta por nome quando ele difere da sigla. Foi exatamente o que aconteceu
+ * em `upsertPastSenator`, que não tinha o mapa à mão e passava `key, key` — e o
+ * resultado foi um segundo "Podemos" com os três senadores, enquanto os 27
+ * deputados ficaram no primeiro. Uma bancada partida em duas não é cosmética:
+ * coesão, alinhamento e o encolhimento de `pooling.ts` passam a ler dois
+ * partidos onde há um.
+ *
+ * `partyNames()` é uma requisição só e memoizada, então buscar aqui não custa
+ * nada por chamada.
  */
-function resolvePartyId(acronym: string, name?: string): Promise<string> {
-  return resolvePartyIdByAcronym(acronym, { source: SOURCE, name });
+async function resolvePartyId(acronym: string): Promise<string | null> {
+  const names = await partyNames();
+  return resolvePartyIdByAcronym(acronym, {
+    source: SOURCE,
+    name: names.get(acronym.trim().toUpperCase()),
+  });
 }
 
 // ─── Senators ────────────────────────────────────────────────────────────────
@@ -333,7 +362,6 @@ async function fetchSenators(): Promise<SenatorRecord[]> {
 export async function syncAgents(opts: SyncOptions = {}): Promise<SyncResult> {
   const c = counters();
   const senators = await fetchSenators();
-  const nameByAcronym = await partyNames();
   const partyCache = new Map<string, string>();
   const seenRefs: string[] = [];
 
@@ -344,8 +372,11 @@ export async function syncAgents(opts: SyncOptions = {}): Promise<SyncResult> {
     let partyId: string | null = null;
     if (s.partyAcronym) {
       const key = s.partyAcronym.toUpperCase();
-      partyId = partyCache.get(key) ?? (await resolvePartyId(key, nameByAcronym.get(key)));
-      partyCache.set(key, partyId);
+      partyId = partyCache.get(key) ?? (await resolvePartyId(key));
+      // `null` é rótulo que não é partido (`NOT_A_PARTY` em `importer.ts`): o
+      // senador fica sem partido, que é o fato, e a chave não entra no cache —
+      // senão a consulta seguinte acharia a chave e leria `undefined`.
+      if (partyId) partyCache.set(key, partyId);
     }
 
     const { firstName, lastName } = splitName(s.fullName, "Senador");
@@ -936,8 +967,8 @@ async function upsertPastSenator(
   let partyId: string | null = null;
   if (voto.siglaPartidoParlamentar) {
     const key = voto.siglaPartidoParlamentar.toUpperCase();
-    partyId = partyCache.get(key) ?? (await resolvePartyId(key, key));
-    partyCache.set(key, partyId);
+    partyId = partyCache.get(key) ?? (await resolvePartyId(key));
+    if (partyId) partyCache.set(key, partyId);
   }
 
   const { firstName, lastName } = splitName(voto.nomeParlamentar ?? "", "Senador");

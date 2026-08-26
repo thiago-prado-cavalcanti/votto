@@ -7,7 +7,7 @@
  *
  * Uma leitura publicada contra uma pessoa com nome tem de saber se explicar. Mas
  * explicar *na* página custa o espaço que a leitura ocupa — e nas colunas
- * marginais das fichas (19rem) o texto explicativo chegava a ser mais alto que a
+ * marginais das fichas (23rem) o texto explicativo chegava a ser mais alto que a
  * figura que ele explicava. A explicação continua a um toque de distância e para
  * de disputar a página com o número.
  *
@@ -45,41 +45,51 @@ export function InfoButton({
         type="button"
         onClick={() => setOpen(true)}
         aria-label={label}
+        // Encostado na direita do título: o "?" é um recurso, não parte do nome
+        // da seção, e colado na última palavra ele se lia como pontuação.
+        //
+        // O glifo é o caractere, não um `path`. O desenho anterior era
+        // `M12 16v-5 M12 8h.01` — um traço e um ponto, que é o "i" de
+        // informação e não uma interrogação. Uma interrogação desenhada à mão
+        // em 12px fica ilegível de qualquer jeito; o tipo do sistema já tem a
+        // forma certa, hintada, no peso certo.
+        //
         // A marca fica com 20px; o `after` dá ao dedo os 44 de que ele precisa.
-        className="relative ml-1.5 inline-flex size-5 shrink-0 translate-y-[1px] items-center justify-center rounded-full border border-navy-300 text-navy-600 transition-colors hover:border-navy-600 hover:text-navy-900 after:absolute after:-inset-3 after:content-[''] sm:after:hidden"
+        className="relative ml-auto inline-flex size-5 shrink-0 translate-y-[1px] items-center justify-center rounded-full border border-navy-300 pt-px font-sans text-[0.72rem] leading-none text-navy-600 transition-colors hover:border-navy-600 hover:bg-navy-100 hover:text-navy-900 after:absolute after:-inset-3 after:content-[''] sm:after:hidden"
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          aria-hidden="true"
-        >
-          <path d="M12 16v-5M12 8h.01" strokeLinecap="round" />
-        </svg>
+        <span aria-hidden="true">?</span>
       </button>
       {open ? (
-        <InfoSheet label={label} eyebrow={eyebrow} title={title} onClose={() => setOpen(false)}>
+        <Sheet label={label} eyebrow={eyebrow} title={title} onClose={() => setOpen(false)}>
           {children}
-        </InfoSheet>
+        </Sheet>
       ) : null}
     </>
   );
 }
 
-function InfoSheet({
+/**
+ * A casca da folha, sozinha e sem saber o que carrega.
+ *
+ * Exportada porque a folha de detalhe de um tema (`ThemeSheet`) precisa
+ * exatamente do mesmo comportamento — portal, Escape, trava de rolagem, clique
+ * no fundo — com outro conteúdo e outro rodapé. Uma terceira cópia disso é como
+ * uma delas deixa de fechar no Escape sem ninguém notar.
+ */
+export function Sheet({
   label,
   eyebrow,
   title,
   onClose,
+  footer,
   children,
 }: {
   label: string;
   eyebrow: string;
   title: string;
   onClose: () => void;
+  /** O rodapé. Omitido, cai no "Entendi" que fecha. */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -128,12 +138,14 @@ function InfoSheet({
 
         {children}
 
-        <button
-          onClick={onClose}
-          className="mt-5 w-full rounded-card border border-navy-300 px-4 py-2.5 text-sm font-medium text-navy-800 transition-colors hover:border-navy-600 hover:text-navy-900"
-        >
-          Entendi
-        </button>
+        {footer ?? (
+          <button
+            onClick={onClose}
+            className="mt-5 w-full rounded-card border border-navy-300 px-4 py-2.5 text-sm font-medium text-navy-800 transition-colors hover:border-navy-600 hover:text-navy-900"
+          >
+            Entendi
+          </button>
+        )}
       </div>
     </div>,
     document.body,

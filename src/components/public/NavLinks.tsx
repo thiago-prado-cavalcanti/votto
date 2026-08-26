@@ -3,17 +3,29 @@
 /**
  * Primary navigation links for the public header, highlighting the active route.
  *
- * `account` appends "Conta" for a logged-in citizen. The header greeting is the
- * way in on a wide screen, but it is hidden below `sm` where the header has no
- * room for it — without this the account, and therefore the way to change who
- * represents you, would be unreachable on a phone.
+ * ── O que está na fileira, e o que saiu dela ────────────────────────────────
  *
- * The row **wraps**, and has to now that it carries six entries at its longest
- * ("Sobre" plus "Conta"). Below the `sm` breakpoint it is rendered as its own
- * band under the masthead, where the six words measure past a 360px screen: on
- * one line they would either overflow the paper or force a scroll gesture no
- * other part of the site asks for. Wrapping costs the header 28px on the
- * narrowest phones and nothing anywhere else.
+ * Cinco entradas, e todas são páginas em que o cidadão **faz** alguma coisa:
+ * votar, consultar, comparar, ver o próprio retrato. "Sobre" saiu daqui para o
+ * rodapé, junto de "Metodologia", pelo motivo que o §2 já dá para a segunda: é a
+ * resposta longa a uma pergunta que se faz uma vez, e na fileira ela competia
+ * com as páginas por que a pessoa veio. O rodapé já a carregava — a entrada
+ * daqui era a cópia, não a original.
+ *
+ * `account` acrescenta "Você" — o retrato político do cidadão — e ocupa
+ * exatamente a vaga que "Sobre" deixou. Só aparece logado, porque deslogado a
+ * página não existe: uma entrada de menu que sempre devolve para o login é um
+ * beco, e o convite para entrar já é o botão ao lado.
+ *
+ * **"Você" e não "Conta"**, e é só uma entrada: as duas páginas são vizinhas mas
+ * a interessante é a que resume a pessoa politicamente. `/conta` — trocar quem
+ * representa você, apagar dados — é ajuste, e fica a um clique de dentro de
+ * `/voce`.
+ *
+ * The row **wraps**. Abaixo do `sm` ela é uma faixa própria sob a masthead, onde
+ * as cinco palavras ainda medem perto do limite de uma tela de 360px; numa linha
+ * só elas transbordariam o papel ou pediriam um gesto de rolagem que nenhuma
+ * outra parte do site pede.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -24,12 +36,11 @@ const LINKS = [
   { href: "/temas", label: "Temas" },
   { href: "/agentes", label: "Agentes" },
   { href: "/partidos", label: "Partidos" },
-  { href: "/sobre", label: "Sobre" },
 ];
 
 export function NavLinks({ account = false }: { account?: boolean }) {
   const pathname = usePathname();
-  const links = account ? [...LINKS, { href: "/conta", label: "Conta" }] : LINKS;
+  const links = account ? [...LINKS, { href: "/voce", label: "Você" }] : LINKS;
   return (
     <nav className="flex flex-wrap items-center gap-1">
       {links.map((link) => {

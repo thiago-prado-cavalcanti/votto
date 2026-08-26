@@ -13,9 +13,12 @@
  * a session lifted from a browser — not to a determined fraudster, who has the
  * CPF anyway.
  *
- * Once per session, by construction: the answer is recorded as a claim on the
- * session token itself, so it dies with the session and a fresh login always
- * asks again. No second clock to drift, nothing to expire mid-vote.
+ * **Com que frequência.** Dentro de uma sessão, uma vez: a resposta vira um
+ * claim no próprio token, que morre com ela. Entre sessões, quem manda é
+ * `User.identityConfirmedAt` — o cadastro conta como prova, e um desafio novo só
+ * é pedido depois de `IDENTITY_MAX_AGE_MS`. Perguntar a quem acabou de
+ * confirmar CPF e data de nascimento contra o registro da Receita é pedir um
+ * pedaço do que a pessoa acabou de provar por inteiro.
  *
  * The challenge itself lives in a signed httpOnly cookie — the positions are
  * public knowledge the moment they are rendered, but the *answer* never leaves
@@ -38,6 +41,32 @@ export type { BirthField, VoteChallenge };
 const secret = () => new TextEncoder().encode(env.authSecret);
 
 export const VOTE_CHALLENGE_COOKIE = "votto_vote_challenge";
+
+/**
+ * Quanto tempo uma prova de identidade vale antes de o desafio voltar a ser
+ * pedido.
+ *
+ * Vinte e quatro horas. O que ela conserta é a redundância logo após o
+ * cadastro — o cidadão acabou de digitar CPF e data de nascimento inteiros e
+ * teve os dois confirmados contra o registro da Receita, e a plataforma
+ * respondia pedindo um pedaço do que ele acabou de provar.
+ *
+ * O que ela custa está escrito na migration 0017 e não deve ser esquecido: um
+ * aparelho destravado tomado dentro da janela vota sem responder nada, onde
+ * antes toda sessão nova perguntava.
+ */
+export const IDENTITY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Se o cidadão precisa responder ao desafio antes de votar.
+ *
+ * `confirmedAt` é `User.identityConfirmedAt`: o cadastro grava, o desafio
+ * respondido regrava. `null` — conta antiga, sem registro — sempre pergunta.
+ */
+export function challengeRequired(confirmedAt: Date | null | undefined, now = new Date()): boolean {
+  if (!confirmedAt) return true;
+  return now.getTime() - confirmedAt.getTime() > IDENTITY_MAX_AGE_MS;
+}
 
 /** Lifetime of one issued challenge. Generous: it is answered immediately. */
 const MAX_AGE = 60 * 15;
@@ -72,28 +101,26 @@ function cookieOptions() {
 }
 
 /**
- * Three **consecutive** positions, drawn with a CSPRNG.
+ * Os **três primeiros** ou os **três últimos** dígitos, sorteados a cada
+ * desafio.
  *
- * They used to be three positions drawn independently — the 1st, the 4th and
- * the 8th — which reads fine in a spec and badly on a document. Answering it
- * means counting along eleven digits three separate times, on a card held in
- * one hand, and the miscount is silent: a wrong digit is indistinguishable from
- * not knowing the CPF, so an honest citizen burns an attempt and cannot tell
- * why. Three in a row is read once, left to right.
+ * Duas janelas, e não as nove de antes, porque as duas pontas são as únicas que
+ * se leem **sem contar**. Um CPF é impresso agrupado — 529.982.247-25 —, então
+ * "os três primeiros" é o primeiro bloco e "os três últimos" é o final; qualquer
+ * janela no meio obriga a percorrer onze dígitos contando, num cartão segurado
+ * com uma mão. E o erro de contagem é mudo: um dígito trocado é indistinguível
+ * de não saber o CPF, então o cidadão honesto queima uma tentativa sem entender
+ * por quê.
  *
- * The cost is real and worth stating: nine windows instead of the 165
- * combinations of three positions out of eleven. That matters only against an
- * attacker who is guessing digits, and this challenge was never for them — it
- * exists so an unlocked phone or a session left open on a shared computer
- * cannot vote in somebody's name (CLAUDE.md §5). Whoever knows the CPF passes
- * either way; whoever does not fails either way, and the three attempts and
- * three challenges per session are what bound the guessing, not the geometry of
- * the positions.
+ * O custo em espaço de busca é declarado: duas janelas contra nove. Isso só
+ * importaria contra quem está adivinhando dígitos, e este desafio nunca foi
+ * para essa pessoa — ele existe para que um celular destravado ou uma sessão
+ * esquecida não votem em nome de alguém (§5). Quem sabe o CPF passa dos dois
+ * jeitos; quem não sabe falha dos dois. O que limita o chute são as três
+ * tentativas e os três desafios por sessão, não a geometria das posições.
  */
 function drawPositions(): [number, number, number] {
-  // 1..9 inclusive, so the window [start, start + 2] always ends within the 11.
-  const start = randomInt(1, 10);
-  return [start, start + 1, start + 2];
+  return randomInt(0, 2) === 0 ? [1, 2, 3] : [9, 10, 11];
 }
 
 /**

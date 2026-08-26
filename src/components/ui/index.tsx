@@ -8,6 +8,7 @@
  * weight 500, and the sans is reserved for labels, buttons, table headers and
  * microcopy.
  */
+import { Bar } from "@/components/ui/Bar";
 import * as React from "react";
 import Link from "next/link";
 import { alignmentInk, alignmentTone } from "@/lib/domain/tone";
@@ -408,11 +409,8 @@ export function AlignmentMeter({ value, label = "Alinhamento" }: { value: number
           {pct}%
         </span>
       </div>
-      <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-navy-100">
-        <div
-          className="vt-grow h-full"
-          style={{ width: `${pct}%`, background: alignmentTone(pct) }}
-        />
+      <div className="mt-1.5">
+        <Bar track="bg-navy-100" segments={[{ key: "v", width: pct, color: alignmentTone(pct) }]} />
       </div>
     </div>
   );

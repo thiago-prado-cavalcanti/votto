@@ -218,9 +218,15 @@ export async function linkCpfAction(
   // Back to the bill they were reading when the sign-up interrupted them, not
   // to the home page. Somebody who has just given a provider, a CPF and a birth
   // date to cast one vote should not have to go and find that vote again.
-  const destination = await readReturnTo();
+  //
+  // Quem NÃO veio de um projeto — entrou pela porta da frente — vai para o
+  // percurso de boas-vindas. É a única vez em que ele aparece sozinho, e é o
+  // momento em que faz diferença: sem nenhum voto, todas as leituras do site
+  // sobre essa pessoa estão vazias, o que descreve mal o produto. Quem veio de
+  // um projeto encontra o convite depois, em `/voce`, com `onboardedAt` nulo.
+  const returnTo = await readReturnTo();
   await clearReturnTo();
-  redirect(destination);
+  redirect(returnTo === "/" ? "/comecar" : returnTo);
 }
 
 /** Abandon a half-finished sign-up and return to the login page. */

@@ -10,7 +10,7 @@
  * é a comparação que responde.
  *
  * A folha também é onde vive a regra que mais parece defeito: as fatias somam
- * mais de 100%. Estava numa legenda de rodapé, numa coluna de 19rem, abaixo da
+ * mais de 100%. Estava numa legenda de rodapé, numa coluna de 23rem, abaixo da
  * dobra — ou seja, escrita e não lida.
  */
 import { InfoButton, Point, Points } from "@/components/public/InfoSheet";
@@ -26,15 +26,14 @@ export function AreaInfo({ kind }: { kind: "agreement" | "authorship" }) {
           : "Como a concordância por área é medida"
       }
       eyebrow={authorship ? "Como é medida" : "Como é calculada"}
-      title={authorship ? "Sobre o que legisla" : "Alinhamento por área"}
+      title={authorship ? "Propostas" : "Alinhamento por área"}
     >
       <p className="mt-5 text-[0.95rem] leading-[1.65] text-navy-700">
         {authorship ? (
           <>
-            Esta leitura é uma <strong className="font-medium text-navy-900">contagem</strong>:
-            dos projetos que o parlamentar apresentou neste mandato, quantos são de cada área.
-            Nada aqui é estimativa — cada fatia se defende projeto a projeto, na lista da própria
-            Câmara.
+            Das propostas que o parlamentar apresentou neste mandato, quantas são de cada
+            área. É uma <strong className="font-medium text-navy-900">contagem</strong>, não uma
+            estimativa: cada fatia se defende proposta a proposta, na lista da própria Câmara.
           </>
         ) : (
           <>
@@ -47,11 +46,11 @@ export function AreaInfo({ kind }: { kind: "agreement" | "authorship" }) {
 
       <Points>
         <Point term="Um projeto conta em cada área que toca">
-          As casas classificam por assunto e um projeto costuma ter mais de um: saneamento é
+          As casas classificam por assunto e uma proposta costuma ter mais de um: saneamento é
           saúde <em>e</em> infraestrutura, e conta nas duas. Por isso as fatias{" "}
           <strong className="font-medium text-navy-900">somam mais de 100%</strong> — não é erro
           de conta, e não é para ser lido como uma pizza. Na Câmara a média é de 2,16 assuntos
-          por projeto.
+          por proposta.
         </Point>
 
         {authorship ? (
@@ -62,17 +61,20 @@ export function AreaInfo({ kind }: { kind: "agreement" | "authorship" }) {
               pauta e não a pessoa. O que ele <em>apresenta</em> é escolha dele, e é o que esta
               leitura mostra.
             </Point>
-            <Point term="É o mandato corrente, e são projetos que legislam">
-              Contam PL, PEC, PLP e PDL apresentados neste mandato. Requerimentos, homenagens e
-              pedidos de informação ficam de fora: são atos de tramitação, não propostas de lei.
+            <Point term="É o que ele apresentou, não o que relatou">
+              Contam PL, PEC, PLP e PDL protocolados por ele neste mandato. Relatoria fica de
+              fora — relatar é encargo distribuído pela Casa, não escolha. Requerimentos,
+              homenagens e pedidos de informação também ficam: são atos de tramitação, não
+              propostas de lei. A lista de “Temas de autoria e relatoria”, acima, é o outro
+              recorte e inclui as duas coisas.
             </Point>
-            <Point term="Poucos projetos, nenhuma figura">
-              Abaixo de dez projetos no total não desenhamos o perfil. Com seis, cada fatia só
+            <Point term="Poucas propostas, nenhuma figura">
+              Abaixo de dez propostas no total não desenhamos o perfil. Com seis, cada fatia só
               pode assumir sete valores, e o desenho viraria ruído com cara de perfil. A
               contagem continua na página, porque ela continua verdadeira.
             </Point>
             <Point term="Não diz se o parlamentar é bom naquilo">
-              É volume, não qualidade e não resultado. Quantos projetos ele apresentou sobre
+              É volume, não qualidade e não resultado. Quantas propostas ele apresentou sobre
               saúde — não se algum virou lei, e não se são bons. Para isso há a performance
               política, que mede desfecho.
             </Point>

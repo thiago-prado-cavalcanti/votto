@@ -25,28 +25,55 @@
  *
  * Server component: sem hooks, sem estado.
  */
+import { Bar } from "@/components/ui/Bar";
 import { blobThrough, vertexAngle, vertexPoint, GROUND_VALUES, type Field } from "@/lib/viz/figure";
 
 const C = 250;
 /**
  * Campo da leitura, e o raio é uma consequência do rótulo e não do gosto.
  *
- * A placa mora numa coluna de 19rem, então o SVG de 500 é desenhado a **0,61×**.
- * Nessa escala a fonte tem de ser dimensionada para trás: 17 unidades viram
- * ~10px na tela, que é o piso do sistema. Rótulo maior pede mais margem, e a
- * margem sai do desenho — daí 148 onde antes eram 168. Medido no navegador, não
- * estimado: a 11 unidades o rótulo saía com **6,7px**, metade do menor texto que
- * o resto do site usa.
+ A placa mora na coluna marginal da ficha, então o SVG de 500 nunca é desenhado
+ * em tamanho natural — e por isso **todo tamanho aqui é dimensionado para trás,
+ * a partir da escala**. Medido no navegador em cada passo, nunca estimado:
+ *
+ *  - a 19rem de coluna (0,61×) o rótulo de 11 unidades saía com **6,7px**,
+ *    metade do menor texto do resto do site;
+ *  - a 23rem (0,74×), 19 unidades chegam a ~14px, que é o corpo das legendas.
+ *
+ * O raio é o que sobra depois disso. Rótulo maior pede margem, a margem sai do
+ * desenho, e é essa conta — e não gosto — que decide 156 e 132.
  */
-const R = 148;
+const R = 156;
 const FIELD: Field = { cx: C, cy: C, radius: R };
 /** A massa é a do radar da home, na mesma proporção: ela é a marca, não a escala. */
-const GROUND_FIELD: Field = { cx: C, cy: C, radius: 130 };
-/** O anel de referência, a 80% da escala — e a ~75% da massa. */
+const GROUND_FIELD: Field = { cx: C, cy: C, radius: 138 };
+/**
+ * O anel de referência, a 80% da escala.
+ *
+ * Sem número impresso sobre ele: dois algarismos em creme sobre a terracota
+ * competiam com a leitura numa figura que já tem a lista de números ao lado. O
+ * que o anel marca está escrito na legenda, uma vez, em texto corrido.
+ */
 const RING = 0.8;
 /** Tamanhos em unidades do viewBox; ver o raio acima para o porquê. */
-const LABEL_SIZE = 17;
-const TICK_SIZE = 15;
+const LABEL_SIZE = 18;
+/**
+ * Onde o rótulo começa, e por que não é um múltiplo do raio.
+ *
+ * A massa é orgânica: `GROUND_VALUES` vai de 1,18 a 1,27, então a borda dela
+ * oscila entre 163 e 175 unidades. O rótulo tem de limpar a **maior** delas, e é
+ * essa a conta — pôr o anel numa fração do raio de leitura ignorava a massa e foi
+ * o que deixou quatro rótulos por cima dela.
+ */
+const GROUND_MAX = 138 * Math.max(...GROUND_VALUES);
+/** Respiro entre a massa e o rótulo: 18 unidades ≈ 13px na coluna de 23rem. */
+const LABEL_GAP = 18;
+const LABEL_RING = GROUND_MAX + LABEL_GAP;
+/**
+ * Acima deste cosseno o rótulo é lateral e cresce para FORA (`start`/`end`);
+ * abaixo é de topo e fica centrado, onde quem manda é a altura do texto.
+ */
+const SIDE_AT = 0.2;
 /** Acima disto o rótulo quebra na última palavra, para não invadir o vizinho. */
 const LABEL_WRAP_AT = 12;
 
@@ -73,6 +100,19 @@ function wrapLabel(label: string): string[] {
   return i <= 0 ? [label] : [label.slice(0, i), label.slice(i + 1)];
 }
 
+/**
+ * Como a pétala é fechada.
+ *
+ * `organic` une os vértices pela curva de `blobThrough`, que é a construção da
+ * marca — o radar da home é feito assim, e é o que faz a leitura parecer da
+ * mesma família. `polygon` liga em reta.
+ *
+ * A distinção existe para a tela de demonstração do primeiro acesso: ali o
+ * desenho não é uma leitura de ninguém, é a explicação de uma, e a aresta viva
+ * diz "isto é um diagrama" onde a curva diria "isto é a marca".
+ */
+export type RadarShape = "organic" | "polygon";
+
 export interface RadarAxis {
   key: string;
   label: string;
@@ -80,19 +120,26 @@ export interface RadarAxis {
   value: number | null;
 }
 
-export function AreaRadar({ axes, title }: { axes: RadarAxis[]; title: string }) {
+export function AreaRadar({
+  axes,
+  title,
+  shape = "organic",
+}: {
+  axes: RadarAxis[];
+  title: string;
+  shape?: RadarShape;
+}) {
   const n = axes.length;
   const read = axes
     .map((a, i) => ({ ...a, i }))
     .filter((a): a is RadarAxis & { value: number; i: number } => a.value !== null);
 
-  const petal =
-    read.length >= 3
-      ? blobThrough(
-          read.map((a) => vertexPoint(FIELD, a.i, a.value / 100, n)),
-          1,
-        )
-      : "";
+  const petal = (() => {
+    if (read.length < 3) return "";
+    const points = read.map((a) => vertexPoint(FIELD, a.i, a.value / 100, n));
+    if (shape === "organic") return blobThrough(points, 1);
+    return `M${points.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L")} Z`;
+  })();
 
   return (
     <svg
@@ -167,39 +214,38 @@ export function AreaRadar({ axes, title }: { axes: RadarAxis[]; title: string })
           );
         })}
 
-      <text x={C + 8} y={C + 5} fill={INK} opacity={0.55} fontSize={TICK_SIZE} className="vt-num">
-        0%
-      </text>
-      <text
-        x={C + 8}
-        y={(C - R * RING + 5).toFixed(0)}
-        fill={INK}
-        opacity={0.55}
-        fontSize={TICK_SIZE}
-        className="vt-num"
-      >
-        80%
-      </text>
-
       {axes.map((a, i) => {
-        const mid = Math.abs(Math.cos(vertexAngle(i, n))) < 0.2;
-        const [x, y] = vertexPoint(FIELD, i, mid ? 1.28 : 1.34, n);
+        const angle = vertexAngle(i, n);
+        const cos = Math.cos(angle);
+        // O rótulo é ancorado pelo lado que ENCARA o círculo, e é isso que torna
+        // a folga independente do comprimento dele. Com `middle` em todos, metade
+        // da largura crescia para dentro: "Infraestrutura" invadia a massa em
+        // 3px enquanto "Saúde", curto, sobrava 26 — a mesma regra dando folgas
+        // opostas conforme o tamanho da palavra.
+        const anchor = Math.abs(cos) < SIDE_AT ? "middle" : cos > 0 ? "start" : "end";
+        const x = C + LABEL_RING * cos;
+        const y = C + LABEL_RING * Math.sin(angle);
         const lines = wrapLabel(a.label);
-        // Duas linhas sobem meia entrelinha, para o par ficar centrado no eixo
-        // em vez de pender para baixo dele.
-        const dy = (mid ? (y < C ? -8 : 16) : 6) - (lines.length - 1) * 9;
+        // Lateral: centrado na vertical sobre o eixo. Topo/base: é a altura do
+        // texto que tem de limpar a massa, então o deslocamento é vertical.
+        const dy =
+          anchor === "middle"
+            ? y < C
+              ? -6 - (lines.length - 1) * 20
+              : 20
+            : 6 - (lines.length - 1) * 10;
         return (
           <text
             key={a.key}
             x={x.toFixed(0)}
             y={(y + dy).toFixed(0)}
-            textAnchor="middle"
+            textAnchor={anchor}
             fontSize={LABEL_SIZE}
             fill="var(--color-muted)"
             style={{ fontFamily: "var(--font-sans)" }}
           >
             {lines.map((line, k) => (
-              <tspan key={line} x={x.toFixed(0)} dy={k === 0 ? 0 : 18}>
+              <tspan key={line} x={x.toFixed(0)} dy={k === 0 ? 0 : 20}>
                 {line}
               </tspan>
             ))}
@@ -231,14 +277,14 @@ export function AreaList({
           >
             <div className="flex min-w-0 flex-col gap-1.5">
               <dt className="text-sm text-navy-900">{r.label}</dt>
-              <div className="h-[7px] rounded-r-[4px] bg-colonial-100">
-                {r.value === null ? null : (
-                  <div
-                    className="h-[7px] rounded-r-[4px] bg-colonial-500"
-                    style={{ width: `${Math.min(100, r.value)}%` }}
-                  />
-                )}
-              </div>
+              <Bar
+                track="bg-colonial-100"
+                segments={
+                  r.value === null
+                    ? []
+                    : [{ key: r.key, width: r.value, className: "bg-colonial-500" }]
+                }
+              />
               <span className="text-[0.72rem] text-[var(--color-muted)]">{r.note}</span>
             </div>
             <dd className="vt-num text-right text-[1.05rem] leading-none text-navy-900">

@@ -1,0 +1,34 @@
+-- Quando o cidadão provou a identidade pela última vez.
+--
+-- ── O que ela conserta ──────────────────────────────────────────────────────
+--
+-- O desafio de voto (§5) pede três dígitos do CPF e uma parte da data de
+-- nascimento antes do primeiro voto de cada sessão. Logo depois do cadastro
+-- isso é redundante ao ponto de parecer defeito: o cidadão acabou de digitar o
+-- CPF e a data inteiros, e teve os dois confirmados contra o registro da Receita
+-- — e a plataforma responde pedindo um pedaço do que ele acabou de provar.
+--
+-- Com esta coluna o cadastro passa a CONTAR como prova, e um desafio novo só é
+-- pedido depois de 24h.
+--
+-- ── Por que uma coluna, e não um claim de sessão ────────────────────────────
+--
+-- `voteConfirmed` vive no token da sessão de propósito: "uma vez por sessão" é
+-- verdade por construção, porque o claim não sobrevive ao logout. A regra nova
+-- atravessa sessões — quem sai e volta no mesmo dia não deve ser interrogado de
+-- novo —, e um claim não tem como saber o que aconteceu na sessão anterior.
+--
+-- ── O que se perde, dito e não escondido ────────────────────────────────────
+--
+-- Antes, toda sessão nova perguntava. Agora, dentro da janela de 24h, uma sessão
+-- nova não pergunta — então um aparelho destravado tomado nesse intervalo vota
+-- sem responder nada. É um afrouxamento real da defesa que o §5 descreve
+-- ("um celular destravado, um computador compartilhado"), aceito como decisão de
+-- produto em troca de não interrogar quem acabou de se cadastrar. O limite
+-- continua existindo: passadas 24h, pergunta.
+--
+-- Sem backfill: quem já tem conta fica com NULL e responde ao próximo desafio
+-- normalmente, que é o comportamento correto — não temos registro de quando
+-- essas pessoas provaram identidade pela última vez.
+
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "identityConfirmedAt" TIMESTAMP(3);

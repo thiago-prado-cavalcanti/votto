@@ -31,7 +31,21 @@ export default async function PartiesPage({
   const session = await getCitizenSession();
 
   const parties = await db.party.findMany({
-    where: { status: "ACTIVE" },
+    // Um partido entra na lista quando tem ao menos um parlamentar EM
+    // EXERCÍCIO, e não apenas por existir na base.
+    //
+    // O backfill de 2019 em diante trouxe os partidos que os senadores da época
+    // integravam, e vários já não existem: DEM e PSL viraram UNIÃO, PROS virou
+    // SOLIDARIEDADE, PTB virou PRD, PSC virou PODEMOS. Os registros ficam — os
+    // votos daqueles mandatos alimentam os índices, é a mesma regra de
+    // `inOffice` para agentes (§8: "Mandates end, history doesn't") —, mas
+    // apresentá-los ao lado do PL e do PT afirma que são partidos do presente.
+    // E como não existem, não têm marca curada, dirigente nem descrição: apareciam
+    // como fichas vazias.
+    //
+    // O filtro é sobre o fato, não uma lista de siglas extintas: no dia em que
+    // um deles reeleger alguém, ele volta sozinho.
+    where: { status: "ACTIVE", agents: { some: { inOffice: true, status: "ACTIVE" } } },
     orderBy: { name: "asc" },
   });
 

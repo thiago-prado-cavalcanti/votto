@@ -16,6 +16,7 @@
  * the system's `.vt-grow`; outside one it renders finished (docs/design.md §5).
  * Server-component friendly — no client hooks.
  */
+import { Bar } from "@/components/ui/Bar";
 import type { CSSProperties } from "react";
 
 export interface IndexPlateRow {
@@ -74,18 +75,23 @@ export function IndexPlate({
             {/* The track is the rule pigment, not the tint: the plate hangs in a
                 masthead band that is itself off-white, and a lighter track
                 disappeared into it. */}
-            <span className="block h-1.5 w-full bg-navy-200">
-              <span
-                className="vt-grow block h-full"
-                style={{
-                  ...rowBeat(i),
-                  // A row that exists is never a bar of nothing: three deputies
-                  // out of five hundred still get a visible mark.
-                  width: row.value > 0 ? `${Math.max(3, Math.round((row.value / max) * 100))}%` : 0,
-                  background: row.color ?? "var(--color-navy-800)",
-                }}
-              />
-            </span>
+            <Bar
+              track="bg-navy-200"
+              style={rowBeat(i)}
+              segments={
+                row.value > 0
+                  ? [
+                      {
+                        key: row.label,
+                        // A row that exists is never a bar of nothing: three
+                        // deputies out of five hundred still get a visible mark.
+                        width: Math.max(3, Math.round((row.value / max) * 100)),
+                        color: row.color ?? "var(--color-navy-800)",
+                      },
+                    ]
+                  : []
+              }
+            />
             <span className="vt-num min-w-[2.25rem] text-right text-[1.05rem] leading-none text-navy-900">
               {row.value.toLocaleString("pt-BR")}
             </span>

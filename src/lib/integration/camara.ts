@@ -363,7 +363,9 @@ export async function syncAgents(opts: SyncOptions = {}): Promise<SyncResult> {
         partyId =
           partyBySigla.get(key) ??
           (await resolvePartyIdByAcronym(key, { source: SOURCE }));
-        partyBySigla.set(key, partyId);
+        // `null` é rótulo que não é partido (ver `NOT_A_PARTY`): não entra no
+        // cache, senão a próxima consulta acharia a chave e devolveria undefined.
+        if (partyId) partyBySigla.set(key, partyId);
       }
 
       await upsertAgent({

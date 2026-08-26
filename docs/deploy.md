@@ -199,11 +199,34 @@ docker compose --env-file .env.production -f docker-compose.prod.yml run --rm mi
 
 **Database backup (do this regularly)**
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml exec db \
-  pg_dump -U votto votto | gzip > votto-$(date +%F).sql.gz
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
+  pg_dump -U votto -Fc --no-owner --no-privileges votto > votto-$(date +%F).dump
 ```
 Copy the dump off the box (e.g. to S3). For a managed alternative later, restore
 this dump into **RDS** and point `DATABASE_URL` there.
+
+**Use `-Fc` (custom format), not plain SQL, and the reason cost an afternoon.**
+Since the fix for CVE-2025-8714, `pg_dump` wraps plain-SQL output in `\restrict`
+/ `\unrestrict` meta-commands. Those put `psql` into restricted mode on restore,
+where `\.` no longer terminates a `COPY` block — so the restore runs, prints
+errors that look like data problems, and leaves a half-populated database. The
+custom format is binary and carries no `psql` meta-commands at all, so the whole
+class of failure disappears. It also restores in parallel and lets you pick
+individual tables.
+
+**Restoring into the local development copy** (`votto-postgres`, from
+`docker-compose.yml`). Read-only local work against a restored copy is the one
+database exception this project allows; writing to production from a workstation
+is not.
+```bash
+docker exec -i votto-postgres dropdb   -U votto --if-exists votto
+docker exec -i votto-postgres createdb -U votto votto
+docker exec -i votto-postgres pg_restore -U votto -d votto \
+  --no-owner --no-privileges < votto-$(date +%F).dump
+```
+The dump carries the schema, so there is nothing to migrate afterwards — and
+`_prisma_migrations` comes across with it, which is what keeps the local copy
+honest about which migrations the production database has actually seen.
 
 **Official data (Câmara/Senado)** — handled by the `worker` container, which runs
 the whole chain on its weekly slot and on boot, skipping what is still current.

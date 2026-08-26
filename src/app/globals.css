@@ -218,6 +218,39 @@ h3,
   --vt-step: 90ms;
   /* Atraso de uma parte dentro do bloco. */
   --vt-d: 0ms;
+  /* De quanto uma linha de tabela sobe ao reentrar (`vt-row-in`).
+     É variável, e não um 9px escrito no keyframe, porque `.vt-rows-viewport`
+     precisa do MESMO número para não ser atravessada pelo deslocamento. */
+  --vt-row-rise: 9px;
+}
+
+/* A caixa de rolagem de uma tabela `.vt-rows`.
+   ─────────────────────────────────────────────────────────────────────────────
+   `overflow-x: auto` sozinho NÃO deixa o eixo vertical em `visible`: o CSS
+   promove o outro eixo a `auto` junto, e a caixa vira rolável nas duas direções
+   sem ninguém pedir. Como as linhas reentram deslocadas para baixo, durante a
+   troca de aba o `scrollHeight` passava o `clientHeight` por exatamente
+   `--vt-row-rise` (medido: 330 contra 321) — e uma barra vertical aparecia por
+   meio segundo e sumia. Um cromo que pisca é pior que um que fica.
+
+   A correção tem duas metades, e a segunda é a que importa.
+
+   `clip` no eixo vertical declara a intenção — nunca rolar. Mas ele NÃO
+   sobrevive à mistura: pela especificação, `clip` ao lado de um eixo que não é
+   `clip` nem `visible` computa como `hidden`, então `overflow-clip-margin` é
+   ignorado junto e a linha de baixo teria a borda cortada durante a subida.
+
+   Por isso a folga é reservada de verdade: `padding-bottom` de um deslocamento
+   dá à linha para onde descer dentro da caixa, e a margem negativa devolve os
+   mesmos pixels ao layout, de modo que nada abaixo se mexe. A altura reservada
+   mora num filho, e não aqui, justamente para que este `padding` fique FORA
+   dela — `min-height` conta a borda, então somar o padding aqui teria devolvido
+   o transbordo pela outra porta. */
+.vt-rows-viewport {
+  overflow-x: auto;
+  overflow-y: clip;
+  padding-bottom: var(--vt-row-rise);
+  margin-bottom: calc(-1 * var(--vt-row-rise));
 }
 
 /* Régua de leitura: o filete de 1px sob a masthead se enche de terracota
@@ -443,10 +476,30 @@ h3,
      o salva-vidas de 2,5s já havia sido cancelado pelo primeiro Reveal que
      hidratou. Uma definição de keyframes é inerte enquanto ninguém a referencia,
      então aqui ela não custa nada — e é o único lugar onde ela existe. */
+  /* A troca de um item por outro no mesmo lugar — o rodízio de temas da tela de
+     boas-vindas. Sobe pouco (6px) e é curta: é substituição, não entrada, e um
+     deslocamento grande faria o bloco parecer que sumiu e voltou em vez de ter
+     sido trocado. Vive sob a mesma guarda que o resto do movimento, então sem
+     script ou com `prefers-reduced-motion` o item aparece pronto. */
+  .vt-swap {
+    animation: vt-swap-in 0.42s var(--vt-ease) both;
+  }
+
+  @keyframes vt-swap-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 6px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   @keyframes vt-row-in {
     from {
       opacity: 0;
-      transform: translate3d(0, 9px, 0);
+      transform: translate3d(0, var(--vt-row-rise), 0);
     }
   }
 

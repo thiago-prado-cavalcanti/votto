@@ -701,6 +701,25 @@ model User {
   // Bumped on each vote to invalidate cached alignment indexes.
   voteVersion Int @default(0)
 
+  /// Quando o cidadão provou a identidade pela última vez — no cadastro, ao
+  /// confirmar CPF e data de nascimento contra o registro, ou respondendo ao
+  /// desafio de voto (§5).
+  ///
+  /// Persistida, e não um claim de sessão, porque a regra que ela serve
+  /// atravessa sessões: **um desafio novo só é pedido depois de 24h**. Um claim
+  /// morreria no logout e o cidadão que entrasse de novo no mesmo dia seria
+  /// interrogado outra vez sobre dados que acabou de fornecer.
+  identityConfirmedAt DateTime?
+
+  /// Quando o cidadão concluiu (ou dispensou) o primeiro acesso guiado.
+  ///
+  /// Coluna e não claim de sessão: "já mostramos isto" tem de sobreviver ao
+  /// logout e ao troca de aparelho, senão o onboarding reaparece a cada entrada
+  /// e vira um anúncio. NULL significa "ainda não passou por ele" — e é por isso
+  /// que é nullable sem default, e não um booleano: a data também responde
+  /// "quando", que é o que permite medir conclusão depois.
+  onboardedAt DateTime?
+
   votes          Vote[]
   socialAccounts SocialAccount[]
   follows        AgentFollow[]

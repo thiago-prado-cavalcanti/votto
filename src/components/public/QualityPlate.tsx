@@ -18,6 +18,7 @@
  *
  * Server-component friendly — no client hooks.
  */
+import { Bar } from "@/components/ui/Bar";
 import type { CSSProperties } from "react";
 import { alignmentTone } from "@/lib/domain/tone";
 import type { QualityPillarResult } from "@/lib/indexes/quality";
@@ -58,20 +59,23 @@ export function QualityPlate({
             </div>
 
             <div className="mt-1.5 flex items-center gap-3">
-              <span className="block h-1.5 w-full bg-navy-200">
-                {pillar.score !== null ? (
-                  <span
-                    className="vt-grow block h-full"
-                    style={{
-                      ...rowBeat(i),
-                      // A pillar that scored is never a bar of nothing: being at
-                      // the bottom of a cohort is still a reading.
-                      width: `${Math.max(3, pillar.score)}%`,
-                      background: alignmentTone(pillar.score),
-                    }}
-                  />
-                ) : null}
-              </span>
+              <Bar
+                track="bg-navy-200"
+                style={rowBeat(i)}
+                segments={
+                  pillar.score !== null
+                    ? [
+                        {
+                          key: pillar.key,
+                          // A pillar that scored is never a bar of nothing:
+                          // being at the bottom of a cohort is still a reading.
+                          width: Math.max(3, pillar.score),
+                          color: alignmentTone(pillar.score),
+                        },
+                      ]
+                    : []
+                }
+              />
               <span className="shrink-0 text-[0.7rem] tabular-nums text-[var(--color-muted)]">
                 {pillar.score !== null ? `${pillar.score}º percentil` : "—"}
               </span>

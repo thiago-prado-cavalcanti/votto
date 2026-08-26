@@ -23,6 +23,7 @@
  */
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/cn";
+import { Bar } from "@/components/ui/Bar";
 
 const OPTIONS = [
   { key: "yes", label: "Sim", color: "var(--color-vote-yes)" },
@@ -88,12 +89,16 @@ export function TemperatureBar({
       {/* The measurement: solid pigment, square joins, a paper fold between the
           shares. A thin rule of a bar, with the tag's 2px corner — barely off
           square, because a measurement should not look like a pill. */}
-      <div className="mt-2.5 h-2 w-full overflow-hidden rounded-[2px] bg-[var(--color-line)]">
-        <div className="vt-grow flex h-full w-full gap-px">
-          {OPTIONS.map((o) => (
-            <div key={o.key} style={{ width: `${pct(counts[o.key])}%`, background: o.color }} />
-          ))}
-        </div>
+      <div className="mt-2.5">
+        <Bar
+          track="bg-[var(--color-line)]"
+          divided
+          segments={OPTIONS.map((o) => ({
+            key: o.key,
+            width: pct(counts[o.key]),
+            color: o.color,
+          }))}
+        />
       </div>
 
       {/* The tally: three columns keyed by the radar's vertex dot.

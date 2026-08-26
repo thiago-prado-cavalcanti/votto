@@ -7,7 +7,7 @@
  *
  * ── Coluna única, e a explicação no "?" ─────────────────────────────────────
  *
- * A ficha é `lg:grid-cols-[1fr_19rem]` e esta placa mora na margem: impor um
+ * A ficha é `lg:grid-cols-[1fr_23rem]` e esta placa mora na margem: impor um
  * grid próprio partia 304px em duas metades de ~150. A explicação — inclusive a
  * interpretação errada que ela precisa desarmar, a de que o eixo mede dedicação
  * ao assunto — foi para `AreaInfo`, ao lado do título. Numa coluna dessa largura
@@ -44,7 +44,11 @@ export function AreaAgreementPlate({
   const totalThemes = areas.reduce((max, a) => Math.max(max, a.sharedThemes), 0);
 
   return (
-    <div>
+    // A régua de 2px é a gramática de placa do sistema — `IndexPlate`,
+    // `QualityPlate`, `ReadingPlate` e `PositioningPlate` abrem todas com ela.
+    // Estas duas nasceram sem, e na coluna marginal a diferença aparece: as
+    // seções vizinhas começam com um traço de tinta e estas começavam no vazio.
+    <div className="border-t-2 border-navy-900 pt-5">
       <figure className="m-0">
         <div>
           <AreaRadar

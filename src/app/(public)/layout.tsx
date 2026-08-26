@@ -79,16 +79,19 @@ export default async function PublicLayout({
           <div className="flex items-center gap-6">
             <Wordmark />
             <div className="hidden sm:block">
-              <NavLinks />
+              <NavLinks account={Boolean(session)} />
             </div>
           </div>
           <div className="flex items-center gap-3">
             {session ? (
               <>
-                {/* The greeting is the way into the account — the only page the
-                    citizen owns, and where they change who represents them. */}
+                {/* A saudação continua levando a `/voce`, mas já não é o único
+                    caminho: "Você" está na fileira nas duas larguras desde que
+                    "Sobre" desceu para o rodapé. O que ela faz aqui, e a fileira
+                    não faz, é dizer **quem** está logado — que é a pergunta de
+                    quem divide o computador com outra pessoa. */}
                 <Link
-                  href="/conta"
+                  href="/voce"
                   className="hidden text-sm text-[var(--color-muted)] transition-colors hover:text-navy-800 sm:inline"
                 >
                   Olá,{" "}
@@ -153,11 +156,13 @@ export default async function PublicLayout({
 
             {/* Reachable from every page: Meta and Google both check that the
                 privacy policy URL is linked from the site, not just live.
-                "Sobre" is in the header nav as well, and repeats here on
-                purpose — it is the long-form answer to the same question the
-                legal documents answer in short, so a reader who came down here
-                looking for what the platform does with them finds it in the
-                column they are already reading.
+                "Sobre" is now reachable ONLY from here, like "Metodologia": it
+                left the header nav so the row would carry only pages a citizen
+                acts on. It sits well in this column — it is the long-form answer
+                to the same question the legal documents answer in short, so a
+                reader who came down here looking for what the platform does with
+                them finds it where they already are. Removing this line would
+                strand the page.
 
                 "Metodologia" is the appendix to that answer — every formula,
                 every constant, every condition under which an index refuses to

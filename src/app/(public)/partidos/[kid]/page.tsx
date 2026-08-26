@@ -262,18 +262,29 @@ export default async function PartyDetailPage({
           </Card>
 
           {/* Same as the agent page: figure on the paper, no card and no band —
-              see the note there. */}
-          <div>
-            <h2 className="text-xl text-navy-900">Posicionamento</h2>
-            <div className="mt-4">
-              <PositioningPlate
-                economic={position.economic}
-                social={position.social}
-                detail={position.detail}
-                party={position.party}
-              />
+              see the note there.
+
+              O título vem junto com a leitura, e não antes dela. `PositioningPlate`
+              devolve `null` sem eixo nenhum, e um "Posicionamento" com nada
+              embaixo é pior que a mensagem de ausência que ele substituiu. A
+              ficha de agente não precisa desta guarda porque lá o bloco carrega
+              `governismo`, que publica sem portão; **por partido essa contagem
+              ainda não existe** (§3.2 — a coluna é do agente), então aqui não há
+              nada para mostrar enquanto os portões barrarem. A seção volta
+              sozinha no dia em que um partido tiver leitura. */}
+          {position.economic !== null || position.social !== null ? (
+            <div>
+              <h2 className="text-xl text-navy-900">Posicionamento</h2>
+              <div className="mt-4">
+                <PositioningPlate
+                  economic={position.economic}
+                  social={position.social}
+                  detail={position.detail}
+                  party={position.party}
+                />
+              </div>
             </div>
-          </div>
+          ) : null}
         </Reveal>
       </div>
     </Container>
